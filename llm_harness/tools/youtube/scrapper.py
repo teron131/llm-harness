@@ -1,10 +1,12 @@
 """This module uses the Scrape Creators or Supadata API to scrape a YouTube video transcript.
 
-
 The API result is wrapped by YouTubeScrapperResult object.
 """
 
+from __future__ import annotations
+
 import os
+from typing import Any
 
 from dotenv import load_dotenv
 from pydantic import BaseModel, ConfigDict
@@ -14,12 +16,19 @@ from .utils import clean_text, clean_youtube_url, extract_video_id, is_youtube_u
 
 load_dotenv()
 
-SCRAPECREATORS_API_KEY = os.getenv("SCRAPECREATORS_API_KEY")
-SUPADATA_API_KEY = os.getenv("SUPADATA_API_KEY")
-
 # API Endpoints
 SCRAPECREATORS_ENDPOINT = "https://api.scrapecreators.com/v1/youtube/video/transcript"
 SUPADATA_ENDPOINT = "https://api.supadata.ai/v1/transcript"
+
+DEFAULT_TIMEOUT_S = 30
+
+
+def _get_api_key(name: str) -> str | None:
+    value = os.getenv(name)
+    if not value:
+        return None
+    value = value.strip()
+    return value or None
 
 
 class Channel(BaseModel):
@@ -56,18 +65,20 @@ class YouTubeScrapperResult(BaseModel):
     viewCountInt: int | None = None
     likeCountInt: int | None = None
     publishDate: str | None = None
+    publishDateText: str | None = None
     channel: Channel | None = None
     durationFormatted: str | None = None
     keywords: list[str] | None = None
     videoId: str | None = None
-    captionTracks: list[dict] | None = None
+    captionTracks: list[dict[str, Any]] | None = None
     language: str | None = None
+    availableLangs: list[str] | None = None
 
     @property
     def parsed_transcript(self) -> str | None:
         """Return cleaned transcript text or None if unavailable."""
         if self.transcript:
-            return clean_text(" ".join([seg.text for seg in self.transcript if seg.text]))
+            return clean_text(" ".join(seg.text for seg in self.transcript if seg.text))
         if self.transcript_only_text and self.transcript_only_text.strip():
             return clean_text(self.transcript_only_text)
         return None
@@ -80,80 +91,94 @@ class YouTubeScrapperResult(BaseModel):
 
 def _fetch_scrape_creators(video_url: str) -> YouTubeScrapperResult | None:
     """Fetch transcript from Scrape Creators API."""
-    if not SCRAPECREATORS_API_KEY:
+    api_key = _get_api_key("SCRAPECREATORS_API_KEY")
+    if not api_key:
         return None
 
     try:
-        url = f"{SCRAPECREATORS_ENDPOINT}?url={video_url}"
-        headers = {"x-api-key": SCRAPECREATORS_API_KEY}
-        response = requests.get(url, headers=headers, timeout=30)
+        response = requests.get(
+            SCRAPECREATORS_ENDPOINT,
+            headers={"x-api-key": api_key},
+            params={"url": video_url},
+            timeout=DEFAULT_TIMEOUT_S,
+        )
+    except requests.RequestException:
+        return None
 
-        if response.status_code in [401, 403]:
-            print("Scrape Creators API auth failed")
-            return None
+    if response.status_code in {401, 403}:
+        return None
+    if not response.ok:
+        return None
 
-        response.raise_for_status()
-        data = response.json()
+    try:
+        data: dict[str, Any] = response.json()
+    except ValueError:
+        return None
 
-        # Normalize transcript segments
-        if "transcript" in data and isinstance(data["transcript"], list):
-            for seg in data["transcript"]:
-                if "startMs" in seg:
-                    seg["startMs"] = float(seg["startMs"])
-                if "endMs" in seg:
-                    seg["endMs"] = float(seg["endMs"])
-
+    try:
         return YouTubeScrapperResult.model_validate(data)
-    except Exception as e:
-        print(f"Scrape Creators fetch error: {e}")
+    except Exception:
         return None
 
 
 def _fetch_supadata(video_url: str) -> YouTubeScrapperResult | None:
     """Fetch transcript from Supadata API."""
-    if not SUPADATA_API_KEY:
+    api_key = _get_api_key("SUPADATA_API_KEY")
+    if not api_key:
         return None
 
     try:
-        url = f"{SUPADATA_ENDPOINT}?url={video_url}&lang=en&text=true"
-        headers = {"x-api-key": SUPADATA_API_KEY}
-        response = requests.get(url, headers=headers, timeout=30)
+        response = requests.get(
+            SUPADATA_ENDPOINT,
+            headers={"x-api-key": api_key},
+            params={"url": video_url, "lang": "en", "text": "true", "mode": "auto"},
+            timeout=DEFAULT_TIMEOUT_S,
+        )
+    except requests.RequestException:
+        return None
 
-        if not response.ok:
-            print(f"Supadata API error: {response.status_code}")
-            return None
+    if response.status_code in {401, 403}:
+        return None
+    if response.status_code == 202:
+        # Supadata may return an async jobId for large videos.
+        return None
+    if not response.ok:
+        return None
 
-        data = response.json()
-        content = data.get("content", [])
+    try:
+        data: dict[str, Any] = response.json()
+    except ValueError:
+        return None
 
-        # Normalize to shared schema
+    content = data.get("content")
+    transcript_only_text: str | None = content if isinstance(content, str) else None
+    transcript: list[TranscriptSegment] | None = None
+    if transcript_only_text is None and isinstance(content, list):
         transcript = []
         for item in content:
-            offset_ms = item.get("offset", 0)
-            duration_ms = item.get("duration", 0)
+            if not isinstance(item, dict):
+                continue
             transcript.append(
-                {
-                    "text": item.get("text"),
-                    "startMs": offset_ms,
-                    "endMs": offset_ms + duration_ms,
-                    # Simple formatting: convert ms to seconds string with 's' suffix
-                    "startTimeText": f"{offset_ms / 1000:.2f}s",
-                }
+                TranscriptSegment(
+                    text=item.get("text"),
+                    startMs=item.get("offset"),
+                    endMs=(item.get("offset", 0) or 0) + (item.get("duration", 0) or 0),
+                    startTimeText=None,
+                )
             )
 
-        video_id = extract_video_id(video_url)
+    video_id = extract_video_id(video_url)
 
-        return YouTubeScrapperResult(
-            url=video_url,
-            transcript=[TranscriptSegment.model_validate(t) for t in transcript],
-            videoId=video_id,
-            language=data.get("lang"),
-            success=True,
-            type="video",
-        )
-    except Exception as e:
-        print(f"Supadata fetch error: {e}")
-        return None
+    return YouTubeScrapperResult(
+        url=video_url,
+        transcript=transcript,
+        transcript_only_text=transcript_only_text,
+        videoId=video_id,
+        language=data.get("lang"),
+        availableLangs=data.get("availableLangs"),
+        success=True,
+        type="video",
+    )
 
 
 def scrape_youtube(youtube_url: str) -> YouTubeScrapperResult:
@@ -182,7 +207,7 @@ def scrape_youtube(youtube_url: str) -> YouTubeScrapperResult:
     if result and result.has_transcript:
         return result
 
-    if not SCRAPECREATORS_API_KEY and not SUPADATA_API_KEY:
+    if not _get_api_key("SCRAPECREATORS_API_KEY") and not _get_api_key("SUPADATA_API_KEY"):
         raise ValueError("No API keys found for Scrape Creators or Supadata")
 
     raise ValueError("Failed to fetch transcript from available providers")
@@ -193,6 +218,7 @@ def get_transcript(youtube_url: str) -> str:
     result = scrape_youtube(youtube_url)
     if not result.has_transcript:
         raise ValueError("Video has no transcript")
-    if not result.parsed_transcript:
+    transcript = result.parsed_transcript
+    if not transcript:
         raise ValueError("Transcript is empty")
-    return result.parsed_transcript
+    return transcript
