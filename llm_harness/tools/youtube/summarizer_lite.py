@@ -18,7 +18,7 @@ from ...fast_copy import (
 )
 from .prompts import get_garbage_filter_prompt, get_langchain_summary_prompt
 from .schemas import GarbageIdentification, Summary
-from .scrapper import scrape_youtube as _scrape_youtube
+from .scrapper import get_transcript
 from .utils import is_youtube_url
 
 load_dotenv()
@@ -37,12 +37,7 @@ def scrape_youtube(youtube_url: str) -> str:
     Returns:
         Parsed transcript text
     """
-    result = _scrape_youtube(youtube_url)
-    if not result.has_transcript:
-        raise ValueError("Video has no transcript")
-    if not result.parsed_transcript:
-        raise ValueError("Transcript is empty")
-    return result.parsed_transcript
+    return get_transcript(youtube_url)
 
 
 @wrap_tool_call

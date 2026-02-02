@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from pydantic import BaseModel, ConfigDict
 import requests
 
-from .utils import clean_text, clean_youtube_url, is_youtube_url
+from .utils import clean_text, clean_youtube_url, extract_video_id, is_youtube_url
 
 load_dotenv()
 
@@ -20,23 +20,6 @@ SUPADATA_API_KEY = os.getenv("SUPADATA_API_KEY")
 # API Endpoints
 SCRAPECREATORS_ENDPOINT = "https://api.scrapecreators.com/v1/youtube/video/transcript"
 SUPADATA_ENDPOINT = "https://api.supadata.ai/v1/transcript"
-
-
-def _extract_video_id(url: str) -> str | None:
-    """Extract video ID from YouTube URL."""
-    import re
-
-    # Standard watch URL
-    match = re.search(r"v=([a-zA-Z0-9_-]+)", url)
-    if match:
-        return match.group(1)
-
-    # Short URL
-    match = re.search(r"youtu\.be/([a-zA-Z0-9_-]+)", url)
-    if match:
-        return match.group(1)
-
-    return None
 
 
 class Channel(BaseModel):
@@ -158,7 +141,7 @@ def _fetch_supadata(video_url: str) -> YouTubeScrapperResult | None:
                 }
             )
 
-        video_id = _extract_video_id(video_url)
+        video_id = extract_video_id(video_url)
 
         return YouTubeScrapperResult(
             url=video_url,
@@ -203,3 +186,13 @@ def scrape_youtube(youtube_url: str) -> YouTubeScrapperResult:
         raise ValueError("No API keys found for Scrape Creators or Supadata")
 
     raise ValueError("Failed to fetch transcript from available providers")
+
+
+def get_transcript(youtube_url: str) -> str:
+    """Scrape and return the parsed transcript text, raising an error if unavailable."""
+    result = scrape_youtube(youtube_url)
+    if not result.has_transcript:
+        raise ValueError("Video has no transcript")
+    if not result.parsed_transcript:
+        raise ValueError("Transcript is empty")
+    return result.parsed_transcript
