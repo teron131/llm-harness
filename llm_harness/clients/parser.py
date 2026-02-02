@@ -28,15 +28,19 @@ def get_metadata(ai_message: AIMessage) -> tuple[int, int, float]:
 
     Cost may be unavailable for some providers; returns 0.0.
     """
-    um = getattr(ai_message, "usage_metadata", None)
-    if isinstance(um, dict) and um:
-        return int(um.get("input_tokens") or 0), int(um.get("output_tokens") or 0), 0.0
+    usage_metadata = getattr(ai_message, "usage_metadata", None)
+    if isinstance(usage_metadata, dict) and usage_metadata:
+        return (
+            int(usage_metadata.get("input_tokens") or 0),
+            int(usage_metadata.get("output_tokens") or 0),
+            0.0,
+        )
 
-    rm = getattr(ai_message, "response_metadata", None)
-    if not isinstance(rm, dict) or not rm:
+    response_metadata = getattr(ai_message, "response_metadata", None)
+    if not isinstance(response_metadata, dict) or not response_metadata:
         return 0, 0, 0.0
 
-    token_usage = rm.get("token_usage")
+    token_usage = response_metadata.get("token_usage")
     if isinstance(token_usage, dict) and token_usage:
         return (
             int(token_usage.get("prompt_tokens") or 0),
@@ -44,10 +48,10 @@ def get_metadata(ai_message: AIMessage) -> tuple[int, int, float]:
             float(token_usage.get("cost") or 0.0),
         )
 
-    usage_md = rm.get("usage_metadata")
-    if isinstance(usage_md, dict) and usage_md:
-        input_tokens = int(usage_md.get("prompt_token_count") or usage_md.get("input_token_count") or 0)
-        output_tokens = int(usage_md.get("candidates_token_count") or usage_md.get("output_token_count") or 0)
+    legacy_usage = response_metadata.get("usage_metadata")
+    if isinstance(legacy_usage, dict) and legacy_usage:
+        input_tokens = int(legacy_usage.get("prompt_token_count") or legacy_usage.get("input_token_count") or 0)
+        output_tokens = int(legacy_usage.get("candidates_token_count") or legacy_usage.get("output_token_count") or 0)
         return input_tokens, output_tokens, 0.0
 
     return 0, 0, 0.0
@@ -58,19 +62,20 @@ def _extract_reasoning(content_blocks: list[dict]) -> str | None:
     if not content_blocks:
         return None
 
-    block = content_blocks[0]
-    if reasoning := block.get("reasoning"):
+    first_block = content_blocks[0]
+    if reasoning := first_block.get("reasoning"):
         return reasoning
 
+    # Check for nested content structure (e.g. from some providers)
     if (
-        (extras := block.get("extras"))
+        (extras := first_block.get("extras"))
         and isinstance(extras, dict)
-        and (content := extras.get("content"))
-        and isinstance(content, list)
-        and content
-        and isinstance(content[-1], dict)
+        and (nested_content := extras.get("content"))
+        and isinstance(nested_content, list)
+        and nested_content
+        and isinstance(nested_content[-1], dict)
     ):
-        return content[-1].get("text")
+        return nested_content[-1].get("text")
 
     return None
 
