@@ -9,8 +9,9 @@ from pydantic import BaseModel, Field, field_validator
 
 from ...clients import ChatOpenRouter
 from ...fast_copy import TagRange, filter_content, tag_content, untag_content
+from ...text_utils import s2hk
 from .scrapper import YouTubeScrapperResult, scrape_youtube
-from .utils import is_youtube_url, s2hk
+from .utils import is_youtube_url
 
 # ============================================================================
 # Configuration

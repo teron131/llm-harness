@@ -3,21 +3,7 @@ import io
 
 import httpx
 from IPython.display import HTML, display
-import opencc
 from PIL import Image
-
-
-def s2hk(content: str) -> str:
-    """Convert simplified Chinese to traditional Chinese (Hong Kong standard).
-
-    Args:
-        content (str): Text in simplified Chinese.
-
-    Returns:
-        str: Text converted to traditional Chinese (Hong Kong standard).
-    """
-    converter = opencc.OpenCC("s2hk")
-    return converter.convert(content)
 
 
 def _load_image(image_source: str) -> Image.Image:

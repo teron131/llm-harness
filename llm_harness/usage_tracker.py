@@ -67,12 +67,12 @@ def _get_storage() -> UsageMetadata:
     return storage
 
 
-def reset() -> None:
+def reset_usage() -> None:
     """Reset the usage tracker for the current execution context."""
     _usage.set(_new_usage())
 
 
-def add(input_tokens: int, output_tokens: int, cost: float) -> None:
+def track_usage(input_tokens: int, output_tokens: int, cost: float) -> None:
     """Add token usage and cost to the current execution context."""
     storage = _get_storage()
     storage.total_input_tokens += int(input_tokens or 0)
@@ -80,12 +80,12 @@ def add(input_tokens: int, output_tokens: int, cost: float) -> None:
     storage.total_cost += float(cost or 0.0)
 
 
-def get() -> dict[str, int | float]:
+def get_usage() -> dict[str, int | float]:
     """Get current usage totals for the current execution context."""
     return _get_storage().to_dict()
 
 
-def get_accumulated() -> UsageMetadata:
+def get_accumulated_usage() -> UsageMetadata:
     """Get current usage as UsageMetadata object."""
     return _get_storage()
 
@@ -95,7 +95,7 @@ def create_reset_usage_node():
 
     def reset_usage_node(state) -> dict[str, int | float]:
         _ = state
-        reset()
+        reset_usage()
         return {
             "total_input_tokens": 0,
             "total_output_tokens": 0,
