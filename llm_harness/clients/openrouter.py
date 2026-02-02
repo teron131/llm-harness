@@ -19,7 +19,7 @@ def _is_openrouter(model: str) -> bool:
 
 def ChatOpenRouter(
     model: str,
-    temperature: float = 0,
+    temperature: float = 0.7,
     reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = None,
     provider_sort: Literal["throughput", "price", "latency"] = "throughput",
     web_search: bool = False,
@@ -31,7 +31,7 @@ def ChatOpenRouter(
     """Initialize OpenRouter model.
 
     Args:
-        model: PROVIDER/MODEL format (e.g., "anthropic/claude-3.5-sonnet")
+        model: PROVIDER/MODEL format
         temperature: Sampling temperature (0.0-2.0)
         reasoning_effort: "minimal", "low", "medium", "high"
         provider_sort: OpenRouter routing - "throughput", "price", "latency"
