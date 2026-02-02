@@ -5,7 +5,7 @@ from langchain_core.messages import HumanMessage
 from langgraph.checkpoint.memory import MemorySaver
 from rich import print
 
-from .llm import ChatOpenRouter
+from .clients import ChatOpenRouter
 from .tools import get_tools
 from .utils import load_image_base64
 
