@@ -48,9 +48,24 @@ class Summary(BaseModel):
         """Convert string fields to Traditional Chinese."""
         return s2hk(value)
 
+    def to_text(self) -> str:
+        """Format the summary as a readable string."""
+        lines = [
+            "=" * 80,
+            "SUMMARY:",
+            "=" * 80,
+            f"\nOverview:\n{self.overview}",
+            f"\nChapters ({len(self.chapters)}):",
+        ]
 
-# Alias for backward compatibility if needed, or to match Gemini naming convention
-VideoAnalysis = Summary
+        for i, chapter in enumerate(self.chapters, 1):
+            lines.append(f"\n  Chapter {i}: {chapter.title}")
+            lines.append(f"    Summary: {chapter.description}")
+            if chapter.start_time or chapter.end_time:
+                time_range = f"{chapter.start_time or '?'} - {chapter.end_time or '?'}"
+                lines.append(f"    Time: {time_range}")
+
+        return "\n".join(lines)
 
 
 class GarbageIdentification(BaseModel):

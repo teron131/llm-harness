@@ -97,7 +97,9 @@ def summary_node(state: SummarizerState) -> dict:
         reasoning_effort="medium",
     ).with_structured_output(Summary)
 
-    system_prompt = get_langchain_summary_prompt(target_language=state.target_language)
+    system_prompt = get_langchain_summary_prompt(
+        target_language=state.target_language,
+    )
 
     messages = [
         SystemMessage(content=system_prompt),

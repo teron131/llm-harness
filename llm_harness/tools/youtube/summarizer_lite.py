@@ -23,7 +23,7 @@ from .utils import is_youtube_url
 
 load_dotenv()
 
-MODEL = "google/gemini-3-flash-preview"
+DEFAULT_MODEL = "google/gemini-3-flash-preview"
 FAST_MODEL = "google/gemini-2.5-flash-lite-preview-09-2025"
 
 
@@ -84,15 +84,19 @@ def garbage_filter_middleware(
     return result
 
 
-def create_summarizer_agent(target_language: str | None = None):
+def create_summarizer_agent(
+    target_language: str | None = None,
+):
     """Create a ReAct agent for summarizing video transcripts with structured output."""
     llm = ChatOpenRouter(
-        model=MODEL,
+        model=DEFAULT_MODEL,
         temperature=0,
         reasoning_effort="medium",
     )
 
-    system_prompt = get_langchain_summary_prompt(target_language=target_language)
+    system_prompt = get_langchain_summary_prompt(
+        target_language=target_language,
+    )
 
     agent = create_agent(
         model=llm,
@@ -103,33 +107,6 @@ def create_summarizer_agent(target_language: str | None = None):
     )
 
     return agent
-
-
-def _parse_result(summary: Summary) -> str:
-    """Format Summary object into a readable string.
-
-    Args:
-        summary: The Summary object to format
-
-    Returns:
-        Formatted string representation of the summary
-    """
-    lines = [
-        "=" * 80,
-        "SUMMARY:",
-        "=" * 80,
-        f"\nOverview:\n{summary.overview}",
-        f"\nChapters ({len(summary.chapters)}):",
-    ]
-
-    for i, chapter in enumerate(summary.chapters, 1):
-        lines.append(f"\n  Chapter {i}: {chapter.title}")
-        lines.append(f"    Summary: {chapter.description}")
-        if chapter.start_time or chapter.end_time:
-            time_range = f"{chapter.start_time or '?'} - {chapter.end_time or '?'}"
-            lines.append(f"    Time: {time_range}")
-
-    return "\n".join(lines)
 
 
 def summarize_video(
@@ -145,7 +122,9 @@ def summarize_video(
     Returns:
         Formatted string representation of the summary
     """
-    agent = create_summarizer_agent(target_language)
+    agent = create_summarizer_agent(
+        target_language=target_language,
+    )
 
     # If it's a YouTube URL, let the agent use the tool to fetch it
     # Otherwise, provide the transcript directly
@@ -158,7 +137,7 @@ def summarize_video(
     if structured_response is None:
         raise ValueError("Agent did not return structured response")
 
-    return _parse_result(structured_response)
+    return structured_response.to_text()
 
 
 if __name__ == "__main__":

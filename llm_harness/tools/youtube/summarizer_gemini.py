@@ -13,7 +13,7 @@ from google.genai import types
 
 from ...clients.usage_tracker import track_usage
 from .prompts import get_gemini_summary_prompt
-from .schemas import Summary as VideoAnalysis
+from .schemas import Summary
 
 logger = logging.getLogger(__name__)
 
@@ -47,11 +47,9 @@ def analyze_video_url(
     model: str = DEFAULT_MODEL,
     thinking_level: Literal["minimal", "low", "medium", "high"] = "medium",
     target_language: str = "auto",
-    video_title: str | None = None,
-    video_description: str | None = None,
     api_key: str | None = None,
     timeout: int = 600,
-) -> VideoAnalysis | None:
+) -> Summary | None:
     """Analyze a YouTube video using Gemini's multimodal API.
 
     Args:
@@ -59,13 +57,11 @@ def analyze_video_url(
         model: Gemini model to use
         thinking_level: Level of reasoning ("minimal", "low", "medium", "high")
         target_language: Target output language ("auto", "en", "zh-TW", or other language code)
-        video_title: Optional video title for additional context
-        video_description: Optional video description for additional context
         api_key: Gemini API key (defaults to GOOGLE_API_KEY or GEMINI_API_KEY env var)
         timeout: Request timeout in seconds
 
     Returns:
-        VideoAnalysis object or None if analysis fails
+        Summary object or None if analysis fails
     """
     api_key = api_key or os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
     if not api_key:
@@ -75,8 +71,6 @@ def analyze_video_url(
 
     system_prompt = get_gemini_summary_prompt(
         target_language=target_language,
-        title=video_title,
-        description=video_description,
     )
 
     try:
@@ -89,7 +83,7 @@ def analyze_video_url(
             config=types.GenerateContentConfig(
                 thinking_config=types.ThinkingConfig(thinking_level=thinking_level),
                 response_mime_type="application/json",
-                response_schema=VideoAnalysis,
+                response_schema=Summary,
             ),
         )
 
@@ -98,7 +92,7 @@ def analyze_video_url(
             return None
 
         # Parse the response into our Pydantic model
-        analysis = VideoAnalysis.model_validate_json(response.text)
+        analysis = Summary.model_validate_json(response.text)
 
         # Log usage and cost information
         if hasattr(response, "usage_metadata") and response.usage_metadata:
@@ -130,16 +124,14 @@ def analyze_video_url(
         return None
 
 
-def summarize_youtube_video(
+def summarize_video(
     video_url: str,
     *,
     model: str = DEFAULT_MODEL,
     thinking_level: Literal["minimal", "low", "medium", "high"] = "medium",
     target_language: str = "auto",
-    video_title: str | None = None,
-    video_description: str | None = None,
     api_key: str | None = None,
-) -> VideoAnalysis | None:
+) -> Summary | None:
     """Convenience function to summarize a YouTube video.
 
     Args:
@@ -147,19 +139,15 @@ def summarize_youtube_video(
         model: Gemini model to use
         thinking_level: Reasoning level
         target_language: Target output language ("auto", "en", "zh-TW")
-        video_title: Optional video title for context
-        video_description: Optional video description for context
         api_key: Optional API key override
 
     Returns:
-        VideoAnalysis with overview and chapters
+        Summary with overview and chapters
     """
     return analyze_video_url(
         video_url,
         model=model,
         thinking_level=thinking_level,
         target_language=target_language,
-        video_title=video_title,
-        video_description=video_description,
         api_key=api_key,
     )

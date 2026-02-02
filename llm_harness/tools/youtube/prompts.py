@@ -1,3 +1,19 @@
+def _build_context_block(
+    title: str | None = None,
+    description: str | None = None,
+) -> str:
+    """Helper to build the contextual information block."""
+    metadata_parts = []
+    if title:
+        metadata_parts.append(f"Video Title: {title}")
+    if description:
+        metadata_parts.append(f"Video Description: {description}")
+
+    if metadata_parts:
+        return "\n# CONTEXTUAL INFORMATION:\n" + "\n".join(metadata_parts) + "\n"
+    return ""
+
+
 def get_gemini_summary_prompt(
     target_language: str = "auto",
     title: str | None = None,
@@ -17,15 +33,7 @@ def get_gemini_summary_prompt(
 
     language_instruction = f"- OUTPUT LANGUAGE (REQUIRED): {instruction}"
 
-    metadata_parts = []
-    if title:
-        metadata_parts.append(f"Video Title: {title}")
-    if description:
-        metadata_parts.append(f"Video Description: {description}")
-
-    metadata = ""
-    if metadata_parts:
-        metadata = "\n# CONTEXTUAL INFORMATION:\n" + "\n".join(metadata_parts) + "\n"
+    metadata = _build_context_block(title, description)
 
     prompt_lines = [
         "Create a grounded, chronological summary.",
@@ -48,22 +56,30 @@ def get_gemini_summary_prompt(
     return "\n".join(prompt_lines)
 
 
-def get_langchain_summary_prompt(target_language: str | None = None) -> str:
+def get_langchain_summary_prompt(
+    target_language: str | None = None,
+    title: str | None = None,
+    description: str | None = None,
+) -> str:
     """Build the system prompt for transcript summarization (LangChain)."""
-    system_prompt = (
-        "Create a grounded, chronological summary of the transcript.\n"
-        "Rules:\n"
-        "- Ground every claim in the transcript; do not add unsupported details\n"
-        "- Exclude sponsors/ads/promos/calls to action entirely\n"
-        "- Avoid meta-language (no 'this video...', 'the speaker...', etc.)\n"
-        "- Prefer concrete facts, names, numbers, and steps when present\n"
-        "- Ensure output matches the provided response schema\n"
-        "- Return JSON only with overview + chapters"
-    )
-    if target_language:
-        system_prompt += f"\nOUTPUT LANGUAGE (REQUIRED): {target_language}"
+    metadata = _build_context_block(title, description)
 
-    return system_prompt
+    prompt_parts = [
+        "Create a grounded, chronological summary of the transcript.",
+        metadata,
+        "Rules:",
+        "- Ground every claim in the transcript; do not add unsupported details",
+        "- Exclude sponsors/ads/promos/calls to action entirely",
+        "- Avoid meta-language (no 'this video...', 'the speaker...', etc.)",
+        "- Prefer concrete facts, names, numbers, and steps when present",
+        "- Ensure output matches the provided response schema",
+        "- Return JSON only with overview + chapters",
+    ]
+
+    if target_language:
+        prompt_parts.append(f"\nOUTPUT LANGUAGE (REQUIRED): {target_language}")
+
+    return "\n".join(prompt_parts)
 
 
 def get_garbage_filter_prompt() -> str:
