@@ -10,7 +10,7 @@ from langchain.tools import tool
 from langchain.tools.tool_node import ToolCallRequest
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 
-from ...clients import ChatOpenRouter
+from ...clients.openrouter import ChatOpenRouter
 from ...fast_copy import (
     filter_content,
     tag_content,

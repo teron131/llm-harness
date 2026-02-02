@@ -1,58 +1,78 @@
 """LangChain Playground - A collection of LangChain utilities and tools"""
 
-from dotenv import load_dotenv
+from __future__ import annotations
 
-from .clients import (
-    BaseHarnessAgent,
-    ChatGemini,
-    ChatOpenRouter,
-    GeminiEmbeddings,
-    ImageAnalysisAgent,
-    MediaMessage,
-    OpenRouterEmbeddings,
-    StructuredOutput,
-    WebLoaderAgent,
-    WebSearchAgent,
-    create_gemini_cache,
-    get_metadata,
-    parse_batch,
-    parse_invoke,
-    parse_stream,
-)
-from .fs_tools import make_fs_tools
-from .image_utils import display_image_base64, load_image_base64
-from .text_utils import s2hk
-from .tools import get_tools
+import ast
+from functools import cache
+import importlib
+from pathlib import Path
+from typing import Any
+
+from dotenv import load_dotenv
 
 load_dotenv()
 
-__all__ = [
-    "EMPTY_USAGE",
-    "BaseHarnessAgent",
-    "ChatGemini",
-    "ChatOpenRouter",
-    "GeminiEmbeddings",
-    "ImageAnalysisAgent",
-    "MediaMessage",
-    "OpenRouterEmbeddings",
-    "StructuredOutput",
-    "UsageMetadata",
-    "WebLoaderAgent",
-    "WebSearchAgent",
-    "create_capture_usage_node",
-    "create_gemini_cache",
-    "create_reset_usage_node",
-    "display_image_base64",
-    "get_accumulated_usage",
-    "get_metadata",
-    "get_tools",
-    "get_usage",
-    "load_image_base64",
-    "make_fs_tools",
-    "parse_batch",
-    "parse_invoke",
-    "parse_stream",
-    "reset_usage",
-    "s2hk",
-    "track_usage",
+_PACKAGE_DIR = Path(__file__).resolve().parent
+_EXPORT_SOURCES: list[tuple[str, Path]] = [
+    ("llm_harness.clients", _PACKAGE_DIR / "clients" / "__init__.py"),
+    ("llm_harness.fs_tools", _PACKAGE_DIR / "fs_tools.py"),
+    ("llm_harness.image_utils", _PACKAGE_DIR / "image_utils.py"),
+    ("llm_harness.text_utils", _PACKAGE_DIR / "text_utils.py"),
+    ("llm_harness.tools", _PACKAGE_DIR / "tools" / "__init__.py"),
 ]
+
+
+@cache
+def _parse_dunder_all(file_path: str) -> list[str]:
+    try:
+        source = Path(file_path).read_text(encoding="utf-8")
+    except OSError:
+        return []
+
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return []
+
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if not any(isinstance(t, ast.Name) and t.id == "__all__" for t in node.targets):
+            continue
+        value = node.value
+        if not isinstance(value, (ast.List, ast.Tuple)):
+            return []
+        names: list[str] = []
+        for elt in value.elts:
+            if isinstance(elt, ast.Constant) and isinstance(elt.value, str):
+                names.append(elt.value)
+        return names
+
+    return []
+
+
+def _build_lazy_exports() -> dict[str, tuple[str, str]]:
+    exports: dict[str, tuple[str, str]] = {}
+    for module_name, file_path in _EXPORT_SOURCES:
+        for name in _parse_dunder_all(str(file_path)):
+            exports.setdefault(name, (module_name, name))
+    return exports
+
+
+_LAZY_EXPORTS = _build_lazy_exports()
+
+
+def __getattr__(name: str) -> Any:
+    target = _LAZY_EXPORTS.get(name)
+    if target is None:
+        raise AttributeError(name)
+    module_name, attr = target
+    module = importlib.import_module(module_name)
+    return getattr(module, attr)
+
+
+def __dir__() -> list[str]:
+    return sorted(set(globals().keys()) | set(_LAZY_EXPORTS.keys()))
+
+
+__all__ = sorted(_LAZY_EXPORTS.keys())

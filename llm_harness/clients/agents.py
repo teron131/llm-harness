@@ -11,7 +11,8 @@ from langchain_core.tools import BaseTool
 from pydantic import BaseModel
 
 from ..tools.web import webloader_tool
-from . import ChatOpenRouter, MediaMessage
+from .multimodal import MediaMessage
+from .openrouter import ChatOpenRouter
 
 ReasoningEffort = Literal["minimal", "low", "medium", "high"]
 

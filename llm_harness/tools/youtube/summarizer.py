@@ -6,7 +6,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel
 
-from ...clients import ChatOpenRouter
+from ...clients.openrouter import ChatOpenRouter
 from ...fast_copy import filter_content, tag_content, untag_content
 from .prompts import get_garbage_filter_prompt, get_langchain_summary_prompt, get_quality_check_prompt
 from .schemas import (

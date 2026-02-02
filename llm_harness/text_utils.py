@@ -12,3 +12,8 @@ def s2hk(content: str) -> str:
     """
     converter = opencc.OpenCC("s2hk")
     return converter.convert(content)
+
+
+__all__ = [
+    "s2hk",
+]

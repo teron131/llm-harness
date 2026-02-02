@@ -1467,6 +1467,14 @@ dependencies = [
     { name = "rich" },
 ]
 
+[package.optional-dependencies]
+dev = [
+    { name = "iprogress" },
+    { name = "ipykernel" },
+    { name = "ipywidgets" },
+    { name = "ruff" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "iprogress" },
@@ -1478,11 +1486,14 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "docling", specifier = ">=2.71.0" },
-    { name = "google-genai", specifier = ">=1.61.0" },
+    { name = "google-genai", specifier = ">=0.2.0" },
     { name = "httpx", specifier = ">=0.28.1" },
-    { name = "langchain", specifier = ">=1.2.8" },
+    { name = "iprogress", marker = "extra == 'dev'", specifier = ">=0.4" },
+    { name = "ipykernel", marker = "extra == 'dev'", specifier = ">=7.1.0" },
+    { name = "ipywidgets", marker = "extra == 'dev'", specifier = ">=8.1.8" },
+    { name = "langchain", specifier = ">=1.2.7" },
     { name = "langchain-community", specifier = ">=0.4.1" },
-    { name = "langchain-google-genai", specifier = ">=4.2.0" },
+    { name = "langchain-google-genai", specifier = ">=2.0.0" },
     { name = "langchain-openai", specifier = ">=1.1.7" },
     { name = "langgraph", specifier = ">=1.0.7" },
     { name = "opencc", specifier = ">=1.2.0" },
@@ -1491,7 +1502,9 @@ requires-dist = [
     { name = "python-dotenv", specifier = ">=1.2.1" },
     { name = "requests", specifier = ">=2.32.5" },
     { name = "rich", specifier = ">=14.3.2" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.14.14" },
 ]
+provides-extras = ["dev"]
 
 [package.metadata.requires-dev]
 dev = [

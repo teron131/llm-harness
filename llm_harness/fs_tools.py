@@ -101,3 +101,8 @@ def make_fs_tools(*, root_dir: str | Path):
         return f"Edited {path}"
 
     return [fs_read_text, fs_write_text, fs_edit_with_ed]
+
+
+__all__ = [
+    "make_fs_tools",
+]

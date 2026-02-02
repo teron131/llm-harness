@@ -71,3 +71,9 @@ def display_image_base64(image_data: str) -> None:
         image_data (str): Base64-encoded image data
     """
     display(HTML(f'<img src="data:image/jpeg;base64,{image_data}" />'))
+
+
+__all__ = [
+    "display_image_base64",
+    "load_image_base64",
+]
