@@ -4,6 +4,7 @@ import re
 
 from docling.document_converter import DocumentConverter
 from dotenv import load_dotenv
+from langchain_core.tools import tool
 
 load_dotenv()
 
@@ -32,3 +33,9 @@ def webloader(urls: str | list[str]) -> list[str | None]:
     max_workers = min(len(urls), os.cpu_count(), 10)
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
         return list(executor.map(_convert, urls))
+
+
+@tool
+def webloader_tool(urls: list[str]) -> list[str]:
+    """Load the web content from the given URLs."""
+    return webloader(urls)

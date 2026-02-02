@@ -2,6 +2,7 @@
 
 from dotenv import load_dotenv
 
+from .agents import ImageAnalysisAgent, WebLoaderAgent, WebSearchAgent
 from .clients import (
     ChatOpenRouter,
     MediaMessage,
@@ -10,8 +11,8 @@ from .clients import (
     parse_invoke,
     parse_stream,
 )
+from .clients.gemini import ChatGemini, GeminiEmbeddings, create_gemini_cache
 from .fs_tools import make_fs_tools
-from .gemini import ChatGemini, GeminiEmbeddings, create_gemini_cache
 from .parsing import StructuredOutput, get_metadata
 from .tools import get_tools
 from .usage_tracker import (
@@ -32,10 +33,13 @@ __all__ = [
     "ChatGemini",
     "ChatOpenRouter",
     "GeminiEmbeddings",
+    "ImageAnalysisAgent",
     "MediaMessage",
     "OpenRouterEmbeddings",
     "StructuredOutput",
     "UsageMetadata",
+    "WebLoaderAgent",
+    "WebSearchAgent",
     "create_capture_usage_node",
     "create_gemini_cache",
     "create_reset_usage_node",
