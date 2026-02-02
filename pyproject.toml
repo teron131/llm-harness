@@ -6,11 +6,11 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "docling>=2.71.0",
-    "google-genai>=0.2.0",
+    "google-genai>=1.61.0",
     "httpx>=0.28.1",
-    "langchain>=1.2.7",
+    "langchain>=1.2.8",
     "langchain-community>=0.4.1",
-    "langchain-google-genai>=2.0.0",
+    "langchain-google-genai>=4.2.0",
     "langchain-openai>=1.1.7",
     "langgraph>=1.0.7",
     "opencc>=1.2.0",
