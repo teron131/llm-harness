@@ -2,7 +2,6 @@
 
 from dotenv import load_dotenv
 
-from .agents import ImageAnalysisAgent, WebLoaderAgent, WebSearchAgent
 from .clients import (
     ChatOpenRouter,
     MediaMessage,
@@ -11,6 +10,7 @@ from .clients import (
     parse_invoke,
     parse_stream,
 )
+from .clients.agents import ImageAnalysisAgent, WebLoaderAgent, WebSearchAgent
 from .clients.gemini import ChatGemini, GeminiEmbeddings, create_gemini_cache
 from .fs_tools import make_fs_tools
 from .parsing import StructuredOutput, get_metadata

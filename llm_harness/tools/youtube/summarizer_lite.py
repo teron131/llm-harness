@@ -90,7 +90,13 @@ def garbage_filter_middleware(
                 temperature=0,
             ).with_structured_output(GarbageIdentification)
 
-            system_prompt = "Identify and remove garbage sections such as promotional and meaningless content such as cliche intros, outros, filler, sponsorships, and other irrelevant segments from the transcript. The transcript has line tags like [L1], [L2], etc. Return the ranges of tags that should be removed to clean the transcript."
+            system_prompt = (
+                "Identify transcript lines that are NOT part of the core content and should be removed.\n"
+                "Focus on: sponsors/ads/promos, discount codes, affiliate links, subscribe/like/call to action blocks, filler intros/outros, housekeeping, and other irrelevant segments.\n"
+                "The transcript contains line tags like [L1], [L2], etc.\n"
+                "Return ONLY the line ranges to remove (garbage_ranges).\n"
+                "If unsure about a segment, prefer excluding it."
+            )
 
             messages = [
                 SystemMessage(content=system_prompt),
@@ -117,9 +123,17 @@ def create_summarizer_agent(target_language: str | None = None):
         reasoning_effort="medium",
     )
 
-    system_prompt = "Summarize the transcript and create a comprehensive summary with clear structure, key insights, and meaningful keywords. Avoid meta-language phrases."
+    system_prompt = (
+        "Create a grounded, chronological summary of the transcript.\n"
+        "Rules:\n"
+        "- Ground every claim in the transcript; do not add unsupported details\n"
+        "- Exclude sponsors/ads/promos/calls to action entirely\n"
+        "- Avoid meta-language (no 'this video...', 'the speaker...', etc.)\n"
+        "- Prefer concrete facts, names, numbers, and steps when present\n"
+        "- Ensure output matches the provided response schema"
+    )
     if target_language:
-        system_prompt += f" Output the summary in {target_language}."
+        system_prompt += f"\nOUTPUT LANGUAGE (REQUIRED): {target_language}"
 
     agent = create_agent(
         model=llm,
