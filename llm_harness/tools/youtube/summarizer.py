@@ -1,15 +1,19 @@
 """YouTube video transcript summarization using LangChain with LangGraph self-checking workflow."""
 
 from collections.abc import Generator
-from typing import Literal
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel
 
 from ...clients import ChatOpenRouter
-from ...fast_copy import TagRange, filter_content, tag_content, untag_content
-from ...text_utils import s2hk
+from ...fast_copy import filter_content, tag_content, untag_content
+from .prompts import get_garbage_filter_prompt, get_langchain_summary_prompt, get_quality_check_prompt
+from .schemas import (
+    GarbageIdentification,
+    Quality,
+    Summary,
+)
 from .scrapper import YouTubeScrapperResult, scrape_youtube
 from .utils import is_youtube_url
 
@@ -28,107 +32,6 @@ TARGET_LANGUAGE = "en"  # ISO language code (en, es, fr, de, etc.)
 # ============================================================================
 # Data Models
 # ============================================================================
-
-
-class Chapter(BaseModel):
-    """Represents a single chapter in the summary."""
-
-    header: str = Field(description="A concise chapter heading.")
-    summary: str = Field(
-        description="A substantive chapter description grounded in the content. Include key facts (numbers/names/steps) when present. Avoid meta-language like 'the video', 'the author', 'the speaker says'—state the content directly."
-    )
-    key_points: list[str] = Field(description="Important takeaways and insights from this chapter")
-
-    @field_validator("header", "summary")
-    def convert_string_to_hk(cls, value: str) -> str:
-        """Convert string fields to Traditional Chinese."""
-        return s2hk(value)
-
-    @field_validator("key_points")
-    def convert_list_to_hk(cls, value: list[str]) -> list[str]:
-        """Convert list fields to Traditional Chinese."""
-        return [s2hk(item) for item in value]
-
-
-class Summary(BaseModel):
-    """Complete summary of video content."""
-
-    title: str = Field(description="The main title or topic of the video content")
-    summary: str = Field(description="An end-to-end summary of the whole content (main thesis + arc), written in direct statements without meta-language.")
-    takeaways: list[str] = Field(
-        description="Key insights and actionable takeaways for the audience",
-        min_length=3,
-        max_length=8,
-    )
-    chapters: list[Chapter] = Field(description="Chronological, non-overlapping chapters covering the core content.")
-    keywords: list[str] = Field(
-        description="The most relevant keywords in the summary worthy of highlighting",
-        min_length=3,
-        max_length=3,
-    )
-    target_language: str | None = Field(default=None, description="The language the content to be translated to")
-
-    @field_validator("title", "summary")
-    def convert_string_to_hk(cls, value: str) -> str:
-        """Convert string fields to Traditional Chinese."""
-        return s2hk(value)
-
-    @field_validator("takeaways", "keywords")
-    def convert_list_to_hk(cls, value: list[str]) -> list[str]:
-        """Convert list fields to Traditional Chinese."""
-        return [s2hk(item) for item in value]
-
-
-class Rate(BaseModel):
-    """Quality rating for a single aspect."""
-
-    rate: Literal["Fail", "Refine", "Pass"] = Field(description="Score for the quality aspect")
-    reason: str = Field(description="Reason for the score")
-
-
-class Quality(BaseModel):
-    """Quality assessment of the summary."""
-
-    completeness: Rate = Field(description="Rate for completeness: The entire transcript has been considered")
-    structure: Rate = Field(description="Rate for structure: The result is in desired structures")
-    no_garbage: Rate = Field(
-        description="Rate for no_garbage: The promotional and meaningless content such as cliche intros, outros, filler, sponsorships, and other irrelevant segments are effectively removed"
-    )
-    meta_language_avoidance: Rate = Field(description="Rate for meta-language avoidance: No phrases like 'This chapter introduces', 'This section covers', etc.")
-    useful_keywords: Rate = Field(description="Rate for keywords: The keywords are useful for highlighting the summary")
-    correct_language: Rate = Field(description="Rate for language: Match the original language of the transcript or user requested")
-
-    @property
-    def all_aspects(self) -> list[Rate]:
-        """Return all quality aspects as a list."""
-        return [
-            self.completeness,
-            self.structure,
-            self.no_garbage,
-            self.meta_language_avoidance,
-            self.useful_keywords,
-            self.correct_language,
-        ]
-
-    @property
-    def percentage_score(self) -> int:
-        """Calculate percentage score based on Pass/Refine/Fail ratings."""
-        aspects = self.all_aspects
-        pass_count = sum(1 for a in aspects if a.rate == "Pass")
-        refine_count = sum(1 for a in aspects if a.rate == "Refine")
-        # Pass = 100%, Refine = 50%, Fail = 0%
-        return int((pass_count * 100 + refine_count * 50) / len(aspects))
-
-    @property
-    def is_acceptable(self) -> bool:
-        """Check if quality score meets minimum threshold."""
-        return self.percentage_score >= MIN_QUALITY_SCORE
-
-
-class GarbageIdentification(BaseModel):
-    """List of identified garbage sections in a transcript."""
-
-    garbage_ranges: list[TagRange] = Field(description="List of line ranges identified as promotional or irrelevant content")
 
 
 class SummarizerState(BaseModel):
@@ -167,13 +70,7 @@ def garbage_filter_node(state: SummarizerState) -> dict:
         reasoning_effort="low",
     ).with_structured_output(GarbageIdentification)
 
-    system_prompt = (
-        "Identify transcript lines that are NOT part of the core content and should be removed.\n"
-        "Focus on: sponsors/ads/promos, discount codes, affiliate links, subscribe/like/call to action blocks, filler intros/outros, housekeeping, and other irrelevant segments.\n"
-        "The transcript contains line tags like [L1], [L2], etc.\n"
-        "Return ONLY the line ranges to remove (garbage_ranges).\n"
-        "If unsure about a segment, prefer excluding it."
-    )
+    system_prompt = get_garbage_filter_prompt()
 
     messages = [
         SystemMessage(content=system_prompt),
@@ -200,17 +97,7 @@ def summary_node(state: SummarizerState) -> dict:
         reasoning_effort="medium",
     ).with_structured_output(Summary)
 
-    system_prompt = (
-        "Create a grounded, chronological summary of the transcript.\n"
-        "Rules:\n"
-        "- Ground every claim in the transcript; do not add unsupported details\n"
-        "- Exclude sponsors/ads/promos/calls to action entirely\n"
-        "- Avoid meta-language (no 'this video...', 'the speaker...', etc.)\n"
-        "- Prefer concrete facts, names, numbers, and steps when present\n"
-        "- Ensure output matches the provided response schema"
-    )
-    if state.target_language:
-        system_prompt += f"\nOUTPUT LANGUAGE (REQUIRED): {state.target_language}"
+    system_prompt = get_langchain_summary_prompt(target_language=state.target_language)
 
     messages = [
         SystemMessage(content=system_prompt),
@@ -233,16 +120,7 @@ def quality_node(state: SummarizerState) -> dict:
         reasoning_effort="low",
     ).with_structured_output(Quality)
 
-    system_prompt = (
-        "Evaluate the summary against the transcript.\n"
-        "For each aspect in the response schema, return a rating (Fail/Refine/Pass) and a specific, actionable reason.\n"
-        "Rules:\n"
-        "- Be strict about transcript grounding\n"
-        "- Treat any sponsor/promo/call to action content as a failure for no_garbage\n"
-        "- Treat meta-language as a failure for meta_language_avoidance"
-    )
-    if state.target_language:
-        system_prompt += f"\nVerify the output language matches: {state.target_language}"
+    system_prompt = get_quality_check_prompt(target_language=state.target_language)
 
     summary_json = state.summary.model_dump_json() if state.summary else "No summary provided"
     messages = [

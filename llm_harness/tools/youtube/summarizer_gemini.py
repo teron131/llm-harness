@@ -10,7 +10,10 @@ from typing import Literal
 
 from google import genai
 from google.genai import types
-from pydantic import BaseModel, Field
+
+from ...clients.usage_tracker import track_usage
+from .prompts import get_gemini_summary_prompt
+from .schemas import Summary as VideoAnalysis
 
 logger = logging.getLogger(__name__)
 
@@ -23,108 +26,19 @@ USD_PER_M_TOKENS_BY_MODEL = {
 }
 
 
-class Chapter(BaseModel):
-    """Represents a single chapter in the video summary."""
-
-    title: str = Field(
-        description="A concise chapter heading.",
-    )
-    description: str = Field(
-        description="A substantive chapter description grounded in the content. Include key facts (numbers/names/steps) when present. Avoid meta-language like 'the video', 'the author', 'the speaker says'—state the content directly.",
-    )
-    start_time: str | None = Field(
-        None,
-        description="Optional chapter start timestamp in the format MM:SS.",
-    )
-    end_time: str | None = Field(
-        None,
-        description="Optional chapter end timestamp matching the same format as start_time.",
-    )
-
-
-class VideoAnalysis(BaseModel):
-    """Complete analysis of a YouTube video."""
-
-    overview: str = Field(
-        description="An end-to-end summary of the whole content (main thesis + arc), written in direct statements without meta-language.",
-    )
-    chapters: list[Chapter] = Field(
-        min_length=1,
-        description="Chronological, non-overlapping chapters covering the core content.",
-    )
-
-
-def _build_prompt(
-    target_language: str = "auto",
-    title: str | None = None,
-    description: str | None = None,
-) -> str:
-    """Build the system prompt for video analysis."""
-    # Language descriptions mapping
-    lang_descriptions = {
-        "auto": "Use the same language as the video, or English if the language is unclear",
-        "en": "English (US)",
-        "zh-TW": "Traditional Chinese (繁體中文)",
-    }
-
-    # Determine language instruction
-    lang_desc = lang_descriptions.get(target_language, target_language)
-    instruction = lang_desc if target_language == "auto" else f"Write ALL output in {lang_desc}. Do not use English or any other language."
-
-    language_instruction = f"- OUTPUT LANGUAGE (REQUIRED): {instruction}"
-
-    metadata_parts = []
-    if title:
-        metadata_parts.append(f"Video Title: {title}")
-    if description:
-        metadata_parts.append(f"Video Description: {description}")
-
-    metadata = ""
-    if metadata_parts:
-        metadata = "\n# CONTEXTUAL INFORMATION:\n" + "\n".join(metadata_parts) + "\n"
-
-    prompt_lines = [
-        "Create a grounded, chronological summary.",
-        metadata,
-        language_instruction,
-        "",
-        "SOURCE: You are given the full video. Use BOTH spoken content and visuals (on-screen text/slides/charts/code/UI). Do not invent details that are not clearly supported by what you can see/hear.",
-        "",
-        "Return JSON only (no extra text) with:",
-        "- overview: string",
-        "- chapters: array of { title: string, description: string, start_time?: string, end_time?: string }",
-        "(start_time/end_time are optional MM:SS; omit if unsure)",
-        "",
-        "Rules:",
-        "- Chapters must be chronological and non-overlapping",
-        "- Avoid meta-language (no 'this video...' framing)",
-        "- Exclude sponsors/promos/calls to action entirely",
-    ]
-
-    return "\n".join(prompt_lines)
-
-
 def _calculate_cost(
     model: str,
     prompt_tokens: int,
     total_tokens: int,
-) -> dict | None:
+) -> float:
     """Calculate estimated cost based on usage."""
     pricing = USD_PER_M_TOKENS_BY_MODEL.get(model)
     if not pricing:
-        return None
+        return 0.0
 
     output_tokens = max(0, total_tokens - prompt_tokens)
     estimated_usd = (prompt_tokens / 1_000_000) * pricing["input"] + (output_tokens / 1_000_000) * pricing["output"]
-
-    return {
-        "currency": "USD",
-        "model": model,
-        "pricing_usd_per_m_tokens": pricing,
-        "prompt_tokens": prompt_tokens,
-        "output_tokens": output_tokens,
-        "estimated_usd": estimated_usd,
-    }
+    return estimated_usd
 
 
 def analyze_video_url(
@@ -159,7 +73,7 @@ def analyze_video_url(
 
     client = genai.Client(api_key=api_key, http_options={"timeout": timeout})
 
-    system_prompt = _build_prompt(
+    system_prompt = get_gemini_summary_prompt(
         target_language=target_language,
         title=video_title,
         description=video_description,
@@ -192,14 +106,22 @@ def analyze_video_url(
             logger.info(f"Usage metadata: {usage}")
 
             if hasattr(usage, "prompt_token_count") and hasattr(usage, "total_token_count"):
-                cost_info = _calculate_cost(
+                cost = _calculate_cost(
                     model,
                     usage.prompt_token_count,
                     usage.total_token_count,
                 )
-                if cost_info:
-                    logger.info(f"Estimated cost: ${cost_info['estimated_usd']:.4f} USD")
-                    logger.info(f"Tokens - Input: {cost_info['prompt_tokens']}, Output: {cost_info['output_tokens']}")
+
+                output_tokens = usage.total_token_count - usage.prompt_token_count
+                track_usage(
+                    input_tokens=usage.prompt_token_count,
+                    output_tokens=output_tokens,
+                    cost=cost,
+                )
+
+                if cost > 0:
+                    logger.info(f"Estimated cost: ${cost:.4f} USD")
+                    logger.info(f"Tokens - Input: {usage.prompt_token_count}, Output: {output_tokens}")
 
         return analysis
 

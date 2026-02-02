@@ -9,15 +9,15 @@ from langchain.agents.structured_output import ToolStrategy
 from langchain.tools import tool
 from langchain.tools.tool_node import ToolCallRequest
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
-from pydantic import BaseModel, Field
 
 from ...clients import ChatOpenRouter
 from ...fast_copy import (
-    TagRange,
     filter_content,
     tag_content,
     untag_content,
 )
+from .prompts import get_garbage_filter_prompt, get_langchain_summary_prompt
+from .schemas import GarbageIdentification, Summary
 from .scrapper import scrape_youtube as _scrape_youtube
 from .utils import is_youtube_url
 
@@ -45,33 +45,6 @@ def scrape_youtube(youtube_url: str) -> str:
     return result.parsed_transcript
 
 
-class Chapter(BaseModel):
-    """Represents a single chapter in the summary."""
-
-    header: str = Field(description="A concise chapter heading.")
-    summary: str = Field(
-        description="A substantive chapter description grounded in the content. Include key facts (numbers/names/steps) when present. Avoid meta-language like 'the video', 'the author', 'the speaker says'—state the content directly."
-    )
-    key_points: list[str] = Field(description="Important takeaways and insights from this chapter")
-
-
-class Summary(BaseModel):
-    """Complete summary of video content."""
-
-    title: str = Field(description="The main title or topic of the video content")
-    summary: str = Field(description="An end-to-end summary of the whole content (main thesis + arc), written in direct statements without meta-language.")
-    takeaways: list[str] = Field(description="Key insights and actionable takeaways for the audience")
-    chapters: list[Chapter] = Field(description="Chronological, non-overlapping chapters covering the core content.")
-    keywords: list[str] = Field(description="The most relevant keywords in the summary worthy of highlighting")
-    target_language: str | None = Field(default=None, description="The language the content to be translated to")
-
-
-class GarbageIdentification(BaseModel):
-    """List of identified garbage sections in a content block."""
-
-    garbage_ranges: list[TagRange] = Field(description="List of line ranges identified as promotional or irrelevant content")
-
-
 @wrap_tool_call
 def garbage_filter_middleware(
     request: ToolCallRequest,
@@ -92,13 +65,7 @@ def garbage_filter_middleware(
                 temperature=0,
             ).with_structured_output(GarbageIdentification)
 
-            system_prompt = (
-                "Identify transcript lines that are NOT part of the core content and should be removed.\n"
-                "Focus on: sponsors/ads/promos, discount codes, affiliate links, subscribe/like/call to action blocks, filler intros/outros, housekeeping, and other irrelevant segments.\n"
-                "The transcript contains line tags like [L1], [L2], etc.\n"
-                "Return ONLY the line ranges to remove (garbage_ranges).\n"
-                "If unsure about a segment, prefer excluding it."
-            )
+            system_prompt = get_garbage_filter_prompt()
 
             messages = [
                 SystemMessage(content=system_prompt),
@@ -125,18 +92,7 @@ def create_summarizer_agent(target_language: str | None = None):
         reasoning_effort="medium",
     )
 
-    system_prompt = (
-        "Create a grounded, chronological summary of the transcript.\n"
-        "Rules:\n"
-        "- Ground every claim in the transcript; do not add unsupported details\n"
-        "- Exclude sponsors/ads/promos/calls to action entirely\n"
-        "- Avoid meta-language (no 'this video...', 'the speaker...', etc.)\n"
-        "- Prefer concrete facts, names, numbers, and steps when present\n"
-        "- Ensure output matches the provided response schema\n"
-        "- Return JSON only"
-    )
-    if target_language:
-        system_prompt += f"\nOUTPUT LANGUAGE (REQUIRED): {target_language}"
+    system_prompt = get_langchain_summary_prompt(target_language=target_language)
 
     agent = create_agent(
         model=llm,
@@ -162,23 +118,16 @@ def _parse_result(summary: Summary) -> str:
         "=" * 80,
         "SUMMARY:",
         "=" * 80,
-        f"\nTitle: {summary.title}",
-        f"\nSummary:\n{summary.summary}",
-        "\nTakeaways:",
+        f"\nOverview:\n{summary.overview}",
+        f"\nChapters ({len(summary.chapters)}):",
     ]
 
-    for i, takeaway in enumerate(summary.takeaways, 1):
-        lines.append(f"  {i}. {takeaway}")
-
-    lines.append(f"\nKeywords: {', '.join(summary.keywords)}")
-    lines.append(f"\nChapters ({len(summary.chapters)}):")
-
     for i, chapter in enumerate(summary.chapters, 1):
-        lines.append(f"\n  Chapter {i}: {chapter.header}")
-        lines.append(f"    Summary: {chapter.summary}")
-        lines.append("    Key Points:")
-        for point in chapter.key_points:
-            lines.append(f"      - {point}")
+        lines.append(f"\n  Chapter {i}: {chapter.title}")
+        lines.append(f"    Summary: {chapter.description}")
+        if chapter.start_time or chapter.end_time:
+            time_range = f"{chapter.start_time or '?'} - {chapter.end_time or '?'}"
+            lines.append(f"    Time: {time_range}")
 
     return "\n".join(lines)
 
