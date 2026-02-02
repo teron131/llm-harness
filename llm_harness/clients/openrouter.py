@@ -9,8 +9,6 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 load_dotenv()
 
-OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
-
 
 def _is_openrouter(model: str) -> bool:
     """Check if model is OpenRouter format (PROVIDER/MODEL)."""
@@ -69,7 +67,7 @@ def ChatOpenRouter(
     return ChatOpenAI(
         model=model,
         api_key=api_key,
-        base_url=OPENROUTER_BASE_URL,
+        base_url="https://openrouter.ai/api/v1",
         temperature=temperature,
         reasoning_effort=reasoning_effort,
         extra_body=extra_body or None,
@@ -94,7 +92,7 @@ def OpenRouterEmbeddings(
     return OpenAIEmbeddings(
         model=model,
         api_key=api_key,
-        base_url=OPENROUTER_BASE_URL,
+        base_url="https://openrouter.ai/api/v1",
         check_embedding_ctx_length=kwargs.pop("check_embedding_ctx_length", False),
         **kwargs,
     )
