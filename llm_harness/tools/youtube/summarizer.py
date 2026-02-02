@@ -33,8 +33,10 @@ TARGET_LANGUAGE = "en"  # ISO language code (en, es, fr, de, etc.)
 class Chapter(BaseModel):
     """Represents a single chapter in the summary."""
 
-    header: str = Field(description="A descriptive title for the chapter")
-    summary: str = Field(description="A comprehensive summary of the chapter content")
+    header: str = Field(description="A concise chapter heading.")
+    summary: str = Field(
+        description="A substantive chapter description grounded in the content. Include key facts (numbers/names/steps) when present. Avoid meta-language like 'the video', 'the author', 'the speaker says'—state the content directly."
+    )
     key_points: list[str] = Field(description="Important takeaways and insights from this chapter")
 
     @field_validator("header", "summary")
@@ -52,13 +54,13 @@ class Summary(BaseModel):
     """Complete summary of video content."""
 
     title: str = Field(description="The main title or topic of the video content")
-    summary: str = Field(description="A comprehensive summary of the video content")
+    summary: str = Field(description="An end-to-end summary of the whole content (main thesis + arc), written in direct statements without meta-language.")
     takeaways: list[str] = Field(
         description="Key insights and actionable takeaways for the audience",
         min_length=3,
         max_length=8,
     )
-    chapters: list[Chapter] = Field(description="Structured breakdown of content into logical chapters")
+    chapters: list[Chapter] = Field(description="Chronological, non-overlapping chapters covering the core content.")
     keywords: list[str] = Field(
         description="The most relevant keywords in the summary worthy of highlighting",
         min_length=3,

@@ -48,8 +48,10 @@ def scrape_youtube(youtube_url: str) -> str:
 class Chapter(BaseModel):
     """Represents a single chapter in the summary."""
 
-    header: str = Field(description="A descriptive title for the chapter")
-    summary: str = Field(description="A comprehensive summary of the chapter content")
+    header: str = Field(description="A concise chapter heading.")
+    summary: str = Field(
+        description="A substantive chapter description grounded in the content. Include key facts (numbers/names/steps) when present. Avoid meta-language like 'the video', 'the author', 'the speaker says'—state the content directly."
+    )
     key_points: list[str] = Field(description="Important takeaways and insights from this chapter")
 
 
@@ -57,9 +59,9 @@ class Summary(BaseModel):
     """Complete summary of video content."""
 
     title: str = Field(description="The main title or topic of the video content")
-    summary: str = Field(description="A comprehensive summary of the video content")
+    summary: str = Field(description="An end-to-end summary of the whole content (main thesis + arc), written in direct statements without meta-language.")
     takeaways: list[str] = Field(description="Key insights and actionable takeaways for the audience")
-    chapters: list[Chapter] = Field(description="Structured breakdown of content into logical chapters")
+    chapters: list[Chapter] = Field(description="Chronological, non-overlapping chapters covering the core content.")
     keywords: list[str] = Field(description="The most relevant keywords in the summary worthy of highlighting")
     target_language: str | None = Field(default=None, description="The language the content to be translated to")
 
@@ -130,7 +132,8 @@ def create_summarizer_agent(target_language: str | None = None):
         "- Exclude sponsors/ads/promos/calls to action entirely\n"
         "- Avoid meta-language (no 'this video...', 'the speaker...', etc.)\n"
         "- Prefer concrete facts, names, numbers, and steps when present\n"
-        "- Ensure output matches the provided response schema"
+        "- Ensure output matches the provided response schema\n"
+        "- Return JSON only"
     )
     if target_language:
         system_prompt += f"\nOUTPUT LANGUAGE (REQUIRED): {target_language}"

@@ -27,18 +27,18 @@ class Chapter(BaseModel):
     """Represents a single chapter in the video summary."""
 
     title: str = Field(
-        description="A concise heading summarizing the chapter's main topic",
+        description="A concise chapter heading.",
     )
     description: str = Field(
-        description="A substantive description with key viewpoints/arguments and concrete facts (numbers/names/steps when present). Avoid meta-language like 'the video', 'the author', 'the speaker says'—state the content directly",
+        description="A substantive chapter description grounded in the content. Include key facts (numbers/names/steps) when present. Avoid meta-language like 'the video', 'the author', 'the speaker says'—state the content directly.",
     )
     start_time: str | None = Field(
         None,
-        description="Chapter start timestamp in the format MM:SS (optional; omit if unsure)",
+        description="Optional chapter start timestamp in the format MM:SS.",
     )
     end_time: str | None = Field(
         None,
-        description="Chapter end timestamp in MM:SS format (optional; omit if unsure)",
+        description="Optional chapter end timestamp matching the same format as start_time.",
     )
 
 
@@ -46,11 +46,11 @@ class VideoAnalysis(BaseModel):
     """Complete analysis of a YouTube video."""
 
     overview: str = Field(
-        description="An overall summary covering the full video end-to-end, written without meta-language and capturing the main thesis and arc",
+        description="An end-to-end summary of the whole content (main thesis + arc), written in direct statements without meta-language.",
     )
     chapters: list[Chapter] = Field(
         min_length=1,
-        description="Chronological, non-ad chapters that capture the video's core content",
+        description="Chronological, non-overlapping chapters covering the core content.",
     )
 
 
@@ -60,14 +60,18 @@ def _build_prompt(
     description: str | None = None,
 ) -> str:
     """Build the system prompt for video analysis."""
-    if target_language == "auto":
-        language_instruction = "OUTPUT LANGUAGE (REQUIRED): Match the video's language; use English only if unclear"
-    elif target_language == "zh-TW":
-        language_instruction = "OUTPUT LANGUAGE (REQUIRED): Traditional Chinese (繁體中文) only"
-    elif target_language == "en":
-        language_instruction = "OUTPUT LANGUAGE (REQUIRED): English (US) only"
-    else:
-        language_instruction = f"OUTPUT LANGUAGE (REQUIRED): {target_language} only"
+    # Language descriptions mapping
+    lang_descriptions = {
+        "auto": "Use the same language as the video, or English if the language is unclear",
+        "en": "English (US)",
+        "zh-TW": "Traditional Chinese (繁體中文)",
+    }
+
+    # Determine language instruction
+    lang_desc = lang_descriptions.get(target_language, target_language)
+    instruction = lang_desc if target_language == "auto" else f"Write ALL output in {lang_desc}. Do not use English or any other language."
+
+    language_instruction = f"- OUTPUT LANGUAGE (REQUIRED): {instruction}"
 
     metadata_parts = []
     if title:
@@ -84,15 +88,17 @@ def _build_prompt(
         metadata,
         language_instruction,
         "",
-        "SOURCE: Full video is provided. Use both audio and visuals (on-screen text/slides/charts/code/UI).",
+        "SOURCE: You are given the full video. Use BOTH spoken content and visuals (on-screen text/slides/charts/code/UI). Do not invent details that are not clearly supported by what you can see/hear.",
+        "",
+        "Return JSON only (no extra text) with:",
+        "- overview: string",
+        "- chapters: array of { title: string, description: string, start_time?: string, end_time?: string }",
+        "(start_time/end_time are optional MM:SS; omit if unsure)",
         "",
         "Rules:",
-        "- Ground every claim in what can be seen/heard; do not invent details",
-        "- Exclude sponsors/ads/promos/calls to action entirely (if unsure, exclude and stitch content)",
         "- Chapters must be chronological and non-overlapping",
-        "- Avoid meta-language (no 'this video...', 'the creator...', 'the speaker...', etc.)",
-        "- Output must match the provided response schema",
-        "- Return JSON only",
+        "- Avoid meta-language (no 'this video...' framing)",
+        "- Exclude sponsors/promos/calls to action entirely",
     ]
 
     return "\n".join(prompt_lines)
