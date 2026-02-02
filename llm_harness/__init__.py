@@ -6,6 +6,8 @@ from .clients import (
     ChatOpenRouter,
     MediaMessage,
     OpenRouterEmbeddings,
+    StructuredOutput,
+    get_metadata,
     parse_batch,
     parse_invoke,
     parse_stream,
@@ -13,7 +15,6 @@ from .clients import (
 from .clients.agents import ImageAnalysisAgent, WebLoaderAgent, WebSearchAgent
 from .clients.gemini import ChatGemini, GeminiEmbeddings, create_gemini_cache
 from .fs_tools import make_fs_tools
-from .parsing import StructuredOutput, get_metadata
 from .tools import get_tools
 from .usage_tracker import (
     EMPTY_USAGE,
