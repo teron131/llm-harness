@@ -11,19 +11,19 @@ from langchain.tools.tool_node import ToolCallRequest
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from pydantic import BaseModel, Field
 
-from llm_harness.clients import ChatOpenRouter
-from llm_harness.fast_copy import (
+from ...clients import ChatOpenRouter
+from ...fast_copy import (
     TagRange,
     filter_content,
     tag_content,
     untag_content,
 )
-from llm_harness.tools.youtube.scrapper import scrape_youtube as _scrape_youtube
-from llm_harness.tools.youtube.utils import is_youtube_url
+from .scrapper import scrape_youtube as _scrape_youtube
+from .utils import is_youtube_url
 
 load_dotenv()
 
-MODEL = "x-ai/grok-4.1-fast"
+MODEL = "google/gemini-3-flash-preview"
 FAST_MODEL = "google/gemini-2.5-flash-lite-preview-09-2025"
 
 
