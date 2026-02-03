@@ -3,7 +3,7 @@ from functools import wraps
 from langchain_core.tools import BaseTool, tool
 from rich import print
 
-from .web import webloader
+from .web import webloader, webloader_tool
 from .youtube import youtube_loader
 
 
@@ -13,22 +13,18 @@ def print_tool_info(tool_func: BaseTool) -> None:
     print(f"Arguments: {tool_func.args}\n")
 
 
+@tool
+@wraps(youtube_loader)
+def youtubeloader_tool(url: str) -> str:
+    return youtube_loader(url)
+
+
 def get_tools() -> list[BaseTool]:
     """Get the list of available tools for the UniversalChain. The tools are wrapped with their original docstrings and registered as langchain tools.
 
     Returns:
         List[BaseTool]: List of tool functions with their docstrings preserved
     """
-
-    @tool
-    @wraps(webloader)
-    def webloader_tool(url: str) -> str:
-        return webloader(url)
-
-    @tool
-    @wraps(youtube_loader)
-    def youtubeloader_tool(url: str) -> str:
-        return youtube_loader(url)
 
     tools = [webloader_tool, youtubeloader_tool]
 
@@ -42,6 +38,7 @@ def get_tools() -> list[BaseTool]:
 __all__ = [
     "get_tools",
     "webloader",
+    "webloader_tool",
     "youtube_loader",
-    "youtubeloader",
+    "youtubeloader_tool",
 ]
