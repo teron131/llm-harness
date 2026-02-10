@@ -31,6 +31,8 @@ class BaseHarnessAgent:
         **model_kwargs: Any,
     ):
         model = model or os.getenv("FAST_LLM")
+        if not model:
+            raise ValueError("No model configured. Pass `model=...` or set `FAST_LLM`.")
         self.system_prompt = system_prompt
         self.response_format = response_format
         self.model = ChatOpenRouter(
@@ -116,7 +118,11 @@ class WebLoaderAgent(BaseHarnessAgent):
 class ImageAnalysisAgent(BaseHarnessAgent):
     """Agent that accepts image inputs and returns structured or plain responses."""
 
-    def invoke(self, image_paths: str | Path | list[str | Path], description: str = "") -> BaseModel | str:
+    def invoke(
+        self,
+        image_paths: str | Path | list[str | Path],
+        description: str = "",
+    ) -> BaseModel | str:
         """Analyze one or more images with an optional description/prompt."""
         response = self.agent.invoke({"messages": [MediaMessage(paths=image_paths, description=description)]})
         return self._process_response(response)
