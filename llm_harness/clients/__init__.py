@@ -2,6 +2,7 @@ from .agents import (
     BaseHarnessAgent,
     ImageAnalysisAgent,
     WebLoaderAgent,
+    WebSearchLoaderAgent,
     WebSearchAgent,
 )
 from .gemini import ChatGemini, GeminiEmbeddings, create_gemini_cache
@@ -37,6 +38,7 @@ __all__ = [
     "StructuredOutput",
     "UsageMetadata",
     "WebLoaderAgent",
+    "WebSearchLoaderAgent",
     "WebSearchAgent",
     "create_capture_usage_node",
     "create_gemini_cache",

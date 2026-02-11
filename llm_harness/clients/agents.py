@@ -115,6 +115,37 @@ class WebLoaderAgent(BaseHarnessAgent):
         return self._process_response(response)
 
 
+class WebSearchLoaderAgent(BaseHarnessAgent):
+    """Agent with both web search and web loader tool enabled."""
+
+    def __init__(
+        self,
+        model: str | None = None,
+        temperature: float = 0,
+        reasoning_effort: ReasoningEffort = "medium",
+        system_prompt: str | None = None,
+        response_format: type[BaseModel] | None = None,
+        web_search_max_results: int = 5,
+        **model_kwargs: Any,
+    ):
+        super().__init__(
+            model=model,
+            temperature=temperature,
+            reasoning_effort=reasoning_effort,
+            system_prompt=system_prompt,
+            response_format=response_format,
+            tools=[webloader_tool],
+            web_search=True,
+            web_search_max_results=web_search_max_results,
+            **model_kwargs,
+        )
+
+    def invoke(self, user_input: str) -> BaseModel | str:
+        """Run with both web-search and web-loader capabilities."""
+        response = self.agent.invoke({"messages": [HumanMessage(content=user_input)]})
+        return self._process_response(response)
+
+
 class ImageAnalysisAgent(BaseHarnessAgent):
     """Agent that accepts image inputs and returns structured or plain responses."""
 
