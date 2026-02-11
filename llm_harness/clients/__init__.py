@@ -2,8 +2,8 @@ from .agents import (
     BaseHarnessAgent,
     ImageAnalysisAgent,
     WebLoaderAgent,
-    WebSearchLoaderAgent,
     WebSearchAgent,
+    WebSearchLoaderAgent,
 )
 from .gemini import ChatGemini, GeminiEmbeddings, create_gemini_cache
 from .multimodal import MediaMessage
@@ -38,8 +38,8 @@ __all__ = [
     "StructuredOutput",
     "UsageMetadata",
     "WebLoaderAgent",
-    "WebSearchLoaderAgent",
     "WebSearchAgent",
+    "WebSearchLoaderAgent",
     "create_capture_usage_node",
     "create_gemini_cache",
     "create_reset_usage_node",
