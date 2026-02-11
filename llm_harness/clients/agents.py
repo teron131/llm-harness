@@ -64,6 +64,7 @@ class WebSearchAgent(BaseHarnessAgent):
         reasoning_effort: ReasoningEffort = "medium",
         system_prompt: str | None = None,
         response_format: type[BaseModel] | None = None,
+        web_search_engine: Literal["native", "exa"] | None = None,
         web_search_max_results: int = 5,
         **model_kwargs: Any,
     ):
@@ -75,6 +76,7 @@ class WebSearchAgent(BaseHarnessAgent):
             system_prompt=system_prompt,
             response_format=response_format,
             web_search=True,
+            web_search_engine=web_search_engine,
             web_search_max_results=web_search_max_results,
             **model_kwargs,
         )
@@ -125,6 +127,7 @@ class WebSearchLoaderAgent(BaseHarnessAgent):
         reasoning_effort: ReasoningEffort = "medium",
         system_prompt: str | None = None,
         response_format: type[BaseModel] | None = None,
+        web_search_engine: Literal["native", "exa"] | None = None,
         web_search_max_results: int = 5,
         **model_kwargs: Any,
     ):
@@ -136,6 +139,7 @@ class WebSearchLoaderAgent(BaseHarnessAgent):
             response_format=response_format,
             tools=[webloader_tool],
             web_search=True,
+            web_search_engine=web_search_engine,
             web_search_max_results=web_search_max_results,
             **model_kwargs,
         )
