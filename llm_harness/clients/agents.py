@@ -29,7 +29,7 @@ class ExaAgent:
         self.system_prompt = system_prompt
         self.output_schema = output_schema
 
-    def get_answer(self, query: str) -> BaseModel:
+    def invoke(self, query: str) -> BaseModel:
         result = self.exa.answer(
             query=query,
             system_prompt=self.system_prompt,
