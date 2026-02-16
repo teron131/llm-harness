@@ -4,6 +4,8 @@ import os
 from pathlib import Path
 from typing import Any, Literal
 
+from dotenv import load_dotenv
+from exa_py import Exa
 from langchain.agents import create_agent
 from langchain.agents.structured_output import ToolStrategy
 from langchain_core.messages import HumanMessage
@@ -14,7 +16,26 @@ from ..tools.web import webloader_tool
 from .multimodal import MediaMessage
 from .openrouter import ChatOpenRouter
 
+load_dotenv()
+
 ReasoningEffort = Literal["minimal", "low", "medium", "high"]
+
+
+class ExaAgent:
+    """Exa API as web search subagent."""
+
+    def __init__(self, system_prompt: str, output_schema: type[BaseModel]):
+        self.exa = Exa(api_key=os.getenv("EXA_API_KEY"))
+        self.system_prompt = system_prompt
+        self.output_schema = output_schema
+
+    def get_answer(self, query: str) -> BaseModel:
+        result = self.exa.answer(
+            query=query,
+            system_prompt=self.system_prompt,
+            output_schema=self.output_schema.model_json_schema(),
+        )
+        return self.output_schema.model_validate(result.answer)
 
 
 class BaseHarnessAgent:

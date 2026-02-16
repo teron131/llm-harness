@@ -1,5 +1,6 @@
 from .agents import (
     BaseHarnessAgent,
+    ExaAgent,
     ImageAnalysisAgent,
     WebLoaderAgent,
     WebSearchAgent,
@@ -31,6 +32,7 @@ __all__ = [
     "BaseHarnessAgent",
     "ChatGemini",
     "ChatOpenRouter",
+    "ExaAgent",
     "GeminiEmbeddings",
     "ImageAnalysisAgent",
     "MediaMessage",
