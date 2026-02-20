@@ -2,7 +2,6 @@ import base64
 import io
 
 import httpx
-from IPython.display import HTML, display
 from PIL import Image
 
 
@@ -64,16 +63,6 @@ def load_image_base64(
     return _image_to_base64(resized_image, format)
 
 
-def display_image_base64(image_data: str) -> None:
-    """Display a base64 encoded image in IPython environments.
-
-    Args:
-        image_data (str): Base64-encoded image data
-    """
-    display(HTML(f'<img src="data:image/jpeg;base64,{image_data}" />'))
-
-
 __all__ = [
-    "display_image_base64",
     "load_image_base64",
 ]
