@@ -5,6 +5,9 @@ from ..agents.agents import (
     WebLoaderAgent,
     WebSearchAgent,
     WebSearchLoaderAgent,
+    YouTubeSummarizerGeminiAgent,
+    YouTubeSummarizerLiteAgent,
+    YouTubeSummarizerReActAgent,
 )
 from .gemini import ChatGemini, GeminiEmbeddings, create_gemini_cache
 from .multimodal import MediaMessage
@@ -42,6 +45,9 @@ __all__ = [
     "WebLoaderAgent",
     "WebSearchAgent",
     "WebSearchLoaderAgent",
+    "YouTubeSummarizerGeminiAgent",
+    "YouTubeSummarizerLiteAgent",
+    "YouTubeSummarizerReActAgent",
     "create_capture_usage_node",
     "create_gemini_cache",
     "create_reset_usage_node",

@@ -15,6 +15,10 @@ from pydantic import BaseModel
 from ..clients.multimodal import MediaMessage
 from ..clients.openrouter import ChatOpenRouter
 from ..tools.web import webloader_tool
+from .youtube.schemas import Summary
+from .youtube.summarizer import summarize_video as summarize_video_react
+from .youtube.summarizer_gemini import summarize_video as summarize_video_gemini
+from .youtube.summarizer_lite import summarize_video as summarize_video_lite
 
 load_dotenv()
 
@@ -182,3 +186,57 @@ class ImageAnalysisAgent(BaseHarnessAgent):
         """Analyze one or more images with an optional description/prompt."""
         response = self.agent.invoke({"messages": [MediaMessage(paths=image_paths, description=description)]})
         return self._process_response(response)
+
+
+class YouTubeSummarizerReActAgent:
+    """ReAct-based YouTube summarizer using the LangGraph workflow."""
+
+    def __init__(self, target_language: str | None = None):
+        self.target_language = target_language
+
+    def invoke(self, transcript_or_url: str) -> Summary:
+        """Summarize a transcript or YouTube URL."""
+        return summarize_video_react(
+            transcript_or_url=transcript_or_url,
+            target_language=self.target_language,
+        )
+
+
+class YouTubeSummarizerLiteAgent:
+    """Lightweight ReAct-based YouTube summarizer."""
+
+    def __init__(self, target_language: str | None = None):
+        self.target_language = target_language
+
+    def invoke(self, transcript_or_url: str) -> str:
+        """Summarize a transcript or YouTube URL."""
+        return summarize_video_lite(
+            transcript_or_url=transcript_or_url,
+            target_language=self.target_language,
+        )
+
+
+class YouTubeSummarizerGeminiAgent:
+    """Gemini multimodal YouTube summarizer."""
+
+    def __init__(
+        self,
+        model: str = "gemini-3-flash-preview",
+        thinking_level: ReasoningEffort = "medium",
+        target_language: str = "auto",
+        api_key: str | None = None,
+    ):
+        self.model = model
+        self.thinking_level = thinking_level
+        self.target_language = target_language
+        self.api_key = api_key
+
+    def invoke(self, video_url: str) -> Summary | None:
+        """Summarize a YouTube URL using Gemini multimodal input."""
+        return summarize_video_gemini(
+            video_url=video_url,
+            model=self.model,
+            thinking_level=self.thinking_level,
+            target_language=self.target_language,
+            api_key=self.api_key,
+        )
