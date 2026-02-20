@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Personal LLM harness"
 readme = "README.md"
 license = { file = "LICENSE" }
-requires-python = ">=3.14"
+requires-python = ">=3.13"
 dependencies = [
     "docling>=2.74.0",
     "exa-py>=2.4.0",
