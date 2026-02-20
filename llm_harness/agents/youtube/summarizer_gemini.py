@@ -11,7 +11,7 @@ from typing import Literal
 from google import genai
 from google.genai import types
 
-from ...clients.usage_tracker import track_usage
+from ...clients.usage import track_usage
 from .prompts import get_gemini_summary_prompt
 from .schemas import Summary
 
