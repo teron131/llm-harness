@@ -9,8 +9,8 @@ import os
 from typing import Any
 
 from dotenv import load_dotenv
+import httpx
 from pydantic import BaseModel, ConfigDict
-import requests
 
 from ...utils.youtube_utils import clean_text, clean_youtube_url, extract_video_id, is_youtube_url
 
@@ -96,18 +96,18 @@ def _fetch_scrape_creators(video_url: str) -> YouTubeScrapperResult | None:
         return None
 
     try:
-        response = requests.get(
+        response = httpx.get(
             SCRAPECREATORS_ENDPOINT,
             headers={"x-api-key": api_key},
             params={"url": video_url},
             timeout=DEFAULT_TIMEOUT_S,
         )
-    except requests.RequestException:
+    except httpx.RequestError:
         return None
 
     if response.status_code in {401, 403}:
         return None
-    if not response.ok:
+    if not response.is_success:
         return None
 
     try:
@@ -128,13 +128,13 @@ def _fetch_supadata(video_url: str) -> YouTubeScrapperResult | None:
         return None
 
     try:
-        response = requests.get(
+        response = httpx.get(
             SUPADATA_ENDPOINT,
             headers={"x-api-key": api_key},
             params={"url": video_url, "lang": "en", "text": "true", "mode": "auto"},
             timeout=DEFAULT_TIMEOUT_S,
         )
-    except requests.RequestException:
+    except httpx.RequestError:
         return None
 
     if response.status_code in {401, 403}:
@@ -142,7 +142,7 @@ def _fetch_supadata(video_url: str) -> YouTubeScrapperResult | None:
     if response.status_code == 202:
         # Supadata may return an async jobId for large videos.
         return None
-    if not response.ok:
+    if not response.is_success:
         return None
 
     try:

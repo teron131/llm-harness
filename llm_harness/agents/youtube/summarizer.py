@@ -232,7 +232,7 @@ def summarize_video(
 def stream_summarize_video(
     transcript_or_url: str,
     target_language: str | None = None,
-) -> Generator[SummarizerState, None, None]:
+) -> Generator[SummarizerState]:
     """Stream the summarization process with progress updates."""
     graph = create_graph()
     transcript = _extract_transcript(transcript_or_url)

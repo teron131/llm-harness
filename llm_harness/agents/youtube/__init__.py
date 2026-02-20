@@ -40,7 +40,7 @@ def youtube_loader(url: str) -> str:
 
     Raises:
         ValueError: If URL is invalid or API key is missing
-        requests.RequestException: If API request fails
+        httpx.RequestError: If API request fails
     """
     from ...tools.youtube.scraper import scrape_youtube
 

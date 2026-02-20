@@ -109,9 +109,9 @@ def parse_batch(
 
 
 def get_stream_generator(
-    stream: Generator[AIMessage, None, None],
+    stream: Generator[AIMessage],
     include_reasoning: bool = False,
-) -> Generator[str | tuple[str, str | None], None, None]:
+) -> Generator[str | tuple[str, str | None]]:
     """Yield streaming chunks, optionally with reasoning."""
     reasoning_yielded = False
 
@@ -128,7 +128,7 @@ def get_stream_generator(
 
 
 def parse_stream(
-    stream: Generator[AIMessage, None, None],
+    stream: Generator[AIMessage],
     include_reasoning: bool = False,
 ) -> str | tuple[str | None, str]:
     """Print streamed chunks and return the final result."""
