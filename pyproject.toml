@@ -23,7 +23,6 @@ dependencies = [
 
 [project.optional-dependencies]
 image = [
-    "ipython>=9.10.0",
     "pillow>=11.3.0",
 ]
 
