@@ -19,6 +19,14 @@ class StructuredOutput(BaseModel):
     parsed: BaseModel
 
 
+def _to_int(value: object) -> int:
+    return int(value or 0)
+
+
+def _to_float(value: object) -> float:
+    return float(value or 0.0)
+
+
 def get_metadata(ai_message: AIMessage) -> tuple[int, int, float]:
     """Return (input_tokens, output_tokens, cost) from an AIMessage.
 
@@ -31,8 +39,8 @@ def get_metadata(ai_message: AIMessage) -> tuple[int, int, float]:
     usage_metadata = getattr(ai_message, "usage_metadata", None)
     if isinstance(usage_metadata, dict) and usage_metadata:
         return (
-            int(usage_metadata.get("input_tokens") or 0),
-            int(usage_metadata.get("output_tokens") or 0),
+            _to_int(usage_metadata.get("input_tokens")),
+            _to_int(usage_metadata.get("output_tokens")),
             0.0,
         )
 
@@ -43,15 +51,15 @@ def get_metadata(ai_message: AIMessage) -> tuple[int, int, float]:
     token_usage = response_metadata.get("token_usage")
     if isinstance(token_usage, dict) and token_usage:
         return (
-            int(token_usage.get("prompt_tokens") or 0),
-            int(token_usage.get("completion_tokens") or 0),
-            float(token_usage.get("cost") or 0.0),
+            _to_int(token_usage.get("prompt_tokens")),
+            _to_int(token_usage.get("completion_tokens")),
+            _to_float(token_usage.get("cost")),
         )
 
     legacy_usage = response_metadata.get("usage_metadata")
     if isinstance(legacy_usage, dict) and legacy_usage:
-        input_tokens = int(legacy_usage.get("prompt_token_count") or legacy_usage.get("input_token_count") or 0)
-        output_tokens = int(legacy_usage.get("candidates_token_count") or legacy_usage.get("output_token_count") or 0)
+        input_tokens = _to_int(legacy_usage.get("prompt_token_count") or legacy_usage.get("input_token_count"))
+        output_tokens = _to_int(legacy_usage.get("candidates_token_count") or legacy_usage.get("output_token_count"))
         return input_tokens, output_tokens, 0.0
 
     return 0, 0, 0.0

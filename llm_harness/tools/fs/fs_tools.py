@@ -12,32 +12,41 @@ import subprocess
 
 from langchain_core.tools import tool
 
+PATH_TRAVERSAL_ERROR = "Path traversal not allowed"
+PATH_OUTSIDE_ROOT_ERROR = "Path outside root"
+
 
 @dataclass(frozen=True)
 class SandboxFS:
     root_dir: Path
 
     def resolve(self, user_path: str) -> Path:
-        p = user_path.strip()
-        if not p:
+        cleaned_path = user_path.strip()
+        if not cleaned_path:
             raise ValueError("Empty path")
-        if p.startswith("~"):
-            raise ValueError("Path traversal not allowed")
+        if cleaned_path.startswith("~"):
+            raise ValueError(PATH_TRAVERSAL_ERROR)
 
-        vpath = p if p.startswith("/") else f"/{p}"
-        if ".." in vpath:
-            raise ValueError("Path traversal not allowed")
+        virtual_path = cleaned_path if cleaned_path.startswith("/") else f"/{cleaned_path}"
+        if ".." in virtual_path:
+            raise ValueError(PATH_TRAVERSAL_ERROR)
 
-        full = (self.root_dir / vpath.lstrip("/")).resolve()
+        resolved_path = (self.root_dir / virtual_path.lstrip("/")).resolve()
         try:
-            full.relative_to(self.root_dir)
+            resolved_path.relative_to(self.root_dir)
         except ValueError as e:
-            raise ValueError("Path outside root") from e
-        return full
+            raise ValueError(PATH_OUTSIDE_ROOT_ERROR) from e
+        return resolved_path
 
 
 def make_fs_tools(*, root_dir: str | Path):
     fs = SandboxFS(Path(root_dir).resolve())
+
+    def _resolve_existing_file(path: str) -> Path:
+        file_path = fs.resolve(path)
+        if not file_path.exists() or not file_path.is_file():
+            raise FileNotFoundError(f"File not found: {path}")
+        return file_path
 
     @tool
     def fs_read_text(path: str) -> str:
@@ -47,10 +56,7 @@ def make_fs_tools(*, root_dir: str | Path):
             path: File path relative to the sandbox root (or virtual absolute like "/foo.txt").
         """
 
-        fp = fs.resolve(path)
-        if not fp.exists() or not fp.is_file():
-            raise FileNotFoundError(f"File not found: {path}")
-        return fp.read_text(encoding="utf-8")
+        return _resolve_existing_file(path).read_text(encoding="utf-8")
 
     @tool
     def fs_write_text(path: str, text: str) -> str:
@@ -79,9 +85,7 @@ def make_fs_tools(*, root_dir: str | Path):
             script: An ed program (commands + replacement lines). Prefer ending with `wq`.
         """
 
-        fp = fs.resolve(path)
-        if not fp.exists() or not fp.is_file():
-            raise FileNotFoundError(f"File not found: {path}")
+        fp = _resolve_existing_file(path)
 
         ed_path = shutil.which("ed")
         if not ed_path:

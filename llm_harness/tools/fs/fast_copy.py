@@ -36,27 +36,24 @@ def filter_content(tagged_text: str, ranges: list[TagRange]) -> str:
         return tagged_text
 
     # 1. Build tag mapping efficiently
-    tag_to_idx = {}
-    for i, line in enumerate(lines):
+    tag_to_idx: dict[str, int] = {}
+    for line_idx, line in enumerate(lines):
         if line.startswith("[L"):
             end_bracket = line.find("]")
             if end_bracket != -1:
-                tag_to_idx[line[: end_bracket + 1]] = i
+                tag_to_idx[line[: end_bracket + 1]] = line_idx
 
     # 2. Boolean mask (initialized to True = keep)
     keep_mask = [True] * len(lines)
 
     # 3. Mark ranges to remove
-    for r in ranges:
-        s = tag_to_idx.get(r.start_tag)
-        e = tag_to_idx.get(r.end_tag)
-        if s is not None and e is not None:
+    for tag_range in ranges:
+        start_idx = tag_to_idx.get(tag_range.start_tag)
+        end_idx = tag_to_idx.get(tag_range.end_tag)
+        if start_idx is not None and end_idx is not None:
             # Ensure correct ordering and inclusive range
-            start, end = (s, e) if s <= e else (e, s)
-            # Slice assignment is efficient in Python
-            length = end - start + 1
-            if length > 0:
-                keep_mask[start : end + 1] = [False] * length
+            first_idx, last_idx = sorted((start_idx, end_idx))
+            keep_mask[first_idx : last_idx + 1] = [False] * (last_idx - first_idx + 1)
 
     # 4. Filter and join
     return "\n".join(line for line, keep in zip(lines, keep_mask, strict=True) if keep)
