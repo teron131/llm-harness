@@ -16,6 +16,17 @@ logger = logging.getLogger(__name__)
 DEFAULT_MODEL = "gemini-2.5-flash-preview-09-2025"
 
 
+def _resolve_gemini_api_key(
+    *,
+    error_message: str = "GEMINI_API_KEY (or GOOGLE_API_KEY) must be set",
+) -> str:
+    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+    if not api_key:
+        raise ValueError(error_message)
+    os.environ.setdefault("GOOGLE_API_KEY", api_key)
+    return api_key
+
+
 def ChatGemini(
     model: str,
     *,
@@ -29,10 +40,7 @@ def ChatGemini(
         temperature: Sampling temperature (0.0-2.0)
         **kwargs: Additional arguments passed to ChatGoogleGenerativeAI
     """
-    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY (or GOOGLE_API_KEY) must be set")
-    os.environ.setdefault("GOOGLE_API_KEY", api_key)
+    _resolve_gemini_api_key()
     return ChatGoogleGenerativeAI(model=model, temperature=temperature, **kwargs)
 
 
@@ -46,10 +54,7 @@ def GeminiEmbeddings(
         model: Gemini embedding model name
         **kwargs: Additional arguments passed to GoogleGenerativeAIEmbeddings
     """
-    api_key = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY (or GOOGLE_API_KEY) must be set")
-    os.environ.setdefault("GOOGLE_API_KEY", api_key)
+    _resolve_gemini_api_key()
     if not model.startswith("models/"):
         model = f"models/{model}"
     return GoogleGenerativeAIEmbeddings(model=model, **kwargs)
@@ -62,9 +67,7 @@ def create_gemini_cache(
     api_key: str | None = None,
 ) -> str:
     """Uploads a file and returns the cache name."""
-    api_key = api_key or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-    if not api_key:
-        raise ValueError("API key not found")
+    api_key = api_key or _resolve_gemini_api_key(error_message="API key not found")
 
     client = genai.Client(api_key=api_key)
     path = Path(file_path)

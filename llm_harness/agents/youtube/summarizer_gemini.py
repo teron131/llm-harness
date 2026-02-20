@@ -95,27 +95,24 @@ def analyze_video_url(
         analysis = Summary.model_validate_json(response.text)
 
         # Log usage and cost information
-        if hasattr(response, "usage_metadata") and response.usage_metadata:
-            usage = response.usage_metadata
+        usage = getattr(response, "usage_metadata", None)
+        if usage:
             logger.info(f"Usage metadata: {usage}")
 
-            if hasattr(usage, "prompt_token_count") and hasattr(usage, "total_token_count"):
-                cost = _calculate_cost(
-                    model,
-                    usage.prompt_token_count,
-                    usage.total_token_count,
-                )
-
-                output_tokens = usage.total_token_count - usage.prompt_token_count
+            prompt_token_count = getattr(usage, "prompt_token_count", None)
+            total_token_count = getattr(usage, "total_token_count", None)
+            if prompt_token_count is not None and total_token_count is not None:
+                cost = _calculate_cost(model, prompt_token_count, total_token_count)
+                output_tokens = total_token_count - prompt_token_count
                 track_usage(
-                    input_tokens=usage.prompt_token_count,
+                    input_tokens=prompt_token_count,
                     output_tokens=output_tokens,
                     cost=cost,
                 )
 
                 if cost > 0:
                     logger.info(f"Estimated cost: ${cost:.4f} USD")
-                    logger.info(f"Tokens - Input: {usage.prompt_token_count}, Output: {output_tokens}")
+                    logger.info(f"Tokens - Input: {prompt_token_count}, Output: {output_tokens}")
 
         return analysis
 

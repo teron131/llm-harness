@@ -9,10 +9,17 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
 load_dotenv()
 
+INVALID_MODEL_FORMAT_MESSAGE = "Invalid OpenRouter model format: {model}. Expected PROVIDER/MODEL"
+
 
 def _is_openrouter(model: str) -> bool:
     """Check if model is OpenRouter format (PROVIDER/MODEL)."""
     return "/" in model and len(model.split("/")) == 2
+
+
+def _validate_openrouter_model(model: str) -> None:
+    if not _is_openrouter(model):
+        raise ValueError(INVALID_MODEL_FORMAT_MESSAGE.format(model=model))
 
 
 def ChatOpenRouter(
@@ -39,8 +46,7 @@ def ChatOpenRouter(
         pdf_engine: "mistral-ocr" (scanned), "pdf-text" (structured), "native"
         **kwargs: Additional arguments passed to ChatOpenAI
     """
-    if not _is_openrouter(model):
-        raise ValueError(f"Invalid OpenRouter model format: {model}. Expected PROVIDER/MODEL")
+    _validate_openrouter_model(model)
 
     api_key = os.getenv("OPENROUTER_API_KEY")
     extra_body = kwargs.pop("extra_body", {}) or {}
@@ -85,8 +91,7 @@ def OpenRouterEmbeddings(
         model: OpenRouter embedding model in PROVIDER/MODEL format
         **kwargs: Additional arguments passed to OpenAIEmbeddings
     """
-    if not _is_openrouter(model):
-        raise ValueError(f"Invalid OpenRouter model format: {model}. Expected PROVIDER/MODEL")
+    _validate_openrouter_model(model)
 
     api_key = os.getenv("OPENROUTER_API_KEY")
     return OpenAIEmbeddings(
