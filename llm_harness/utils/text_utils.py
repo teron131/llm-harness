@@ -1,4 +1,11 @@
-import opencc
+from functools import cache
+
+from opencc import OpenCC
+
+
+@cache
+def _s2hk_converter() -> OpenCC:
+    return OpenCC("s2hk")
 
 
 def s2hk(content: str) -> str:
@@ -10,8 +17,7 @@ def s2hk(content: str) -> str:
     Returns:
         str: Text converted to traditional Chinese (Hong Kong standard).
     """
-    converter = opencc.OpenCC("s2hk")
-    return converter.convert(content)
+    return _s2hk_converter().convert(content)
 
 
 __all__ = [

@@ -12,7 +12,7 @@ from dotenv import load_dotenv
 from pydantic import BaseModel, ConfigDict
 import requests
 
-from .utils import clean_text, clean_youtube_url, extract_video_id, is_youtube_url
+from ...utils.youtube_utils import clean_text, clean_youtube_url, extract_video_id, is_youtube_url
 
 load_dotenv()
 

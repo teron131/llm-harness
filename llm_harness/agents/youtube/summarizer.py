@@ -9,13 +9,13 @@ from pydantic import BaseModel
 from ...clients.openrouter import ChatOpenRouter
 from ...tools.fs.fast_copy import filter_content, tag_content, untag_content
 from ...tools.youtube.scrapper import get_transcript
+from ...utils.youtube_utils import is_youtube_url
 from .prompts import get_garbage_filter_prompt, get_langchain_summary_prompt, get_quality_check_prompt
 from .schemas import (
     GarbageIdentification,
     Quality,
     Summary,
 )
-from .utils import is_youtube_url
 
 # ============================================================================
 # Configuration

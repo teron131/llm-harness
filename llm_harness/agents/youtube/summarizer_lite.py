@@ -17,9 +17,9 @@ from ...tools.fs.fast_copy import (
     untag_content,
 )
 from ...tools.youtube.scrapper import get_transcript
+from ...utils.youtube_utils import is_youtube_url
 from .prompts import get_garbage_filter_prompt, get_langchain_summary_prompt
 from .schemas import GarbageIdentification, Summary
-from .utils import is_youtube_url
 
 load_dotenv()
 

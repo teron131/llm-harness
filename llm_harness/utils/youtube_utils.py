@@ -1,4 +1,15 @@
+"""Shared YouTube text and URL utilities."""
+
+from __future__ import annotations
+
 import re
+
+YOUTUBE_PATTERNS = (
+    r"youtube\.com/watch\?v=",
+    r"youtu\.be/",
+    r"youtube\.com/embed/",
+    r"youtube\.com/v/",
+)
 
 
 def clean_text(text: str) -> str:
@@ -9,7 +20,7 @@ def clean_text(text: str) -> str:
 
 
 def clean_youtube_url(url: str) -> str:
-    """Clean and normalize a YouTube URL."""
+    """Normalize YouTube URL variants to watch URL when possible."""
     if "youtube.com/watch" in url:
         match = re.search(r"v=([a-zA-Z0-9_-]+)", url)
         if match:
@@ -23,13 +34,7 @@ def clean_youtube_url(url: str) -> str:
 
 def is_youtube_url(url: str) -> bool:
     """Check if a URL is a valid YouTube URL."""
-    youtube_patterns = [
-        r"youtube\.com/watch\?v=",
-        r"youtu\.be/",
-        r"youtube\.com/embed/",
-        r"youtube\.com/v/",
-    ]
-    return any(re.search(pattern, url) for pattern in youtube_patterns)
+    return any(re.search(pattern, url) for pattern in YOUTUBE_PATTERNS)
 
 
 def extract_video_id(url: str) -> str | None:
@@ -43,3 +48,11 @@ def extract_video_id(url: str) -> str | None:
         return match.group(1)
 
     return None
+
+
+__all__ = [
+    "clean_text",
+    "clean_youtube_url",
+    "extract_video_id",
+    "is_youtube_url",
+]
