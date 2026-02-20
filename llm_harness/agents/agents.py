@@ -12,9 +12,9 @@ from langchain_core.messages import HumanMessage
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel
 
+from ..clients.multimodal import MediaMessage
+from ..clients.openrouter import ChatOpenRouter
 from ..tools.web import webloader_tool
-from .multimodal import MediaMessage
-from .openrouter import ChatOpenRouter
 
 load_dotenv()
 

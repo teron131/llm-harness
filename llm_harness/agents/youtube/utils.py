@@ -1,15 +1,35 @@
 import re
 
+from opencc import OpenCC
+
 
 def clean_text(text: str) -> str:
-    """Clean text by removing excessive whitespace and normalizing."""
+    """Clean text by removing excessive whitespace and normalizing.
+
+    Args:
+        text: The text to clean
+
+    Returns:
+        Cleaned text string
+    """
+    # Remove excessive newlines
     text = re.sub(r"\n{3,}", r"\n\n", text)
+    # Remove excessive spaces
     text = re.sub(r" {2,}", " ", text)
+    # Strip leading/trailing whitespace
     return text.strip()
 
 
 def clean_youtube_url(url: str) -> str:
-    """Clean and normalize a YouTube URL."""
+    """Clean and normalize a YouTube URL.
+
+    Args:
+        url: YouTube URL in various formats
+
+    Returns:
+        Cleaned YouTube URL
+    """
+    # Remove query parameters except v
     if "youtube.com/watch" in url:
         match = re.search(r"v=([a-zA-Z0-9_-]+)", url)
         if match:
@@ -22,7 +42,14 @@ def clean_youtube_url(url: str) -> str:
 
 
 def is_youtube_url(url: str) -> bool:
-    """Check if a URL is a valid YouTube URL."""
+    """Check if a URL is a valid YouTube URL.
+
+    Args:
+        url: URL to check
+
+    Returns:
+        True if URL is a YouTube URL, False otherwise
+    """
     youtube_patterns = [
         r"youtube\.com/watch\?v=",
         r"youtu\.be/",
@@ -33,13 +60,27 @@ def is_youtube_url(url: str) -> bool:
 
 
 def extract_video_id(url: str) -> str | None:
-    """Extract video ID from YouTube URL."""
+    """Extract video ID from YouTube URL.
+
+    Args:
+        url: YouTube URL
+
+    Returns:
+        Video ID string or None if not found
+    """
+    # Standard watch URL
     match = re.search(r"v=([a-zA-Z0-9_-]+)", url)
     if match:
         return match.group(1)
 
+    # Short URL
     match = re.search(r"youtu\.be/([a-zA-Z0-9_-]+)", url)
     if match:
         return match.group(1)
 
     return None
+
+
+def s2hk(content: str) -> str:
+    """Convert Simplified Chinese to Traditional Chinese."""
+    return OpenCC("s2hk").convert(content)

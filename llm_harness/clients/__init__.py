@@ -1,4 +1,4 @@
-from .agents import (
+from ..agents.agents import (
     BaseHarnessAgent,
     ExaAgent,
     ImageAnalysisAgent,

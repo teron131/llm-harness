@@ -7,14 +7,14 @@ from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel
 
 from ...clients.openrouter import ChatOpenRouter
-from ...fast_copy import filter_content, tag_content, untag_content
+from ...tools.fs.fast_copy import filter_content, tag_content, untag_content
+from ...tools.youtube.scrapper import get_transcript
 from .prompts import get_garbage_filter_prompt, get_langchain_summary_prompt, get_quality_check_prompt
 from .schemas import (
     GarbageIdentification,
     Quality,
     Summary,
 )
-from .scrapper import get_transcript
 from .utils import is_youtube_url
 
 # ============================================================================

@@ -11,14 +11,14 @@ from langchain.tools.tool_node import ToolCallRequest
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 
 from ...clients.openrouter import ChatOpenRouter
-from ...fast_copy import (
+from ...tools.fs.fast_copy import (
     filter_content,
     tag_content,
     untag_content,
 )
+from ...tools.youtube.scrapper import get_transcript
 from .prompts import get_garbage_filter_prompt, get_langchain_summary_prompt
 from .schemas import GarbageIdentification, Summary
-from .scrapper import get_transcript
 from .utils import is_youtube_url
 
 load_dotenv()

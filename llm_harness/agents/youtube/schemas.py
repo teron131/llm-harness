@@ -2,8 +2,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from ...fast_copy import TagRange
-from ...text_utils import s2hk
+from ...tools.fs.fast_copy import TagRange
+from ...utils.text_utils import s2hk
 
 
 class Chapter(BaseModel):
