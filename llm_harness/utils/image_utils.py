@@ -61,8 +61,3 @@ def load_image_base64(
     image = _load_image(image_source)
     resized_image = _resize_image_proportionally(image, max_size)
     return _image_to_base64(resized_image, format)
-
-
-__all__ = [
-    "load_image_base64",
-]

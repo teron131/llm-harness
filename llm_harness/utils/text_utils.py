@@ -18,8 +18,3 @@ def s2hk(content: str) -> str:
         str: Text converted to traditional Chinese (Hong Kong standard).
     """
     return _s2hk_converter().convert(content)
-
-
-__all__ = [
-    "s2hk",
-]

@@ -48,11 +48,3 @@ def extract_video_id(url: str) -> str | None:
         return match.group(1)
 
     return None
-
-
-__all__ = [
-    "clean_text",
-    "clean_youtube_url",
-    "extract_video_id",
-    "is_youtube_url",
-]
