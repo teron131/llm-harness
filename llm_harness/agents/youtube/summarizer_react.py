@@ -208,7 +208,7 @@ def _extract_transcript(transcript_or_url: str) -> str:
 # ============================================================================
 
 
-def summarize_video(
+def summarize_video_react(
     transcript_or_url: str,
     target_language: str | None = None,
 ) -> Summary:
@@ -229,7 +229,7 @@ def summarize_video(
     return output.summary
 
 
-def stream_summarize_video(
+def stream_summarize_video_react(
     transcript_or_url: str,
     target_language: str | None = None,
 ) -> Generator[SummarizerState]:

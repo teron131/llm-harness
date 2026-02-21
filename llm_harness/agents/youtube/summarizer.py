@@ -107,7 +107,7 @@ def create_summarizer_agent(
 def summarize_video(
     transcript_or_url: str,
     target_language: str | None = None,
-) -> str:
+) -> Summary:
     """Summarize video transcript or YouTube URL.
 
     Args:
@@ -115,7 +115,7 @@ def summarize_video(
         target_language: Optional target language code (e.g., "en", "es", "fr")
 
     Returns:
-        Formatted string representation of the summary
+        Structured summary schema
     """
     agent = create_summarizer_agent(
         target_language=target_language,
@@ -128,11 +128,11 @@ def summarize_video(
     response = agent.invoke({"messages": [HumanMessage(content=prompt)]})
 
     # Extract structured response
-    structured_response = response.get("structured_response")
-    if structured_response is None:
+    summary = response.get("structured_response")
+    if summary is None:
         raise ValueError("Agent did not return structured response")
 
-    return structured_response.to_text()
+    return summary
 
 
 if __name__ == "__main__":
