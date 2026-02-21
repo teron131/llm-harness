@@ -133,12 +133,3 @@ def summarize_video(
         raise ValueError("Agent did not return structured response")
 
     return summary
-
-
-if __name__ == "__main__":
-    # Example usage
-    video_url = "https://youtu.be/UALxgn1MnZo"
-    print(f"Summarizing: {video_url}\n")
-
-    result = summarize_video(video_url)
-    print(result)
