@@ -1,245 +1,144 @@
-"""YouTube video transcript summarization using LangChain with LangGraph self-checking workflow."""
+"""YouTube video transcript summarization using LangChain ReAct agent with structured output."""
 
-from collections.abc import Generator
+from collections.abc import Callable
 
-from langchain_core.messages import HumanMessage, SystemMessage
-from langgraph.graph import END, START, StateGraph
-from pydantic import BaseModel
+from dotenv import load_dotenv
+from langchain.agents import create_agent
+from langchain.agents.middleware import wrap_tool_call
+from langchain.agents.structured_output import ToolStrategy
+from langchain.tools import tool
+from langchain.tools.tool_node import ToolCallRequest
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 
 from ...clients.openrouter import ChatOpenRouter
-from ...tools.fs.fast_copy import filter_content, tag_content, untag_content
+from ...tools.fs.fast_copy import (
+    filter_content,
+    tag_content,
+    untag_content,
+)
 from ...tools.youtube.scraper import get_transcript
 from ...utils.youtube_utils import is_youtube_url
-from .prompts import get_garbage_filter_prompt, get_langchain_summary_prompt, get_quality_check_prompt
-from .schemas import (
-    GarbageIdentification,
-    Quality,
-    Summary,
-)
+from .prompts import get_garbage_filter_prompt, get_langchain_summary_prompt
+from .schemas import GarbageIdentification, Summary
 
-# ============================================================================
-# Configuration
-# ============================================================================
+load_dotenv()
 
-SUMMARY_MODEL = "x-ai/grok-4.1-fast"
-QUALITY_MODEL = "x-ai/grok-4.1-fast"
+DEFAULT_MODEL = "google/gemini-3-flash-preview"
 FAST_MODEL = "google/gemini-2.5-flash-lite-preview-09-2025"
-MIN_QUALITY_SCORE = 80
-MAX_ITERATIONS = 2
-TARGET_LANGUAGE = "en"  # ISO language code (en, es, fr, de, etc.)
 
 
-# ============================================================================
-# Data Models
-# ============================================================================
+@tool
+def scrape_youtube(youtube_url: str) -> str:
+    """Scrape a YouTube video and return the transcript.
+
+    Args:
+        youtube_url: The YouTube video URL to scrape
+
+    Returns:
+        Parsed transcript text
+    """
+    return get_transcript(youtube_url)
 
 
-class SummarizerState(BaseModel):
-    """State schema for the summarization graph."""
+@wrap_tool_call
+def garbage_filter_middleware(
+    request: ToolCallRequest,
+    handler: Callable[[ToolCallRequest], ToolMessage],
+) -> ToolMessage:
+    """Middleware to filter garbage from tool results (like transcripts)."""
+    result = handler(request)
 
-    transcript: str | None = None
-    summary: Summary | None = None
-    quality: Quality | None = None
-    target_language: str | None = None
-    iteration_count: int = 0
-    is_complete: bool = False
+    # Only filter if it's the scrape_youtube tool and the call succeeded
+    if request.tool_call["name"] == "scrape_youtube" and result.status != "error":
+        transcript = result.content
+        if isinstance(transcript, str) and transcript.strip():
+            # Apply the tagging/filtering mechanism
+            tagged_transcript = tag_content(transcript)
+
+            llm = ChatOpenRouter(
+                model=FAST_MODEL,
+                temperature=0,
+            ).with_structured_output(GarbageIdentification)
+
+            system_prompt = get_garbage_filter_prompt()
+
+            messages = [
+                SystemMessage(content=system_prompt),
+                HumanMessage(content=tagged_transcript),
+            ]
+
+            garbage: GarbageIdentification = llm.invoke(messages)
+
+            if garbage.garbage_ranges:
+                filtered_transcript = filter_content(tagged_transcript, garbage.garbage_ranges)
+                cleaned_transcript = untag_content(filtered_transcript)
+                print(f"🧹 Middleware removed {len(garbage.garbage_ranges)} garbage sections from tool result.")
+                # Update the result content
+                result.content = cleaned_transcript
+
+    return result
 
 
-class SummarizerOutput(BaseModel):
-    """Output schema for the summarization graph."""
-
-    summary: Summary
-    quality: Quality | None = None
-    iteration_count: int
-    transcript: str | None = None
-
-
-# ============================================================================
-# Graph Nodes
-# ============================================================================
-
-
-def garbage_filter_node(state: SummarizerState) -> dict:
-    """Identify and remove garbage from the transcript."""
-    # Tag the transcript for identification
-    tagged_transcript = tag_content(state.transcript)
-
+def create_summarizer_agent(
+    target_language: str | None = None,
+):
+    """Create a ReAct agent for summarizing video transcripts with structured output."""
     llm = ChatOpenRouter(
-        model=FAST_MODEL,
-        temperature=0,
-        reasoning_effort="low",
-    ).with_structured_output(GarbageIdentification)
-
-    system_prompt = get_garbage_filter_prompt()
-
-    messages = [
-        SystemMessage(content=system_prompt),
-        HumanMessage(content=tagged_transcript),
-    ]
-
-    garbage: GarbageIdentification = llm.invoke(messages)
-
-    if garbage.garbage_ranges:
-        filtered_transcript = filter_content(tagged_transcript, garbage.garbage_ranges)
-        # Untag for the next stage (summary)
-        cleaned_transcript = untag_content(filtered_transcript)
-        print(f"🧹 Removed {len(garbage.garbage_ranges)} garbage sections.")
-        return {"transcript": cleaned_transcript}
-
-    return {}
-
-
-def summary_node(state: SummarizerState) -> dict:
-    """Generate summary from transcript."""
-    llm = ChatOpenRouter(
-        model=SUMMARY_MODEL,
+        model=DEFAULT_MODEL,
         temperature=0,
         reasoning_effort="medium",
-    ).with_structured_output(Summary)
+    )
 
     system_prompt = get_langchain_summary_prompt(
-        target_language=state.target_language,
+        target_language=target_language,
     )
 
-    messages = [
-        SystemMessage(content=system_prompt),
-        HumanMessage(content=f"Transcript:\n{state.transcript}"),
-    ]
-
-    summary = llm.invoke(messages)
-
-    return {
-        "summary": summary,
-        "iteration_count": state.iteration_count + 1,
-    }
-
-
-def quality_node(state: SummarizerState) -> dict:
-    """Assess quality of summary."""
-    llm = ChatOpenRouter(
-        model=QUALITY_MODEL,
-        temperature=0,
-        reasoning_effort="low",
-    ).with_structured_output(Quality)
-
-    system_prompt = get_quality_check_prompt(target_language=state.target_language)
-
-    summary_json = state.summary.model_dump_json() if state.summary else "No summary provided"
-    messages = [
-        SystemMessage(content=system_prompt),
-        HumanMessage(content=f"Transcript:\n{state.transcript}\n\nSummary:\n{summary_json}"),
-    ]
-
-    quality: Quality = llm.invoke(messages)
-
-    return {
-        "quality": quality,
-        "is_complete": quality.is_acceptable,
-    }
-
-
-# ============================================================================
-# Graph Construction
-# ============================================================================
-
-
-def should_continue(state: SummarizerState) -> str:
-    """Determine next step in workflow."""
-    quality_percent = state.quality.percentage_score if state.quality else None
-    quality_display = f"{quality_percent}%" if quality_percent is not None else "N/A"
-
-    if state.is_complete:
-        print(f"✅ Complete: quality {quality_display}")
-        return END
-
-    if state.quality and not state.quality.is_acceptable and state.iteration_count < MAX_ITERATIONS:
-        print(f"🔄 Refining: quality {quality_display} < {MIN_QUALITY_SCORE}% (iteration {state.iteration_count + 1})")
-        return "summary"
-
-    print(f"⚠️ Stopping: quality {quality_display}, {state.iteration_count} iterations")
-    return END
-
-
-def create_graph() -> StateGraph:
-    """Create the summarization workflow graph with conditional routing."""
-    builder = StateGraph(
-        SummarizerState,
-        output_schema=SummarizerOutput,
+    agent = create_agent(
+        model=llm,
+        tools=[scrape_youtube],
+        system_prompt=system_prompt,
+        middleware=[garbage_filter_middleware],  # Add the garbage filter middleware
+        response_format=ToolStrategy(Summary),  # Use ToolStrategy for better error handling
     )
 
-    builder.add_node("garbage_filter", garbage_filter_node)
-    builder.add_node("summary", summary_node)
-    builder.add_node("quality", quality_node)
-
-    builder.add_edge(START, "garbage_filter")
-    builder.add_edge("garbage_filter", "summary")
-    builder.add_edge("summary", "quality")
-
-    builder.add_conditional_edges(
-        "quality",
-        should_continue,
-        {
-            "summary": "summary",
-            END: END,
-        },
-    )
-
-    return builder.compile()
-
-
-# ============================================================================
-# Helper Functions
-# ============================================================================
-
-
-def _extract_transcript(transcript_or_url: str) -> str:
-    """Extract transcript from URL or return text directly."""
-    if is_youtube_url(transcript_or_url):
-        return get_transcript(transcript_or_url)
-
-    if not transcript_or_url or not transcript_or_url.strip():
-        raise ValueError("Transcript cannot be empty")
-
-    return transcript_or_url
-
-
-# ============================================================================
-# Public API
-# ============================================================================
+    return agent
 
 
 def summarize_video(
     transcript_or_url: str,
     target_language: str | None = None,
-) -> Summary:
-    """Summarize YouTube video or text transcript with quality self-checking."""
-    graph = create_graph()
-    transcript = _extract_transcript(transcript_or_url)
+) -> str:
+    """Summarize video transcript or YouTube URL.
 
-    initial_state = SummarizerState(
-        transcript=transcript,
-        target_language=target_language or TARGET_LANGUAGE,
+    Args:
+        transcript_or_url: Transcript text or YouTube URL
+        target_language: Optional target language code (e.g., "en", "es", "fr")
+
+    Returns:
+        Formatted string representation of the summary
+    """
+    agent = create_summarizer_agent(
+        target_language=target_language,
     )
-    result: dict = graph.invoke(initial_state.model_dump())
-    output = SummarizerOutput.model_validate(result)
 
-    quality_percent = output.quality.percentage_score if output.quality else None
-    quality_display = f"{quality_percent}%" if quality_percent is not None else "N/A"
-    print(f"🎯 Final: quality {quality_display}, {output.iteration_count} iterations")
-    return output.summary
+    # If it's a YouTube URL, let the agent use the tool to fetch it
+    # Otherwise, provide the transcript directly
+    prompt = f"Summarize this YouTube video: {transcript_or_url}" if is_youtube_url(transcript_or_url) else f"Transcript:\n{transcript_or_url}"
+
+    response = agent.invoke({"messages": [HumanMessage(content=prompt)]})
+
+    # Extract structured response
+    structured_response = response.get("structured_response")
+    if structured_response is None:
+        raise ValueError("Agent did not return structured response")
+
+    return structured_response.to_text()
 
 
-def stream_summarize_video(
-    transcript_or_url: str,
-    target_language: str | None = None,
-) -> Generator[SummarizerState]:
-    """Stream the summarization process with progress updates."""
-    graph = create_graph()
-    transcript = _extract_transcript(transcript_or_url)
+if __name__ == "__main__":
+    # Example usage
+    video_url = "https://youtu.be/UALxgn1MnZo"
+    print(f"Summarizing: {video_url}\n")
 
-    initial_state = SummarizerState(
-        transcript=transcript,
-        target_language=target_language or TARGET_LANGUAGE,
-    )
-    for chunk in graph.stream(initial_state.model_dump(), stream_mode="values"):
-        yield SummarizerState.model_validate(chunk)
+    result = summarize_video(video_url)
+    print(result)
