@@ -11,6 +11,7 @@ from langchain_openrouter import ChatOpenRouter as NativeChatOpenRouter
 load_dotenv()
 
 INVALID_MODEL_FORMAT_MESSAGE = "Invalid OpenRouter model format: {model}. Expected PROVIDER/MODEL"
+PluginConfig = dict[str, Any]
 
 
 def _is_openrouter(model: str) -> bool:
@@ -21,6 +22,71 @@ def _is_openrouter(model: str) -> bool:
 def _validate_openrouter_model(model: str) -> None:
     if not _is_openrouter(model):
         raise ValueError(INVALID_MODEL_FORMAT_MESSAGE.format(model=model))
+
+
+def _build_derived_plugins(
+    *,
+    web_search: bool,
+    web_search_engine: Literal["native", "exa"] | None,
+    web_search_max_results: int,
+    pdf_engine: Literal["mistral-ocr", "pdf-text", "native"] | None,
+) -> list[PluginConfig]:
+    plugins: list[PluginConfig] = []
+
+    if pdf_engine:
+        plugins.append({"id": "file-parser", "pdf": {"engine": pdf_engine}})
+
+    if web_search:
+        web_plugin: PluginConfig = {"id": "web"}
+        if web_search_engine:
+            web_plugin["engine"] = web_search_engine
+        if web_search_max_results != 5:
+            web_plugin["max_results"] = web_search_max_results
+        plugins.append(web_plugin)
+
+    return plugins
+
+
+def _merge_plugins(
+    *,
+    derived_plugins: list[PluginConfig],
+    explicit_plugins: object,
+) -> list[PluginConfig]:
+    plugins_by_id: dict[str, PluginConfig] = {}
+
+    for plugin in derived_plugins:
+        if plugin_id := plugin.get("id"):
+            plugins_by_id[plugin_id] = plugin
+
+    if isinstance(explicit_plugins, list):
+        for plugin in explicit_plugins:
+            if not isinstance(plugin, dict):
+                continue
+            if plugin_id := plugin.get("id"):
+                # Explicit plugin overrides derived plugin with the same id.
+                plugins_by_id[plugin_id] = plugin
+            else:
+                # Keep anonymous plugins without dedupe semantics.
+                plugins_by_id[f"__anon_{id(plugin)}"] = plugin
+
+    return list(plugins_by_id.values())
+
+
+def _build_provider_preferences(
+    *,
+    provider_sort: Literal["throughput", "price", "latency"],
+    openrouter_provider: object,
+) -> PluginConfig:
+    provider = openrouter_provider if isinstance(openrouter_provider, dict) else {}
+    if provider_sort and "sort" not in provider:
+        provider["sort"] = provider_sort
+    return provider
+
+
+def _strip_reserved_model_kwargs(kwargs: dict[str, Any]) -> None:
+    """Remove keys passed positionally in the constructor call."""
+    kwargs.pop("model", None)
+    kwargs.pop("temperature", None)
 
 
 def ChatOpenRouter(
@@ -42,54 +108,34 @@ def ChatOpenRouter(
         reasoning_effort: "minimal", "low", "medium", or "high"
         provider_sort: OpenRouter routing - "throughput", "price", "latency"
         web_search: Enable web search plugin
-        web_search_engine: "native" (provider built-in), "exa" (Exa API), or None (auto-detect)
+        web_search_engine:
+            "native" (provider built-in), "exa" (Exa API), or None (auto-detect)
         web_search_max_results: Maximum number of search results (default: 5)
         pdf_engine: "mistral-ocr" (scanned), "pdf-text" (structured), "native"
-        **kwargs: Additional arguments passed to langchain_openrouter.ChatOpenRouter
+        **kwargs:
+            Additional arguments passed to
+            langchain_openrouter.ChatOpenRouter
     """
     _validate_openrouter_model(model)
 
     api_key = os.getenv("OPENROUTER_API_KEY")
     explicit_plugins = kwargs.pop("plugins", None)
-    openrouter_provider = kwargs.pop("openrouter_provider", None) or {}
-    kwargs.pop("model", None)
-    kwargs.pop("temperature", None)
+    merged_plugins = _merge_plugins(
+        derived_plugins=_build_derived_plugins(
+            web_search=web_search,
+            web_search_engine=web_search_engine,
+            web_search_max_results=web_search_max_results,
+            pdf_engine=pdf_engine,
+        ),
+        explicit_plugins=explicit_plugins,
+    )
+    openrouter_provider = _build_provider_preferences(
+        provider_sort=provider_sort,
+        openrouter_provider=kwargs.pop("openrouter_provider", None),
+    )
+    _strip_reserved_model_kwargs(kwargs)
 
-    if provider_sort and "sort" not in openrouter_provider:
-        openrouter_provider["sort"] = provider_sort
-
-    derived_plugins: list[dict[str, Any]] = []
-
-    if pdf_engine:
-        derived_plugins.append({"id": "file-parser", "pdf": {"engine": pdf_engine}})
-
-    if web_search:
-        web_plugin: dict = {"id": "web"}
-        if web_search_engine:
-            web_plugin["engine"] = web_search_engine
-        if web_search_max_results != 5:
-            web_plugin["max_results"] = web_search_max_results
-        derived_plugins.append(web_plugin)
-
-    plugins_by_id: dict[str, dict[str, Any]] = {}
-    for plugin in derived_plugins:
-        plugin_id = plugin.get("id")
-        if plugin_id:
-            plugins_by_id[plugin_id] = plugin
-    if isinstance(explicit_plugins, list):
-        for plugin in explicit_plugins:
-            plugin_id = plugin.get("id")
-            if plugin_id:
-                plugins_by_id[plugin_id] = plugin
-            else:
-                # Keep anonymous plugins without dedupe semantics.
-                plugins_by_id[f"__anon_{id(plugin)}"] = plugin
-    merged_plugins = list(plugins_by_id.values())
-
-    model_kwargs: dict[str, Any] = {
-        "api_key": api_key,
-        **kwargs,
-    }
+    model_kwargs: dict[str, Any] = {"api_key": api_key, **kwargs}
     if reasoning_effort:
         model_kwargs["reasoning"] = {"effort": reasoning_effort}
     if openrouter_provider:
