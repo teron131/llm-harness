@@ -13,6 +13,7 @@ dependencies = [
     "langchain>=1.2.10",
     "langchain-google-genai>=4.2.1",
     "langchain-openai>=1.1.10",
+    "langchain-openrouter>=0.0.2",
     "langgraph>=1.0.9",
     "opencc-python-reimplemented>=0.1.7",
     "pydantic>=2.12.5",

@@ -1,11 +1,12 @@
 """OpenRouter LLM client initialization and configuration."""
 
 import os
-from typing import Literal
+from typing import Any, Literal
 
 from dotenv import load_dotenv
 from langchain_core.language_models import BaseChatModel
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_openai import OpenAIEmbeddings
+from langchain_openrouter import ChatOpenRouter as NativeChatOpenRouter
 
 load_dotenv()
 
@@ -33,31 +34,34 @@ def ChatOpenRouter(
     pdf_engine: Literal["mistral-ocr", "pdf-text", "native"] | None = None,
     **kwargs,
 ) -> BaseChatModel:
-    """Initialize OpenRouter model.
+    """Initialize an OpenRouter chat model using native langchain-openrouter.
 
     Args:
         model: PROVIDER/MODEL format
         temperature: Sampling temperature (0.0-2.0)
-        reasoning_effort: "minimal", "low", "medium", "high"
+        reasoning_effort: "minimal", "low", "medium", or "high"
         provider_sort: OpenRouter routing - "throughput", "price", "latency"
         web_search: Enable web search plugin
         web_search_engine: "native" (provider built-in), "exa" (Exa API), or None (auto-detect)
         web_search_max_results: Maximum number of search results (default: 5)
         pdf_engine: "mistral-ocr" (scanned), "pdf-text" (structured), "native"
-        **kwargs: Additional arguments passed to ChatOpenAI
+        **kwargs: Additional arguments passed to langchain_openrouter.ChatOpenRouter
     """
     _validate_openrouter_model(model)
 
     api_key = os.getenv("OPENROUTER_API_KEY")
-    extra_body = kwargs.pop("extra_body", {}) or {}
+    explicit_plugins = kwargs.pop("plugins", None)
+    openrouter_provider = kwargs.pop("openrouter_provider", None) or {}
+    kwargs.pop("model", None)
+    kwargs.pop("temperature", None)
 
-    if provider_sort and "provider" not in extra_body:
-        extra_body["provider"] = {"sort": provider_sort}
+    if provider_sort and "sort" not in openrouter_provider:
+        openrouter_provider["sort"] = provider_sort
 
-    plugins = extra_body.get("plugins", [])
+    derived_plugins: list[dict[str, Any]] = []
 
     if pdf_engine:
-        plugins.append({"id": "file-parser", "pdf": {"engine": pdf_engine}})
+        derived_plugins.append({"id": "file-parser", "pdf": {"engine": pdf_engine}})
 
     if web_search:
         web_plugin: dict = {"id": "web"}
@@ -65,19 +69,38 @@ def ChatOpenRouter(
             web_plugin["engine"] = web_search_engine
         if web_search_max_results != 5:
             web_plugin["max_results"] = web_search_max_results
-        plugins.append(web_plugin)
+        derived_plugins.append(web_plugin)
 
-    if plugins:
-        extra_body["plugins"] = plugins
+    plugins_by_id: dict[str, dict[str, Any]] = {}
+    for plugin in derived_plugins:
+        plugin_id = plugin.get("id")
+        if plugin_id:
+            plugins_by_id[plugin_id] = plugin
+    if isinstance(explicit_plugins, list):
+        for plugin in explicit_plugins:
+            plugin_id = plugin.get("id")
+            if plugin_id:
+                plugins_by_id[plugin_id] = plugin
+            else:
+                # Keep anonymous plugins without dedupe semantics.
+                plugins_by_id[f"__anon_{id(plugin)}"] = plugin
+    merged_plugins = list(plugins_by_id.values())
 
-    return ChatOpenAI(
-        model=model,
-        api_key=api_key,
-        base_url="https://openrouter.ai/api/v1",
-        temperature=temperature,
-        reasoning_effort=reasoning_effort,
-        extra_body=extra_body or None,
+    model_kwargs: dict[str, Any] = {
+        "api_key": api_key,
         **kwargs,
+    }
+    if reasoning_effort:
+        model_kwargs["reasoning"] = {"effort": reasoning_effort}
+    if openrouter_provider:
+        model_kwargs["openrouter_provider"] = openrouter_provider
+    if merged_plugins:
+        model_kwargs["plugins"] = merged_plugins
+
+    return NativeChatOpenRouter(
+        model=model,
+        temperature=temperature,
+        **model_kwargs,
     )
 
 
