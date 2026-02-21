@@ -21,9 +21,22 @@ def stream_summarize_video(
     target_language: str | None = None,
 ):
     """Stream summary generation for a YouTube URL or transcript."""
-    from .summarizer import stream_summarize_video as _stream_summarize_video
+    from .summarizer_react import stream_summarize_video_react as _stream_summarize_video
 
     return _stream_summarize_video(
+        transcript_or_url=transcript_or_url,
+        target_language=target_language,
+    )
+
+
+def summarize_video_react(
+    transcript_or_url: str,
+    target_language: str | None = None,
+):
+    """Summarize a YouTube URL or transcript with the ReAct workflow."""
+    from .summarizer_react import summarize_video_react as _summarize_video_react
+
+    return _summarize_video_react(
         transcript_or_url=transcript_or_url,
         target_language=target_language,
     )
@@ -84,5 +97,6 @@ def youtube_loader(url: str) -> str:
 __all__ = [
     "stream_summarize_video",
     "summarize_video",
+    "summarize_video_react",
     "youtube_loader",
 ]

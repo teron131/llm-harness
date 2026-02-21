@@ -16,9 +16,9 @@ from ..clients.multimodal import MediaMessage
 from ..clients.openrouter import ChatOpenRouter
 from ..tools.web import webloader_tool
 from .youtube.schemas import Summary
-from .youtube.summarizer import summarize_video as summarize_video_react
+from .youtube.summarizer import summarize_video
 from .youtube.summarizer_gemini import summarize_video as summarize_video_gemini
-from .youtube.summarizer_lite import summarize_video as summarize_video_lite
+from .youtube.summarizer_react import summarize_video_react
 
 load_dotenv()
 
@@ -188,7 +188,7 @@ class ImageAnalysisAgent(BaseHarnessAgent):
         return self._process_response(response)
 
 
-class YouTubeSummarizerReActAgent:
+class YouTubeSummarizerReAct:
     """ReAct-based YouTube summarizer using the LangGraph workflow."""
 
     def __init__(self, target_language: str | None = None):
@@ -202,21 +202,21 @@ class YouTubeSummarizerReActAgent:
         )
 
 
-class YouTubeSummarizerLiteAgent:
-    """Lightweight ReAct-based YouTube summarizer."""
+class YouTubeSummarizer:
+    """Lightweight YouTube summarizer."""
 
     def __init__(self, target_language: str | None = None):
         self.target_language = target_language
 
-    def invoke(self, transcript_or_url: str) -> str:
+    def invoke(self, transcript_or_url: str) -> Summary:
         """Summarize a transcript or YouTube URL."""
-        return summarize_video_lite(
+        return summarize_video(
             transcript_or_url=transcript_or_url,
             target_language=self.target_language,
         )
 
 
-class YouTubeSummarizerGeminiAgent:
+class YouTubeSummarizerGemini:
     """Gemini multimodal YouTube summarizer."""
 
     def __init__(
