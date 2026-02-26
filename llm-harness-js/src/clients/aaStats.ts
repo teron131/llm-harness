@@ -1,4 +1,4 @@
-import { add, divide, log, mean, multiply } from "mathjs";
+import { add, mean, multiply } from "mathjs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
@@ -8,9 +8,22 @@ const OUTPUT_PATH = resolve(".cache/aa_output.json");
 const LOOKBACK_DAYS = 365;
 const REQUEST_TIMEOUT_MS = 30_000;
 const DEFAULT_CACHE_TTL_SECONDS = 60 * 60 * 12;
+const BENCHMARK_KEYS = [
+  "hle",
+  "terminalbench_hard",
+  "lcr",
+  "ifbench",
+  "scicode",
+] as const;
+
+const SCORE_WEIGHTS = {
+  intelligence: 0.3,
+  benchmark_bias: 0.3,
+  price: 0.2,
+  speed: 0.2,
+} as const;
 
 type NumberOrNull = number | null;
-
 type ModelCreator = {
   name?: string;
   slug?: string;
@@ -62,6 +75,8 @@ type Percentiles = {
   price_percentile: NumberOrNull;
 };
 
+type ScoredModel = BaseModel & { scores: Scores };
+
 export type AaEnrichedModel = BaseModel & {
   scores: Scores;
   percentiles: Percentiles;
@@ -79,10 +94,6 @@ export type AaOutputPayload = {
   models: AaEnrichedModel[];
 };
 
-function inverseLog1p(value: number): number {
-  return Number(divide(1, log(add(1, value))));
-}
-
 function finiteNumbers(values: unknown[]): number[] {
   return values
     .filter((value) => value != null)
@@ -98,12 +109,41 @@ function meanOfFinite(values: unknown[]): NumberOrNull {
   return Number(mean(numbers));
 }
 
-function meanOfPositive(values: unknown[]): NumberOrNull {
-  const numbers = finiteNumbers(values).filter((value) => value > 0);
-  if (numbers.length === 0) {
+function isPositiveFinite(value: unknown): boolean {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) && numericValue > 0;
+}
+
+function signedLog(value: unknown, invert = false): NumberOrNull {
+  if (!isPositiveFinite(value)) {
     return null;
   }
-  return Number(mean(numbers));
+  const numericValue = Number(value);
+  return invert ? -Math.log(numericValue) : Math.log(numericValue);
+}
+
+function weightedMean(
+  pairs: Array<{ value: NumberOrNull; weight: number }>,
+): NumberOrNull {
+  const validPairs = pairs.filter(
+    (pair) =>
+      pair.value != null &&
+      Number.isFinite(pair.value) &&
+      Number.isFinite(pair.weight) &&
+      pair.weight > 0,
+  );
+  if (validPairs.length === 0) {
+    return null;
+  }
+  const weightedSum = validPairs.reduce(
+    (sum, pair) => sum + (pair.value as number) * pair.weight,
+    0,
+  );
+  const weightSum = validPairs.reduce((sum, pair) => sum + pair.weight, 0);
+  if (weightSum === 0) {
+    return null;
+  }
+  return weightedSum / weightSum;
 }
 
 function percentileRank(values: unknown[], value: unknown): NumberOrNull {
@@ -138,53 +178,49 @@ function removeIds<T>(value: T): T {
   return value;
 }
 
-function calculateScores(model: BaseModel): Scores {
-  const evaluations = model.evaluations ?? {};
-  const pricing = model.pricing ?? {};
+function computeScores(filteredModels: BaseModel[]): ScoredModel[] {
+  return filteredModels.map((model) => {
+    const intelligence = Number(model.evaluations?.artificial_analysis_intelligence_index);
+    const coding = Number(model.evaluations?.artificial_analysis_coding_index);
+    const blendedPrice = model.pricing?.price_1m_blended_3_to_1;
+    const ttfa = model.median_time_to_first_answer_token;
+    const tps = model.median_output_tokens_per_second;
 
-  const intelligenceIndex = Number(
-    evaluations.artificial_analysis_intelligence_index,
-  );
-  const codingIndex = Number(evaluations.artificial_analysis_coding_index);
-  const blendedPrice = Number(pricing.price_1m_blended_3_to_1);
-  const ttfa = Number(model.median_time_to_first_answer_token);
-  const tps = Number(model.median_output_tokens_per_second);
+    const intelligenceRaw =
+      Number.isFinite(intelligence) && Number.isFinite(coding)
+        ? Number(add(multiply(2, intelligence), coding))
+        : null;
+    const priceRaw = signedLog(blendedPrice, true);
+    const ttfaRaw = signedLog(ttfa, true);
+    const tpsRaw = signedLog(tps);
+    const intelligenceScore = intelligenceRaw;
+    const benchmarkBiasScore = meanOfFinite(
+      BENCHMARK_KEYS.map((key) => {
+        if (!isPositiveFinite(model.evaluations?.[key])) {
+          return null;
+        }
+        return Number(model.evaluations?.[key]);
+      }),
+    );
+    const priceScore = priceRaw;
+    const speedScore = meanOfFinite([ttfaRaw, tpsRaw]);
 
-  const intelligenceScore =
-    Number.isFinite(intelligenceIndex) && Number.isFinite(codingIndex)
-      ? Number(add(multiply(2, intelligenceIndex), codingIndex))
-      : null;
-
-  const benchmarkBiasScore = meanOfPositive([
-    evaluations.hle,
-    evaluations.terminalbench_hard,
-    evaluations.lcr,
-    evaluations.ifbench,
-    evaluations.scicode,
-  ]);
-
-  const priceScore =
-    Number.isFinite(blendedPrice) && blendedPrice > 0
-      ? inverseLog1p(blendedPrice)
-      : null;
-
-  const speedScore =
-    Number.isFinite(ttfa) && Number.isFinite(tps) && ttfa > 0 && tps > 0
-      ? Number(add(inverseLog1p(ttfa), log(tps)))
-      : null;
-
-  return {
-    overall_score: meanOfFinite([
-      intelligenceScore,
-      benchmarkBiasScore,
-      priceScore,
-      speedScore,
-    ]),
-    intelligence_score: intelligenceScore,
-    benchmark_bias_score: benchmarkBiasScore,
-    price_score: priceScore,
-    speed_score: speedScore,
-  };
+    return {
+      ...model,
+      scores: {
+        overall_score: weightedMean([
+          { value: intelligenceScore, weight: SCORE_WEIGHTS.intelligence },
+          { value: benchmarkBiasScore, weight: SCORE_WEIGHTS.benchmark_bias },
+          { value: priceScore, weight: SCORE_WEIGHTS.price },
+          { value: speedScore, weight: SCORE_WEIGHTS.speed },
+        ]),
+        intelligence_score: intelligenceScore,
+        benchmark_bias_score: benchmarkBiasScore,
+        price_score: priceScore,
+        speed_score: speedScore,
+      },
+    };
+  });
 }
 
 function rankAndEnrichModels(
@@ -192,32 +228,17 @@ function rankAndEnrichModels(
   cutoffDate: string,
 ): AaEnrichedModel[] {
   const filteredModels = models.filter((model) => {
-    const blendedPrice = Number(model.pricing?.price_1m_blended_3_to_1);
-    const inputPrice = Number(model.pricing?.price_1m_input_tokens);
-    const outputPrice = Number(model.pricing?.price_1m_output_tokens);
-    const ttfa = Number(model.median_time_to_first_answer_token);
-    const tps = Number(model.median_output_tokens_per_second);
-
     return (
       (model.release_date ?? "") >= cutoffDate &&
-      Number.isFinite(blendedPrice) &&
-      Number.isFinite(inputPrice) &&
-      Number.isFinite(outputPrice) &&
-      Number.isFinite(ttfa) &&
-      Number.isFinite(tps) &&
-      blendedPrice > 0 &&
-      inputPrice > 0 &&
-      outputPrice > 0 &&
-      ttfa > 0 &&
-      tps > 0
+      isPositiveFinite(model.pricing?.price_1m_blended_3_to_1) &&
+      isPositiveFinite(model.pricing?.price_1m_input_tokens) &&
+      isPositiveFinite(model.pricing?.price_1m_output_tokens) &&
+      isPositiveFinite(model.median_time_to_first_answer_token) &&
+      isPositiveFinite(model.median_output_tokens_per_second)
     );
   });
 
-  const scoredModels = filteredModels.map((model) => ({
-    ...model,
-    scores: calculateScores(model),
-  }));
-
+  const scoredModels = computeScores(filteredModels);
   const ranked = scoredModels
     .filter((model) => Number.isFinite(model.scores.overall_score))
     .sort(
@@ -291,9 +312,8 @@ async function fetchAndCacheModels(
   return cachePayload;
 }
 
-export async function getAaStatsJson(): Promise<AaOutputPayload> {
+export async function getAAStats(): Promise<AaOutputPayload> {
   const apiKey = process.env.ARTIFICIALANALYSIS_API_KEY;
-
   const refreshCache = process.env.AA_REFRESH === "1";
   const cacheTtlSeconds = Number(
     process.env.AA_CACHE_TTL_SECONDS ?? DEFAULT_CACHE_TTL_SECONDS,

@@ -22,6 +22,12 @@ LOOKBACK_DAYS = 365
 REQUEST_TIMEOUT_SECONDS = 30.0
 DEFAULT_CACHE_TTL_SECONDS = 60 * 60 * 12
 BENCHMARK_BIAS_KEYS = ("hle", "terminalbench_hard", "lcr", "ifbench", "scicode")
+SCORE_WEIGHTS = {
+    "intelligence": 0.3,
+    "benchmark_bias": 0.3,
+    "price": 0.2,
+    "speed": 0.2,
+}
 PERCENTILE_COLUMNS = (
     ("overall_score", "overall_percentile"),
     ("intelligence_score", "intelligence_percentile"),
@@ -48,6 +54,18 @@ def _as_finite_float(value: Any) -> float | None:
     return numeric if math.isfinite(numeric) else None
 
 
+def _is_positive_finite(value: Any) -> bool:
+    numeric = _as_finite_float(value)
+    return numeric is not None and numeric > 0
+
+
+def _signed_log(value: Any, *, invert: bool = False) -> float | None:
+    numeric = _as_finite_float(value)
+    if numeric is None or numeric <= 0:
+        return None
+    return float(-math.log(numeric) if invert else math.log(numeric))
+
+
 def _mean(values: list[float | None]) -> float | None:
     numbers = [value for value in values if value is not None and math.isfinite(value)]
     if not numbers:
@@ -55,15 +73,15 @@ def _mean(values: list[float | None]) -> float | None:
     return float(sum(numbers) / len(numbers))
 
 
-def _mean_positive(values: list[float | None]) -> float | None:
-    numbers = [value for value in values if value is not None and math.isfinite(value) and value > 0]
-    if not numbers:
+def _weighted_mean(pairs: list[tuple[float | None, float]]) -> float | None:
+    valid_pairs = [(value, weight) for value, weight in pairs if value is not None and math.isfinite(value) and math.isfinite(weight) and weight > 0]
+    if not valid_pairs:
         return None
-    return float(sum(numbers) / len(numbers))
-
-
-def _inverse_log1p(value: float) -> float:
-    return float(1.0 / math.log1p(value))
+    weighted_sum = sum(value * weight for value, weight in valid_pairs)
+    weight_sum = sum(weight for _, weight in valid_pairs)
+    if weight_sum == 0:
+        return None
+    return float(weighted_sum / weight_sum)
 
 
 def _load_cache() -> dict[str, Any]:
@@ -128,7 +146,7 @@ def get_aa_stats() -> dict[str, Any]:
 
         if release_date < cutoff_date:
             continue
-        if not all(value is not None and value > 0 for value in [blended_price, input_price, output_price, ttfa, tps]):
+        if not all(_is_positive_finite(value) for value in [blended_price, input_price, output_price, ttfa, tps]):
             continue
 
         intelligence_index = _as_finite_float(evaluations.get("artificial_analysis_intelligence_index"))
@@ -138,11 +156,19 @@ def get_aa_stats() -> dict[str, Any]:
         if intelligence_index is not None and coding_index is not None:
             intelligence_score = float((2.0 * intelligence_index) + coding_index)
 
-        benchmark_bias_score = _mean_positive([_as_finite_float(evaluations.get(key)) for key in BENCHMARK_BIAS_KEYS])
+        benchmark_values = [_as_finite_float(evaluations.get(key)) for key in BENCHMARK_BIAS_KEYS]
+        benchmark_bias_score = _mean([value for value in benchmark_values if value is not None and value > 0])
 
-        price_score = _inverse_log1p(blended_price)
-        speed_score = float(_inverse_log1p(ttfa) + math.log(tps))
-        overall_score = _mean([intelligence_score, benchmark_bias_score, price_score, speed_score])
+        price_score = _signed_log(blended_price, invert=True)
+        speed_score = _mean([_signed_log(ttfa, invert=True), _signed_log(tps)])
+        overall_score = _weighted_mean(
+            [
+                (intelligence_score, SCORE_WEIGHTS["intelligence"]),
+                (benchmark_bias_score, SCORE_WEIGHTS["benchmark_bias"]),
+                (price_score, SCORE_WEIGHTS["price"]),
+                (speed_score, SCORE_WEIGHTS["speed"]),
+            ]
+        )
 
         enriched_model = {
             **model,
