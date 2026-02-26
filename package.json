@@ -9,6 +9,7 @@
     "js:build": "npm --workspace llm-harness-js run build",
     "js:typecheck": "npm --workspace llm-harness-js run typecheck",
     "js:test": "npm --workspace llm-harness-js run test",
-    "js:dev": "npm --workspace llm-harness-js run dev"
+    "js:dev": "npm --workspace llm-harness-js run dev",
+    "js:aa-stats": "npm --workspace llm-harness-js run aa:stats"
   }
 }

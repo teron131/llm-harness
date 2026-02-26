@@ -7,7 +7,7 @@ const CACHE_PATH = resolve(".cache/aa_models.json");
 const OUTPUT_PATH = resolve(".cache/aa_output.json");
 const LOOKBACK_DAYS = 365;
 const REQUEST_TIMEOUT_MS = 30_000;
-const DEFAULT_CACHE_TTL_SECONDS = 60 * 60 * 12;
+const DEFAULT_CACHE_TTL_SECONDS = 60 * 60 * 24;
 const BENCHMARK_KEYS = [
   "hle",
   "terminalbench_hard",
@@ -180,7 +180,9 @@ function removeIds<T>(value: T): T {
 
 function computeScores(filteredModels: BaseModel[]): ScoredModel[] {
   return filteredModels.map((model) => {
-    const intelligence = Number(model.evaluations?.artificial_analysis_intelligence_index);
+    const intelligence = Number(
+      model.evaluations?.artificial_analysis_intelligence_index,
+    );
     const coding = Number(model.evaluations?.artificial_analysis_coding_index);
     const blendedPrice = model.pricing?.price_1m_blended_3_to_1;
     const ttfa = model.median_time_to_first_answer_token;
