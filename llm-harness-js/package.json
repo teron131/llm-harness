@@ -15,6 +15,7 @@
   "packageManager": "bun@1.2.21",
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "aa:stats": "node ./scripts/run-aa-stats.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
