@@ -1,0 +1,14 @@
+{
+  "name": "llm-harness-monorepo",
+  "private": true,
+  "workspaces": [
+    "llm-harness-js"
+  ],
+  "scripts": {
+    "js:install": "npm install --workspace llm-harness-js",
+    "js:build": "npm --workspace llm-harness-js run build",
+    "js:typecheck": "npm --workspace llm-harness-js run typecheck",
+    "js:test": "npm --workspace llm-harness-js run test",
+    "js:dev": "npm --workspace llm-harness-js run dev"
+  }
+}
