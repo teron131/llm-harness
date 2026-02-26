@@ -17,6 +17,7 @@ dependencies = [
     "langgraph>=1.0.9",
     "opencc-python-reimplemented>=0.1.7",
     "pydantic>=2.12.5",
+    "polars>=1.33.1",
     "python-dotenv>=1.2.1",
     "rich>=14.3.3",
     "ruff>=0.15.2",

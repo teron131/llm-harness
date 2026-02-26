@@ -9,6 +9,7 @@ from ..agents.agents import (
     YouTubeSummarizerGemini,
     YouTubeSummarizerReAct,
 )
+from .aa_stats import get_aa_stats
 from .gemini import ChatGemini, GeminiEmbeddings, create_gemini_cache
 from .multimodal import MediaMessage
 from .openrouter import ChatOpenRouter, OpenRouterEmbeddings
@@ -51,6 +52,7 @@ __all__ = [
     "create_capture_usage_node",
     "create_gemini_cache",
     "create_reset_usage_node",
+    "get_aa_stats",
     "get_accumulated_usage",
     "get_metadata",
     "get_usage",
