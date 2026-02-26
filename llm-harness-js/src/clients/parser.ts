@@ -157,12 +157,19 @@ export async function parseStream(
       const [reasoningChunk, answerChunk] = item;
       if (reasoningChunk !== null) {
         reasoning = reasoningChunk;
+        // Keep parity with Python parser side effects during stream parsing.
+        // eslint-disable-next-line no-console
+        console.log(`Reasoning: ${reasoning}`);
       }
       if (answerChunk !== null) {
         answerParts.push(answerChunk);
+        // eslint-disable-next-line no-console
+        process.stdout.write(answerChunk);
       }
     } else {
       answerParts.push(item);
+      // eslint-disable-next-line no-console
+      process.stdout.write(item);
     }
   }
 

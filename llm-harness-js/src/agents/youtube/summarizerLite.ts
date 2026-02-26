@@ -14,8 +14,8 @@ import {
 } from "./prompts.js";
 import {
   GarbageIdentificationSchema,
+  Summary,
   SummarySchema,
-  summaryToText,
 } from "./schemas.js";
 
 const DEFAULT_MODEL = "google/gemini-3-flash-preview";
@@ -51,7 +51,7 @@ export async function summarizeVideo({
 }: {
   transcriptOrUrl: string;
   targetLanguage?: string | null;
-}): Promise<string> {
+}): Promise<Summary> {
   const llm = ChatOpenRouter({
     model: DEFAULT_MODEL,
     temperature: 0,
@@ -68,5 +68,5 @@ export async function summarizeVideo({
     new HumanMessage(`Transcript:\n${cleanedTranscript}`),
   ]);
 
-  return summaryToText(summary);
+  return summary;
 }

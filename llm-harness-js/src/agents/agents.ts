@@ -158,7 +158,7 @@ export class ImageAnalysisAgent<
   }
 }
 
-export class YouTubeSummarizerReActAgent {
+export class YouTubeSummarizerReAct {
   constructor(private readonly targetLanguage?: string | null) {}
 
   async invoke(transcriptOrUrl: string): Promise<Summary> {
@@ -169,10 +169,10 @@ export class YouTubeSummarizerReActAgent {
   }
 }
 
-export class YouTubeSummarizerLiteAgent {
+export class YouTubeSummarizer {
   constructor(private readonly targetLanguage?: string | null) {}
 
-  async invoke(transcriptOrUrl: string): Promise<string> {
+  async invoke(transcriptOrUrl: string): Promise<Summary> {
     return summarizeVideoLite({
       transcriptOrUrl,
       targetLanguage: this.targetLanguage ?? null,
@@ -180,7 +180,7 @@ export class YouTubeSummarizerLiteAgent {
   }
 }
 
-export class YouTubeSummarizerGeminiAgent {
+export class YouTubeSummarizerGemini {
   constructor(
     private readonly options: {
       model?: string;
@@ -209,3 +209,7 @@ export class YouTubeSummarizerGeminiAgent {
     return summarizeVideoGemini(payload);
   }
 }
+
+export const YouTubeSummarizerReActAgent = YouTubeSummarizerReAct;
+export const YouTubeSummarizerLiteAgent = YouTubeSummarizer;
+export const YouTubeSummarizerGeminiAgent = YouTubeSummarizerGemini;

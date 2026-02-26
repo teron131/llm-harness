@@ -1,5 +1,4 @@
-import { readFile } from "node:fs/promises";
-import { PathLike } from "node:fs";
+import { readFileSync } from "node:fs";
 import path from "node:path";
 
 type SupportedCategory = "image" | "video" | "audio" | "file" | "text";
@@ -73,15 +72,16 @@ export class MediaMessage {
     this.content = [];
 
     items.forEach((item, idx) => {
-      if (labelPages) {
+      const blocks =
+        item instanceof Uint8Array
+          ? this.fromBytes(item, mimeType)
+          : this.fromPath(item);
+
+      if (labelPages && blocks.length > 0) {
         this.content.push(createTextBlock(`Page ${idx + 1}:`));
       }
 
-      if (item instanceof Uint8Array) {
-        this.content.push(...this.fromBytes(item, mimeType));
-      } else {
-        this.content.push(...this.fromPath(item));
-      }
+      this.content.push(...blocks);
     });
 
     if (description) {
@@ -97,11 +97,8 @@ export class MediaMessage {
     return [createImageBlock(dataUrl)];
   }
 
-  private fromPath(
-    filePath: string | PathLike,
-  ): Array<Record<string, unknown>> {
-    const normalizedPath = String(filePath);
-    const suffix = path.extname(normalizedPath).toLowerCase();
+  private fromPath(filePath: string): Array<Record<string, unknown>> {
+    const suffix = path.extname(filePath).toLowerCase();
     const supported = SUPPORTED_EXTENSIONS[suffix];
 
     if (!supported) {
@@ -113,18 +110,26 @@ export class MediaMessage {
     const [category, mimeType] = supported;
 
     if (category === "text") {
-      throw new Error(
-        "Text file support requires async loader; use MediaMessage.fromPathAsync for text media",
-      );
+      return [createTextBlock(readFileSync(filePath, "utf-8"))];
     }
 
-    return [
-      {
-        __deferred_path__: normalizedPath,
-        __category__: category,
-        __mime_type__: mimeType,
-      },
-    ];
+    const bytes = readFileSync(filePath);
+    const encoded = encodeBase64(bytes);
+    const dataUrl = `data:${mimeType};base64,${encoded}`;
+
+    if (category === "image" || category === "video") {
+      return [createImageBlock(dataUrl)];
+    }
+
+    if (category === "file") {
+      return [createFileBlock(path.basename(filePath), dataUrl)];
+    }
+
+    if (category === "audio") {
+      return [createAudioBlock(encoded, suffix === ".wav" ? "wav" : "mp3")];
+    }
+
+    return [];
   }
 
   static async fromPathAsync(options: {
@@ -134,44 +139,6 @@ export class MediaMessage {
     labelPages?: boolean;
     mimeType?: string;
   }): Promise<MediaMessage> {
-    const message = new MediaMessage(options);
-    const resolvedContent: Array<Record<string, unknown>> = [];
-
-    for (const block of message.content) {
-      if (!("__deferred_path__" in block)) {
-        resolvedContent.push(block);
-        continue;
-      }
-
-      const filePath = String(block.__deferred_path__);
-      const category = String(block.__category__) as SupportedCategory;
-      const mimeType = String(block.__mime_type__);
-      const bytes = await readFile(filePath);
-
-      if (category === "text") {
-        resolvedContent.push(createTextBlock(bytes.toString("utf-8")));
-        continue;
-      }
-
-      const encoded = encodeBase64(bytes);
-      const dataUrl = `data:${mimeType};base64,${encoded}`;
-
-      if (category === "image" || category === "video") {
-        resolvedContent.push(createImageBlock(dataUrl));
-      } else if (category === "file") {
-        resolvedContent.push(createFileBlock(path.basename(filePath), dataUrl));
-      } else if (category === "audio") {
-        resolvedContent.push(
-          createAudioBlock(
-            encoded,
-            path.extname(filePath).toLowerCase() === ".wav" ? "wav" : "mp3",
-          ),
-        );
-      }
-    }
-
-    message.content.length = 0;
-    message.content.push(...resolvedContent);
-    return message;
+    return new MediaMessage(options);
   }
 }

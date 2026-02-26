@@ -1,5 +1,5 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
+import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { relative, resolve } from "node:path";
 import { spawn } from "node:child_process";
 
 export const PATH_TRAVERSAL_ERROR = "Path traversal not allowed";
@@ -27,7 +27,8 @@ export class SandboxFS {
     const resolvedRoot = resolve(this.rootDir);
     const resolvedPath = resolve(resolvedRoot, virtualPath.slice(1));
 
-    if (!resolvedPath.startsWith(resolvedRoot)) {
+    const relPath = relative(resolvedRoot, resolvedPath);
+    if (relPath.startsWith("..") || relPath.startsWith("/")) {
       throw new Error(PATH_OUTSIDE_ROOT_ERROR);
     }
 
@@ -37,8 +38,8 @@ export class SandboxFS {
 
 async function fileExists(path: string): Promise<boolean> {
   try {
-    await readFile(path);
-    return true;
+    const fileStat = await stat(path);
+    return fileStat.isFile();
   } catch {
     return false;
   }

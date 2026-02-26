@@ -142,18 +142,18 @@ export function ChatOpenRouter({
   if (reasoningEffort) {
     modelKwargs.reasoning = { effort: reasoningEffort };
   }
-  if (Object.keys(provider).length > 0) {
-    modelKwargs.provider = provider;
-  }
-  if (mergedPlugins.length > 0) {
-    modelKwargs.plugins = mergedPlugins;
-  }
 
   const options: any = {
     model,
     temperature,
     modelKwargs,
   };
+  if (Object.keys(provider).length > 0) {
+    options.provider = provider;
+  }
+  if (mergedPlugins.length > 0) {
+    options.plugins = mergedPlugins;
+  }
 
   if (process.env.OPENROUTER_API_KEY) {
     options.apiKey = process.env.OPENROUTER_API_KEY;
