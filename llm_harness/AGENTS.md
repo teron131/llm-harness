@@ -4,12 +4,26 @@
 
 - This guide maps package-level responsibilities and cross-module boundaries inside `llm_harness`.
 
+## What Module Is For
+
+- This module is the Python package root that defines cross-module boundaries for agents, clients, tools, and utils.
+
 ## High-signal locations
 
 - `llm_harness/agents -> module`
 - `llm_harness/clients -> module`
 - `llm_harness/tools -> module`
 - `llm_harness/utils -> module`
+
+## Repository snapshot
+
+- High-signal files listed below form the stable architecture anchors for this module.
+- Keep imports and exports aligned with these anchors when extending behavior.
+
+## Symbol Inventory
+
+- Primary symbols are enumerated in the high-signal locations and syntax relationship sections.
+- Preserve existing exported names unless changing a public contract intentionally.
 
 ## Key takeaways per location
 
@@ -25,7 +39,7 @@
 - Keep pure transforms in `utils/*` to make pipeline behavior testable and composable.
 - Preserve schema-driven outputs in YouTube flows (`Summary`, `Quality`, `GarbageIdentification`) to maintain predictable downstream behavior.
 
-## Syntax relationship highlights (ast-grep-first)
+## Syntax Relationships
 
 - `llm_harness/agents/agents.py -> BaseHarnessAgent -> ChatOpenRouter`
 - `llm_harness/agents/youtube/summarizer.py -> get_transcript/filter_content/tag_content/untag_content`

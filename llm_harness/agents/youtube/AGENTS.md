@@ -4,6 +4,10 @@
 
 - YouTube summarization pipelines: LangGraph loop, ReAct-lite flow, and Gemini-native multimodal flow.
 
+## What Module Is For
+
+- This module implements multi-step YouTube summarization pipelines, schemas, prompts, and quality/garbage filtering loops.
+
 ## High-signal locations
 
 - `llm_harness/agents/youtube/summarizer_react.py -> create_graph/summarize_video_react`
@@ -12,6 +16,16 @@
 - `llm_harness/agents/youtube/schemas.py -> Summary/Quality/GarbageIdentification`
 - `llm_harness/agents/youtube/prompts.py -> prompt builders`
 - `llm_harness/agents/youtube/__init__.py -> public entrypoints`
+
+## Repository snapshot
+
+- High-signal files listed below form the stable architecture anchors for this module.
+- Keep imports and exports aligned with these anchors when extending behavior.
+
+## Symbol Inventory
+
+- Primary symbols are enumerated in the high-signal locations and syntax relationship sections.
+- Preserve existing exported names unless changing a public contract intentionally.
 
 ## Key takeaways per location
 
@@ -29,7 +43,7 @@
 - Quality acceptance is score-based (`Quality.is_acceptable`), with iterative refinement in graph mode.
 - Language handling is explicit (`target_language`), including conversion hooks in schema validators.
 
-## Syntax relationship highlights (ast-grep-first)
+## Syntax Relationships
 
 - `summarizer_react.py -> garbage_filter_node -> tag_content/filter_content/untag_content`
 - `summarizer_react.py -> summary_node/quality_node -> ChatOpenRouter(...).with_structured_output(...)`

@@ -4,6 +4,10 @@
 
 - Tool-callable integration boundaries: filesystem editing, web loading, and YouTube transcript retrieval.
 
+## What Module Is For
+
+- This module defines side-effect boundaries for filesystem, web loading, and YouTube transcript retrieval.
+
 ## High-signal locations
 
 - `llm_harness/tools/__init__.py -> package re-exports`
@@ -11,6 +15,16 @@
 - `llm_harness/tools/fs/fast_copy.py -> TagRange/tag_content/filter_content/untag_content`
 - `llm_harness/tools/web/webloader.py -> webloader/webloader_tool`
 - `llm_harness/tools/youtube/scraper.py -> scrape_youtube/get_transcript`
+
+## Repository snapshot
+
+- High-signal files listed below form the stable architecture anchors for this module.
+- Keep imports and exports aligned with these anchors when extending behavior.
+
+## Symbol Inventory
+
+- Primary symbols are enumerated in the high-signal locations and syntax relationship sections.
+- Preserve existing exported names unless changing a public contract intentionally.
 
 ## Key takeaways per location
 
@@ -27,7 +41,7 @@
 - Keep transcript acquisition provider-agnostic via fallback logic (ScrapeCreators -> Supadata).
 - Preserve tool-friendly function signatures and return types for LangChain integration.
 
-## Syntax relationship highlights (ast-grep-first)
+## Syntax Relationships
 
 - `agents/youtube/summarizer.py -> tools.fs.fast_copy + tools.youtube.scraper`
 - `agents/__init__.py -> tools.web.webloader_tool`

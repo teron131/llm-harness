@@ -4,10 +4,24 @@
 
 - Filesystem and transcript-line manipulation helpers designed for tool-calling workflows.
 
+## What Module Is For
+
+- This module provides sandboxed filesystem operations and transcript line-tag filtering helpers.
+
 ## High-signal locations
 
 - `llm_harness/tools/fs/fs_tools.py -> SandboxFS/make_fs_tools`
 - `llm_harness/tools/fs/fast_copy.py -> TagRange/tag_content/filter_content/untag_content`
+
+## Repository snapshot
+
+- High-signal files listed below form the stable architecture anchors for this module.
+- Keep imports and exports aligned with these anchors when extending behavior.
+
+## Symbol Inventory
+
+- Primary symbols are enumerated in the high-signal locations and syntax relationship sections.
+- Preserve existing exported names unless changing a public contract intentionally.
 
 ## Key takeaways per location
 
@@ -22,7 +36,7 @@
 - `ed`-based editing exists for LLM-friendly line patching; non-zero `ed` exit codes must surface as runtime errors.
 - Tag filtering operates on inclusive ranges and keeps untouched order stable.
 
-## Syntax relationship highlights (ast-grep-first)
+## Syntax Relationships
 
 - `fs_tools.py -> make_fs_tools -> fs_read_text/fs_write_text/fs_edit_with_ed`
 - `fs_tools.py -> fs_edit_with_ed -> subprocess.run([ed, ...])`

@@ -4,6 +4,10 @@
 
 - Provider client initialization, multimodal formatting, parser helpers, and usage tracking.
 
+## What Module Is For
+
+- This module centralizes TypeScript provider adapters, parsing, multimodal payload shaping, and usage tracking.
+
 ## High-signal locations
 
 - `src/clients/openrouter.ts -> ChatOpenRouter/OpenRouterEmbeddings`
@@ -12,6 +16,16 @@
 - `src/clients/parser.ts -> parseInvoke/parseBatch/parseStream/getMetadata`
 - `src/clients/usage.ts -> UsageMetadata + context-local tracking`
 - `src/clients/index.ts -> public re-export surface`
+
+## Repository snapshot
+
+- High-signal files listed below form the stable architecture anchors for this module.
+- Keep imports and exports aligned with these anchors when extending behavior.
+
+## Symbol Inventory
+
+- Primary symbols are enumerated in the high-signal locations and syntax relationship sections.
+- Preserve existing exported names unless changing a public contract intentionally.
 
 ## Key takeaways per location
 
@@ -27,7 +41,7 @@
 - Preserve parser fallback order to avoid provider-specific regressions.
 - Keep provider-specific request logic inside client modules, not agent modules.
 
-## Syntax relationship highlights (ast-grep-first)
+## Syntax Relationships
 
 - `openrouter.ts -> import NativeChatOpenRouter from @langchain/openrouter`
 - `gemini.ts -> import GoogleGenAI + ChatGoogleGenerativeAI`

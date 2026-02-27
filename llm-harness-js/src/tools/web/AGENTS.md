@@ -4,10 +4,24 @@
 
 - URL content loading and markdown cleanup for agent/tool consumption.
 
+## What Module Is For
+
+- This module converts URLs into markdown in batch and exposes the web loader tool surface.
+
 ## High-signal locations
 
 - `src/tools/web/webloader.ts -> webloader/webloaderTool`
 - `src/tools/web/index.ts -> module re-exports`
+
+## Repository snapshot
+
+- High-signal files listed below form the stable architecture anchors for this module.
+- Keep imports and exports aligned with these anchors when extending behavior.
+
+## Symbol Inventory
+
+- Primary symbols are enumerated in the high-signal locations and syntax relationship sections.
+- Preserve existing exported names unless changing a public contract intentionally.
 
 ## Key takeaways per location
 
@@ -21,7 +35,7 @@
 - Keep cleanup conservative to avoid changing source meaning.
 - Maintain the `webloaderTool` wrapper for orchestration compatibility.
 
-## Syntax relationship highlights (ast-grep-first)
+## Syntax Relationships
 
 - `agents/index.ts -> getTools() includes webloaderTool`
 - `agents/agents.ts -> WebLoaderAgent/WebSearchLoaderAgent use webloaderTool`

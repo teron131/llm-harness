@@ -4,12 +4,26 @@
 
 - Pure helper utilities for text conversion, image encoding, and YouTube URL/text normalization.
 
+## What Module Is For
+
+- This module contains pure TypeScript helpers for text conversion, image transforms, and YouTube URL/content normalization.
+
 ## High-signal locations
 
 - `src/utils/youtubeUtils.ts -> cleanText/cleanYoutubeUrl/isYoutubeUrl/extractVideoId`
 - `src/utils/textUtils.ts -> s2hk`
 - `src/utils/imageUtils.ts -> loadImageBase64`
 - `src/utils/index.ts -> utility export surface`
+
+## Repository snapshot
+
+- High-signal files listed below form the stable architecture anchors for this module.
+- Keep imports and exports aligned with these anchors when extending behavior.
+
+## Symbol Inventory
+
+- Primary symbols are enumerated in the high-signal locations and syntax relationship sections.
+- Preserve existing exported names unless changing a public contract intentionally.
 
 ## Key takeaways per location
 
@@ -24,7 +38,7 @@
 - Reuse centralized URL/text helpers in tools/agents to avoid regex duplication.
 - Preserve default image behavior (`maxSize`, output format) unless explicitly changed.
 
-## Syntax relationship highlights (ast-grep-first)
+## Syntax Relationships
 
 - `tools/youtube/scraper.ts -> imports all youtube utils`
 - `agents/youtube/schemas.ts -> imports s2hk`

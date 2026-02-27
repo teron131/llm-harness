@@ -4,6 +4,10 @@
 
 - Agent orchestration layer: wraps model clients and tools into task-level interfaces.
 
+## What Module Is For
+
+- This module orchestrates model clients and tools into task-level agent interfaces.
+
 ## High-signal locations
 
 - `llm_harness/agents/agents.py -> ExaAgent`
@@ -12,6 +16,16 @@
 - `llm_harness/agents/agents.py -> ImageAnalysisAgent`
 - `llm_harness/agents/agents.py -> YouTubeSummarizer*`
 - `llm_harness/agents/__init__.py -> get_tools/youtubeloader_tool`
+
+## Repository snapshot
+
+- High-signal files listed below form the stable architecture anchors for this module.
+- Keep imports and exports aligned with these anchors when extending behavior.
+
+## Symbol Inventory
+
+- Primary symbols are enumerated in the high-signal locations and syntax relationship sections.
+- Preserve existing exported names unless changing a public contract intentionally.
 
 ## Key takeaways per location
 
@@ -26,7 +40,7 @@
 - Preserve model names/constants unless explicitly requested.
 - Prefer delegating heavy flow logic to submodules (`agents/youtube`) to keep top-level agent classes thin.
 
-## Syntax relationship highlights (ast-grep-first)
+## Syntax Relationships
 
 - `agents.py -> BaseHarnessAgent.__init__ -> ChatOpenRouter`
 - `agents.py -> Web*Agent.invoke -> self.agent.invoke -> _process_response`

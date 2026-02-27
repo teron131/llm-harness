@@ -4,10 +4,24 @@
 
 - YouTube transcript scraping boundary with provider fallback and normalized result schema.
 
+## What Module Is For
+
+- This module retrieves and normalizes YouTube transcripts with provider fallback behavior.
+
 ## High-signal locations
 
 - `src/tools/youtube/scraper.ts -> scrapeYoutube/getTranscript/formatYoutubeLoaderOutput`
 - `src/tools/youtube/index.ts -> re-export surface`
+
+## Repository snapshot
+
+- High-signal files listed below form the stable architecture anchors for this module.
+- Keep imports and exports aligned with these anchors when extending behavior.
+
+## Symbol Inventory
+
+- Primary symbols are enumerated in the high-signal locations and syntax relationship sections.
+- Preserve existing exported names unless changing a public contract intentionally.
 
 ## Key takeaways per location
 
@@ -22,7 +36,7 @@
 - Keep env key handling soft per provider but strict overall when none are configured.
 - Keep transcript normalization centralized in this module.
 
-## Syntax relationship highlights (ast-grep-first)
+## Syntax Relationships
 
 - `scraper.ts -> imports cleanText/cleanYoutubeUrl/extractVideoId/isYoutubeUrl`
 - `agents/youtube/index.ts -> youtubeLoader uses scrapeYoutube + formatYoutubeLoaderOutput`

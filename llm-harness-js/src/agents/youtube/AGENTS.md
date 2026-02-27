@@ -4,6 +4,10 @@
 
 - YouTube summarization flows: lite, ReAct/graph, and Gemini multimodal.
 
+## What Module Is For
+
+- This module implements TypeScript YouTube summarization workflows, schemas, prompts, and quality/garbage filtering logic.
+
 ## High-signal locations
 
 - `src/agents/youtube/index.ts -> summarizeVideo/streamSummarizeVideo/summarizeVideoReact/youtubeLoader`
@@ -12,6 +16,16 @@
 - `src/agents/youtube/summarizerGemini.ts -> direct Gemini multimodal summarize`
 - `src/agents/youtube/schemas.ts -> Summary/Quality/Garbage schemas + scoring helpers`
 - `src/agents/youtube/prompts.ts -> prompt templates`
+
+## Repository snapshot
+
+- High-signal files listed below form the stable architecture anchors for this module.
+- Keep imports and exports aligned with these anchors when extending behavior.
+
+## Symbol Inventory
+
+- Primary symbols are enumerated in the high-signal locations and syntax relationship sections.
+- Preserve existing exported names unless changing a public contract intentionally.
 
 ## Key takeaways per location
 
@@ -28,7 +42,7 @@
 - Keep prompt text centralized in `prompts.ts`.
 - Maintain `Summary` schema compatibility across all summarizer implementations.
 
-## Syntax relationship highlights (ast-grep-first)
+## Syntax Relationships
 
 - `summarizerLite.ts -> ChatOpenRouter + getTranscript + fastCopy tag/filter/untag`
 - `summarizer.ts -> StateGraph + garbage_filter -> summary -> quality`

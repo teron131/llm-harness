@@ -4,6 +4,10 @@
 
 - Provider clients, multimodal message construction, response parsing, and usage tracking.
 
+## What Module Is For
+
+- This module centralizes provider adapters, multimodal message shaping, parsing, and usage accounting.
+
 ## High-signal locations
 
 - `llm_harness/clients/openrouter.py -> ChatOpenRouter/OpenRouterEmbeddings`
@@ -12,6 +16,16 @@
 - `llm_harness/clients/parser.py -> StructuredOutput/parse_*`
 - `llm_harness/clients/usage.py -> UsageMetadata/track_usage/get_usage`
 - `llm_harness/clients/__init__.py -> package surface`
+
+## Repository snapshot
+
+- High-signal files listed below form the stable architecture anchors for this module.
+- Keep imports and exports aligned with these anchors when extending behavior.
+
+## Symbol Inventory
+
+- Primary symbols are enumerated in the high-signal locations and syntax relationship sections.
+- Preserve existing exported names unless changing a public contract intentionally.
 
 ## Key takeaways per location
 
@@ -28,7 +42,7 @@
 - Usage totals are context-local; workflows should reset usage at run start.
 - `MediaMessage` is the canonical path for multimodal content into chat models.
 
-## Syntax relationship highlights (ast-grep-first)
+## Syntax Relationships
 
 - `agents/agents.py -> BaseHarnessAgent -> ChatOpenRouter`
 - `agents/youtube/summarizer_gemini.py -> track_usage`

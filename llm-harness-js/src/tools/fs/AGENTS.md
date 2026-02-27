@@ -4,10 +4,24 @@
 
 - Filesystem sandbox operations and transcript tag-range transformations.
 
+## What Module Is For
+
+- This module provides sandboxed filesystem helpers and line-tag transcript filtering utilities.
+
 ## High-signal locations
 
 - `src/tools/fs/fsTools.ts -> SandboxFS/makeFsTools`
 - `src/tools/fs/fastCopy.ts -> TagRangeSchema/tagContent/filterContent/untagContent`
+
+## Repository snapshot
+
+- High-signal files listed below form the stable architecture anchors for this module.
+- Keep imports and exports aligned with these anchors when extending behavior.
+
+## Symbol Inventory
+
+- Primary symbols are enumerated in the high-signal locations and syntax relationship sections.
+- Preserve existing exported names unless changing a public contract intentionally.
 
 ## Key takeaways per location
 
@@ -21,7 +35,7 @@
 - Preserve inclusive range removal semantics in `filterContent`.
 - Keep text encoding behavior UTF-8 for read/write operations.
 
-## Syntax relationship highlights (ast-grep-first)
+## Syntax Relationships
 
 - `agents/youtube/summarizer*.ts -> import tagContent/filterContent/untagContent`
 - `fsTools.ts -> spawn(\"ed\", ...)` for line-oriented edits

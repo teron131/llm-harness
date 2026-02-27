@@ -4,6 +4,10 @@
 
 - Side-effect boundaries for filesystem operations, web loading, and YouTube transcript acquisition.
 
+## What Module Is For
+
+- This module defines side-effect boundaries for filesystem operations, web loading, and transcript scraping.
+
 ## High-signal locations
 
 - `src/tools/index.ts -> top-level tool exports`
@@ -11,6 +15,16 @@
 - `src/tools/fs/fastCopy.ts -> line tag/filter utilities`
 - `src/tools/web/webloader.ts -> URL-to-markdown converter`
 - `src/tools/youtube/scraper.ts -> transcript provider fallback + normalization`
+
+## Repository snapshot
+
+- High-signal files listed below form the stable architecture anchors for this module.
+- Keep imports and exports aligned with these anchors when extending behavior.
+
+## Symbol Inventory
+
+- Primary symbols are enumerated in the high-signal locations and syntax relationship sections.
+- Preserve existing exported names unless changing a public contract intentionally.
 
 ## Key takeaways per location
 
@@ -26,7 +40,7 @@
 - Preserve provider fallback ordering and user-facing errors for transcript fetching.
 - Keep file operations constrained to sandbox root.
 
-## Syntax relationship highlights (ast-grep-first)
+## Syntax Relationships
 
 - `tools/index.ts -> exports fs/web/youtube tool APIs`
 - `agents/youtube/* -> import getTranscript + fastCopy helpers`

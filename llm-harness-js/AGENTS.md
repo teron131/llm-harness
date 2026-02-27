@@ -4,6 +4,10 @@
 
 - TypeScript port of `llm_harness` with equivalent module boundaries: `agents`, `clients`, `tools`, `utils`.
 
+## What Module Is For
+
+- This module is the TypeScript package root that mirrors Python module boundaries and public exports.
+
 ## High-signal locations
 
 - `llm-harness-js/src/index.ts -> package surface`
@@ -11,6 +15,16 @@
 - `llm-harness-js/src/clients -> provider + parsing + usage primitives`
 - `llm-harness-js/src/tools -> I/O and integration boundaries`
 - `llm-harness-js/src/utils -> pure helper transforms`
+
+## Repository snapshot
+
+- High-signal files listed below form the stable architecture anchors for this module.
+- Keep imports and exports aligned with these anchors when extending behavior.
+
+## Symbol Inventory
+
+- Primary symbols are enumerated in the high-signal locations and syntax relationship sections.
+- Preserve existing exported names unless changing a public contract intentionally.
 
 ## Key takeaways per location
 
@@ -27,7 +41,7 @@
 - Keep provider-specific request shaping in `clients/*`, not in agents.
 - Keep external API calls isolated to `tools/*`.
 
-## Syntax relationship highlights (ast-grep-first)
+## Syntax Relationships
 
 - `src/index.ts -> export * from agents/clients/tools/utils`
 - `src/agents/agents.ts -> ChatOpenRouter + MediaMessage + webloaderTool`
