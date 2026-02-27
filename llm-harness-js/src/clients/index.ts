@@ -14,6 +14,7 @@ export {
 } from "../agents/agents.js";
 export { ChatGemini, GeminiEmbeddings, createGeminiCache } from "./gemini.js";
 export { getAAStats } from "./aaStats.js";
+export { getModelStats } from "./modelStats.js";
 export { MediaMessage } from "./multimodal.js";
 export { ChatOpenRouter, OpenRouterEmbeddings } from "./openrouter.js";
 export {
