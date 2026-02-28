@@ -1,11 +1,11 @@
-import { getEvalStats } from "./evalStats.js";
-import { getModelStats } from "./modelStats.js";
+import { getArtificialAnalysisStats } from "./artificialAnalysis.js";
+import { getModelsDevStats } from "./modelsDev.js";
 
-type ModelStatsModel = Awaited<
-  ReturnType<typeof getModelStats>
+type ModelsDevModel = Awaited<
+  ReturnType<typeof getModelsDevStats>
 >["models"][number];
-type EvalStatsModel = Awaited<
-  ReturnType<typeof getEvalStats>
+type ArtificialAnalysisModel = Awaited<
+  ReturnType<typeof getArtificialAnalysisStats>
 >["models"][number];
 
 const TOKEN_PREFIX_WEIGHTS = [5, 4, 3, 2, 1] as const;
@@ -58,13 +58,13 @@ export type MatchMappedModel = {
   candidates: MatchCandidate[];
 };
 
-type EvalModelUnionRow = {
+type MatchUnionRow = {
   eval_slug: string;
   eval_name: string | null;
   eval_release_date: string | null;
   best_match: MatchResult;
-  eval: EvalStatsModel;
-  models_dev: ModelStatsModel | null;
+  eval: ArtificialAnalysisModel;
+  models_dev: ModelsDevModel | null;
   union: Record<string, unknown>;
 };
 
@@ -447,15 +447,15 @@ function compareCandidates(
 }
 
 function collectCandidatesForEvalModel(
-  evalModel: EvalStatsModel,
-  modelStatsModels: ModelStatsModel[],
+  evalModel: ArtificialAnalysisModel,
+  modelsDevModels: ModelsDevModel[],
 ): MatchCandidate[] {
   const evalSlug = String(evalModel.slug ?? "");
   if (!evalSlug) {
     return [];
   }
 
-  return modelStatsModels
+  return modelsDevModels
     .filter(
       (modelStatsModel) => modelStatsModel.provider_id === PROVIDER_FILTER,
     )
@@ -519,47 +519,49 @@ function applyMaxMinHalfVoid<
 export async function getMatchModelsUnion(
   _options: MatchModelsUnionOptions = {},
 ): Promise<MatchModelsUnionPayload> {
-  const evalStats = await getEvalStats();
-  const modelStats = await getModelStats();
+  const artificialAnalysisStats = await getArtificialAnalysisStats();
+  const modelsDevStats = await getModelsDevStats();
   // OpenRouter-only by design: no runtime provider switching.
-  const scopedModelStatsModels = modelStats.models.filter(
+  const scopedModelsDevModels = modelsDevStats.models.filter(
     (model) => model.provider_id === PROVIDER_FILTER,
   );
 
-  const rows: EvalModelUnionRow[] = evalStats.models.map((evalModel) => {
-    const candidates = collectCandidatesForEvalModel(
-      evalModel,
-      scopedModelStatsModels,
-    );
-    const bestMatch = candidates[0] ?? null;
-    const matchedModelStats = bestMatch
-      ? (scopedModelStatsModels.find(
-          (model) => model.model_id === bestMatch.model_id,
-        ) ?? null)
-      : null;
+  const rows: MatchUnionRow[] = artificialAnalysisStats.models.map(
+    (evalModel) => {
+      const candidates = collectCandidatesForEvalModel(
+        evalModel,
+        scopedModelsDevModels,
+      );
+      const bestMatch = candidates[0] ?? null;
+      const matchedModelsDev = bestMatch
+        ? (scopedModelsDevModels.find(
+            (model) => model.model_id === bestMatch.model_id,
+          ) ?? null)
+        : null;
 
-    return {
-      eval_slug: typeof evalModel.slug === "string" ? evalModel.slug : "",
-      eval_name: typeof evalModel.name === "string" ? evalModel.name : null,
-      eval_release_date:
-        typeof evalModel.release_date === "string"
-          ? evalModel.release_date
-          : null,
-      best_match: bestMatch,
-      eval: evalModel,
-      models_dev: matchedModelStats,
-      union: {
-        ...(matchedModelStats?.model ?? {}),
-        ...(evalModel ?? {}),
-        name:
-          typeof matchedModelStats?.model?.name === "string"
-            ? matchedModelStats.model.name
-            : typeof evalModel.name === "string"
-              ? evalModel.name
-              : null,
-      },
-    };
-  });
+      return {
+        eval_slug: typeof evalModel.slug === "string" ? evalModel.slug : "",
+        eval_name: typeof evalModel.name === "string" ? evalModel.name : null,
+        eval_release_date:
+          typeof evalModel.release_date === "string"
+            ? evalModel.release_date
+            : null,
+        best_match: bestMatch,
+        eval: evalModel,
+        models_dev: matchedModelsDev,
+        union: {
+          ...(matchedModelsDev?.model ?? {}),
+          ...(evalModel ?? {}),
+          name:
+            typeof matchedModelsDev?.model?.name === "string"
+              ? matchedModelsDev.model.name
+              : typeof evalModel.name === "string"
+                ? evalModel.name
+                : null,
+        },
+      };
+    },
+  );
 
   const voidStats = applyMaxMinHalfVoid(rows);
   const unions = rows
@@ -567,10 +569,12 @@ export async function getMatchModelsUnion(
     .map((row) => row.union);
 
   return {
-    eval_fetched_at_epoch_seconds: evalStats.fetched_at_epoch_seconds,
-    models_dev_fetched_at_epoch_seconds: modelStats.fetched_at_epoch_seconds,
-    total_eval_models: evalStats.models.length,
-    total_models_dev_models: scopedModelStatsModels.length,
+    eval_fetched_at_epoch_seconds:
+      artificialAnalysisStats.fetched_at_epoch_seconds,
+    models_dev_fetched_at_epoch_seconds:
+      modelsDevStats.fetched_at_epoch_seconds,
+    total_eval_models: artificialAnalysisStats.models.length,
+    total_models_dev_models: scopedModelsDevModels.length,
     void_mode: "maxmin_half",
     void_threshold: voidStats.threshold,
     voided_count: voidStats.voided,
@@ -583,37 +587,41 @@ export async function getMatchModelMapping(
   options: MatchModelMappingOptions = {},
 ): Promise<MatchModelMappingPayload> {
   const maxCandidates = options.maxCandidates ?? DEFAULT_MAX_CANDIDATES;
-  const evalStats = await getEvalStats();
-  const modelStats = await getModelStats();
+  const artificialAnalysisStats = await getArtificialAnalysisStats();
+  const modelsDevStats = await getModelsDevStats();
   // OpenRouter-only by design: no runtime provider switching.
-  const scopedModelStatsModels = modelStats.models.filter(
+  const scopedModelsDevModels = modelsDevStats.models.filter(
     (model) => model.provider_id === PROVIDER_FILTER,
   );
 
-  const models: MatchMappedModel[] = evalStats.models.map((evalModel) => {
-    const candidates = collectCandidatesForEvalModel(
-      evalModel,
-      scopedModelStatsModels,
-    ).slice(0, maxCandidates);
-    return {
-      eval_slug: typeof evalModel.slug === "string" ? evalModel.slug : "",
-      eval_name: typeof evalModel.name === "string" ? evalModel.name : null,
-      eval_release_date:
-        typeof evalModel.release_date === "string"
-          ? evalModel.release_date
-          : null,
-      best_match: candidates[0] ?? null,
-      candidates,
-    };
-  });
+  const models: MatchMappedModel[] = artificialAnalysisStats.models.map(
+    (evalModel) => {
+      const candidates = collectCandidatesForEvalModel(
+        evalModel,
+        scopedModelsDevModels,
+      ).slice(0, maxCandidates);
+      return {
+        eval_slug: typeof evalModel.slug === "string" ? evalModel.slug : "",
+        eval_name: typeof evalModel.name === "string" ? evalModel.name : null,
+        eval_release_date:
+          typeof evalModel.release_date === "string"
+            ? evalModel.release_date
+            : null,
+        best_match: candidates[0] ?? null,
+        candidates,
+      };
+    },
+  );
 
   const voidStats = applyMaxMinHalfVoid(models);
 
   return {
-    eval_fetched_at_epoch_seconds: evalStats.fetched_at_epoch_seconds,
-    models_dev_fetched_at_epoch_seconds: modelStats.fetched_at_epoch_seconds,
+    eval_fetched_at_epoch_seconds:
+      artificialAnalysisStats.fetched_at_epoch_seconds,
+    models_dev_fetched_at_epoch_seconds:
+      modelsDevStats.fetched_at_epoch_seconds,
     total_eval_models: models.length,
-    total_models_dev_models: scopedModelStatsModels.length,
+    total_models_dev_models: scopedModelsDevModels.length,
     max_candidates: maxCandidates,
     void_mode: "maxmin_half",
     void_threshold: voidStats.threshold,

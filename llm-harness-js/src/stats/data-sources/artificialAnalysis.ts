@@ -3,8 +3,8 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 const MODELS_URL = "https://artificialanalysis.ai/api/v2/data/llms/models";
-const CACHE_PATH = resolve(".cache/eval_models.json");
-const OUTPUT_PATH = resolve(".cache/eval_output.json");
+const CACHE_PATH = resolve(".cache/artificial_analysis_models.json");
+const OUTPUT_PATH = resolve(".cache/artificial_analysis_output.json");
 const CACHE_DIR = resolve(".cache");
 const LOOKBACK_DAYS = 365;
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -78,7 +78,7 @@ type Percentiles = {
 
 type ScoredModel = BaseModel & { scores: Scores };
 
-export type EvalEnrichedModel = BaseModel & {
+export type ArtificialAnalysisEnrichedModel = BaseModel & {
   scores: Scores;
   percentiles: Percentiles;
 };
@@ -89,13 +89,13 @@ type CachePayload = {
   models: BaseModel[];
 };
 
-export type EvalOutputPayload = {
+export type ArtificialAnalysisOutputPayload = {
   fetched_at_epoch_seconds: number;
   status_code: number;
-  models: EvalEnrichedModel[];
+  models: ArtificialAnalysisEnrichedModel[];
 };
 
-export type EvalStatsOptions = {
+export type ArtificialAnalysisOptions = {
   apiKey?: string;
   refreshCache?: boolean;
   cacheTtlSeconds?: number;
@@ -235,7 +235,7 @@ function computeScores(filteredModels: BaseModel[]): ScoredModel[] {
 function rankAndEnrichModels(
   models: BaseModel[],
   cutoffDate: string,
-): EvalEnrichedModel[] {
+): ArtificialAnalysisEnrichedModel[] {
   const filteredModels = models.filter((model) => {
     return (
       (model.release_date ?? "") >= cutoffDate &&
@@ -343,9 +343,9 @@ async function resolveCachePayload(
   }
 }
 
-export async function getEvalStats(
-  options: EvalStatsOptions = {},
-): Promise<EvalOutputPayload> {
+export async function getArtificialAnalysisStats(
+  options: ArtificialAnalysisOptions = {},
+): Promise<ArtificialAnalysisOutputPayload> {
   const apiKey = options.apiKey ?? process.env.ARTIFICIALANALYSIS_API_KEY;
   const refreshCache = options.refreshCache ?? false;
   const cacheTtlSeconds = options.cacheTtlSeconds ?? DEFAULT_CACHE_TTL_SECONDS;
@@ -359,7 +359,7 @@ export async function getEvalStats(
     .toISOString()
     .slice(0, 10);
 
-  const outputPayload: EvalOutputPayload = {
+  const outputPayload: ArtificialAnalysisOutputPayload = {
     fetched_at_epoch_seconds: cachePayload.fetched_at_epoch_seconds,
     status_code: cachePayload.status_code,
     models: rankAndEnrichModels(cachePayload.models, cutoffDate),

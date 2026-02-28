@@ -1,6 +1,6 @@
-export { getEvalStats } from "./evalStats.js";
-export type { EvalStatsOptions } from "./evalStats.js";
-export { getMatchModelsUnion } from "./matchModels.js";
+export { getArtificialAnalysisStats } from "./data-sources/artificialAnalysis.js";
+export type { ArtificialAnalysisOptions } from "./data-sources/artificialAnalysis.js";
+export { getMatchModelsUnion } from "./data-sources/matcher.js";
 export type {
   MatchMappedModel,
   MatchCandidate,
@@ -8,12 +8,12 @@ export type {
   MatchModelMappingPayload,
   MatchModelsUnionOptions,
   MatchModelsUnionPayload,
-} from "./matchModels.js";
-export { getMatchModelMapping } from "./matchModels.js";
-export { getMatchModelsSelected } from "./matchModelsSelected.js";
+} from "./data-sources/matcher.js";
+export { getMatchModelMapping } from "./data-sources/matcher.js";
+export { getModelStatsSelected } from "./modelStats.js";
 export type {
-  MatchModelsSelectedPayload,
-  MatchSelectedModel,
-} from "./matchModelsSelected.js";
-export { getModelStats } from "./modelStats.js";
-export type { ModelStatsOptions } from "./modelStats.js";
+  ModelStatsSelectedPayload,
+  ModelStatsSelectedModel,
+} from "./modelStats.js";
+export { getModelsDevStats } from "./data-sources/modelsDev.js";
+export type { ModelsDevOptions } from "./data-sources/modelsDev.js";

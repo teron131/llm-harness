@@ -1,205 +1,103 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-const MODELS_DEV_URL = "https://models.dev/api.json";
-const CACHE_PATH = resolve(".cache/models_dev_api.json");
-const OUTPUT_PATH = resolve(".cache/models_dev_output.json");
-const LOOKBACK_DAYS = 365;
-const REQUEST_TIMEOUT_MS = 30_000;
-const DEFAULT_CACHE_TTL_SECONDS = 60 * 60 * 12;
+import { getMatchModelsUnion } from "./data-sources/matcher.js";
+
+const OUTPUT_PATH = resolve(".cache/eval_models_union_selected.json");
 const CACHE_DIR = resolve(".cache");
 
-type NumberOrNull = number | null;
+type JsonObject = Record<string, unknown>;
 
-export type ModelRecord = {
-  id?: string;
-  name?: string;
-  family?: string;
-  release_date?: string;
-  last_updated?: string;
-  open_weights?: boolean;
-  reasoning?: boolean;
-  tool_call?: boolean;
-  cost?: {
-    input?: number;
-    output?: number;
-    cache_read?: number;
-    cache_write?: number;
-    output_audio?: number;
-  };
-  limit?: {
-    context?: number;
-    output?: number;
-  };
-  modalities?: {
-    input?: string[];
-    output?: string[];
-  };
-  [key: string]: unknown;
+export type ModelStatsSelectedModel = {
+  id: string | null;
+  name: string | null;
+  provider: string | null;
+  logo: string;
+  attachment: boolean | null;
+  reasoning: boolean | null;
+  release_date: string | null;
+  modalities: unknown;
+  open_weights: boolean | null;
+  cost: unknown;
+  context_window: unknown;
+  speed: JsonObject;
+  evaluations: unknown;
+  scores: unknown;
+  percentiles: unknown;
 };
 
-export type ProviderRecord = {
-  id?: string;
-  name?: string;
-  api?: string;
-  models?: Record<string, ModelRecord>;
-  [key: string]: unknown;
+export type ModelStatsSelectedPayload = {
+  models: ModelStatsSelectedModel[];
 };
 
-export type ModelsDevPayload = Record<string, ProviderRecord>;
-
-export type ModelsDevFlatModel = {
-  provider_id: string;
-  provider_name: string;
-  model_id: string;
-  model: ModelRecord;
-};
-
-type ModelsDevCachePayload = {
-  fetched_at_epoch_seconds: number;
-  status_code: number;
-  payload: ModelsDevPayload;
-};
-
-export type ModelsDevOutputPayload = {
-  fetched_at_epoch_seconds: number;
-  status_code: number;
-  models: ModelsDevFlatModel[];
-};
-
-export type ModelStatsOptions = {
-  refreshCache?: boolean;
-  cacheTtlSeconds?: number;
-};
-
-function nowEpochSeconds(): number {
-  return Math.floor(Date.now() / 1000);
-}
-
-function isoDateDaysAgo(days: number): string {
-  return new Date(Date.now() - days * 24 * 60 * 60 * 1000)
-    .toISOString()
-    .slice(0, 10);
-}
-
-function isRecentDate(
-  isoDate: string | undefined,
-  cutoffIsoDate: string,
-): boolean {
-  if (!isoDate) {
-    return false;
+function providerFromId(modelId: unknown): string | null {
+  if (typeof modelId !== "string") {
+    return null;
   }
-  return isoDate >= cutoffIsoDate;
+  const slashIndex = modelId.indexOf("/");
+  if (slashIndex <= 0) {
+    return null;
+  }
+  return modelId.slice(0, slashIndex);
 }
 
-function asFinite(value: unknown): NumberOrNull {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric : null;
+function asRecord(value: unknown): JsonObject {
+  return value != null && typeof value === "object"
+    ? (value as JsonObject)
+    : {};
+}
+
+function buildLogo(model: JsonObject, provider: string | null): string {
+  const modelCreator = asRecord(model.model_creator);
+  const logoSlug = modelCreator.slug;
+  if (typeof logoSlug === "string" && logoSlug.length > 0) {
+    return `https://artificialanalysis.ai/img/logos/${logoSlug}_small.svg`;
+  }
+  return `https://models.dev/logos/${provider ?? "unknown"}.svg`;
+}
+
+function buildSpeed(model: JsonObject): JsonObject {
+  return Object.fromEntries(
+    Object.entries(model).filter(([key]) => key.startsWith("median_")),
+  );
 }
 
 async function writeJson(path: string, payload: unknown): Promise<void> {
   await mkdir(CACHE_DIR, { recursive: true });
-  await writeFile(path, JSON.stringify(payload, null, 2), "utf-8");
+  await writeFile(path, `${JSON.stringify(payload, null, 2)}\n`, "utf-8");
 }
 
-async function loadCache(): Promise<ModelsDevCachePayload> {
-  const content = await readFile(CACHE_PATH, "utf-8");
-  return JSON.parse(content) as ModelsDevCachePayload;
-}
+export async function getModelStatsSelected(): Promise<ModelStatsSelectedPayload> {
+  const matchUnion = await getMatchModelsUnion();
+  const models = matchUnion.models.map(
+    (unionModel): ModelStatsSelectedModel => {
+      const model = asRecord(unionModel);
+      const provider = providerFromId(model.id);
+      return {
+        id: typeof model.id === "string" ? model.id : null,
+        name: typeof model.name === "string" ? model.name : null,
+        provider,
+        logo: buildLogo(model, provider),
+        attachment:
+          typeof model.attachment === "boolean" ? model.attachment : null,
+        reasoning:
+          typeof model.reasoning === "boolean" ? model.reasoning : null,
+        release_date:
+          typeof model.release_date === "string" ? model.release_date : null,
+        modalities: model.modalities ?? null,
+        open_weights:
+          typeof model.open_weights === "boolean" ? model.open_weights : null,
+        cost: model.cost ?? null,
+        context_window: model.limit ?? null,
+        speed: buildSpeed(model),
+        evaluations: model.evaluations ?? null,
+        scores: model.scores ?? null,
+        percentiles: model.percentiles ?? null,
+      };
+    },
+  );
 
-async function fetchAndCacheModelsDev(): Promise<ModelsDevCachePayload> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  const response = await fetch(MODELS_DEV_URL, { signal: controller.signal });
-  clearTimeout(timeout);
-
-  if (!response.ok) {
-    throw new Error(`models.dev request failed: ${response.status}`);
-  }
-
-  const payload = (await response.json()) as ModelsDevPayload;
-  const cachePayload: ModelsDevCachePayload = {
-    fetched_at_epoch_seconds: nowEpochSeconds(),
-    status_code: response.status,
-    payload,
-  };
-  await writeJson(CACHE_PATH, cachePayload);
-  return cachePayload;
-}
-
-async function resolveCachePayload(
-  refreshCache: boolean,
-  cacheTtlSeconds: number,
-): Promise<ModelsDevCachePayload> {
-  if (refreshCache) {
-    return fetchAndCacheModelsDev();
-  }
-
-  try {
-    const cached = await loadCache();
-    const ageSeconds = nowEpochSeconds() - cached.fetched_at_epoch_seconds;
-    if (ageSeconds <= cacheTtlSeconds) {
-      return cached;
-    }
-    return fetchAndCacheModelsDev();
-  } catch {
-    return fetchAndCacheModelsDev();
-  }
-}
-
-function flattenModels(payload: ModelsDevPayload): ModelsDevFlatModel[] {
-  const rows: ModelsDevFlatModel[] = [];
-  for (const [providerId, provider] of Object.entries(payload)) {
-    const providerName = provider.name ?? providerId;
-    const models = provider.models ?? {};
-    for (const [modelId, model] of Object.entries(models)) {
-      rows.push({
-        provider_id: providerId,
-        provider_name: providerName,
-        model_id: model.id ?? modelId,
-        model,
-      });
-    }
-  }
-  return rows;
-}
-
-function rankRecentModels(
-  models: ModelsDevFlatModel[],
-  cutoffIsoDate: string,
-): ModelsDevFlatModel[] {
-  return models
-    .filter((row) => isRecentDate(row.model.release_date, cutoffIsoDate))
-    .sort((left, right) => {
-      const leftOutputCost =
-        asFinite(left.model.cost?.output) ?? Number.POSITIVE_INFINITY;
-      const rightOutputCost =
-        asFinite(right.model.cost?.output) ?? Number.POSITIVE_INFINITY;
-      if (leftOutputCost !== rightOutputCost) {
-        return leftOutputCost - rightOutputCost;
-      }
-      return (right.model.release_date ?? "").localeCompare(
-        left.model.release_date ?? "",
-      );
-    });
-}
-
-export async function getModelStats(
-  options: ModelStatsOptions = {},
-): Promise<ModelsDevOutputPayload> {
-  const refreshCache = options.refreshCache ?? false;
-  const cacheTtlSeconds = options.cacheTtlSeconds ?? DEFAULT_CACHE_TTL_SECONDS;
-  const cachePayload = await resolveCachePayload(refreshCache, cacheTtlSeconds);
-  const cutoffIsoDate = isoDateDaysAgo(LOOKBACK_DAYS);
-  const outputPayload: ModelsDevOutputPayload = {
-    fetched_at_epoch_seconds: cachePayload.fetched_at_epoch_seconds,
-    status_code: cachePayload.status_code,
-    models: rankRecentModels(
-      flattenModels(cachePayload.payload),
-      cutoffIsoDate,
-    ),
-  };
-
+  const outputPayload: ModelStatsSelectedPayload = { models };
   await writeJson(OUTPUT_PATH, outputPayload);
   return outputPayload;
 }
