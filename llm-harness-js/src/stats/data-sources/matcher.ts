@@ -1,5 +1,5 @@
-import { getArtificialAnalysisStats } from "./artificialAnalysis.js";
-import { getModelsDevStats } from "./modelsDev.js";
+import { getArtificialAnalysisStats } from "./artificialAnalysis";
+import { getModelsDevStats } from "./modelsDev";
 
 type ModelsDevModel = Awaited<
   ReturnType<typeof getModelsDevStats>

@@ -1,7 +1,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import { getMatchModelsUnion } from "./data-sources/matcher.js";
+import { getMatchModelsUnion } from "./data-sources/matcher";
 
 const DEFAULT_OUTPUT_PATH = resolve(".cache/model_stats.json");
 const CACHE_DIR = resolve(".cache");
