@@ -446,6 +446,14 @@ function compareCandidates(
   return left.model_id.localeCompare(right.model_id);
 }
 
+function scopeToOpenRouterModels(
+  modelsDevModels: ModelsDevModel[],
+): ModelsDevModel[] {
+  return modelsDevModels.filter(
+    (modelStatsModel) => modelStatsModel.provider_id === PROVIDER_FILTER,
+  );
+}
+
 function collectCandidatesForEvalModel(
   evalModel: ArtificialAnalysisModel,
   modelsDevModels: ModelsDevModel[],
@@ -456,9 +464,6 @@ function collectCandidatesForEvalModel(
   }
 
   return modelsDevModels
-    .filter(
-      (modelStatsModel) => modelStatsModel.provider_id === PROVIDER_FILTER,
-    )
     .map((modelStatsModel) => {
       const modelName =
         typeof modelStatsModel.model.name === "string"
@@ -522,9 +527,7 @@ export async function getMatchModelsUnion(
   const artificialAnalysisStats = await getArtificialAnalysisStats();
   const modelsDevStats = await getModelsDevStats();
   // OpenRouter-only by design: no runtime provider switching.
-  const scopedModelsDevModels = modelsDevStats.models.filter(
-    (model) => model.provider_id === PROVIDER_FILTER,
-  );
+  const scopedModelsDevModels = scopeToOpenRouterModels(modelsDevStats.models);
 
   const rows: MatchUnionRow[] = artificialAnalysisStats.models.map(
     (evalModel) => {
@@ -590,9 +593,7 @@ export async function getMatchModelMapping(
   const artificialAnalysisStats = await getArtificialAnalysisStats();
   const modelsDevStats = await getModelsDevStats();
   // OpenRouter-only by design: no runtime provider switching.
-  const scopedModelsDevModels = modelsDevStats.models.filter(
-    (model) => model.provider_id === PROVIDER_FILTER,
-  );
+  const scopedModelsDevModels = scopeToOpenRouterModels(modelsDevStats.models);
 
   const models: MatchMappedModel[] = artificialAnalysisStats.models.map(
     (evalModel) => {
