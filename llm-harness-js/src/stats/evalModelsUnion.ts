@@ -551,6 +551,10 @@ export async function getEvalModelsUnion(
       union: {
         ...(matchedModelStats?.model ?? {}),
         ...(evalModel ?? {}),
+        name:
+          typeof matchedModelStats?.model?.name === "string"
+            ? matchedModelStats.model.name
+            : (typeof evalModel.name === "string" ? evalModel.name : null),
       },
     };
   });
