@@ -14,6 +14,7 @@ export {
 } from "../agents/agents.js";
 export { ChatGemini, GeminiEmbeddings, createGeminiCache } from "./gemini.js";
 export { getEvalStats } from "../stats/evalStats.js";
+export { getEvalModelMapping } from "../stats/evalModelsUnion.js";
 export { getEvalModelsUnion } from "../stats/evalModelsUnion.js";
 export { getModelStats } from "../stats/modelStats.js";
 export { MediaMessage } from "./multimodal.js";

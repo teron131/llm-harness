@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 const MODELS_URL = "https://artificialanalysis.ai/api/v2/data/llms/models";
 const CACHE_PATH = resolve(".cache/eval_models.json");
 const OUTPUT_PATH = resolve(".cache/eval_output.json");
+const CACHE_DIR = resolve(".cache");
 const LOOKBACK_DAYS = 365;
 const REQUEST_TIMEOUT_MS = 30_000;
 const DEFAULT_CACHE_TTL_SECONDS = 60 * 60 * 24;
@@ -285,7 +286,7 @@ async function loadCache(): Promise<CachePayload> {
 }
 
 async function writeJson(path: string, payload: unknown): Promise<void> {
-  await mkdir(resolve(".cache"), { recursive: true });
+  await mkdir(CACHE_DIR, { recursive: true });
   await writeFile(path, JSON.stringify(payload, null, 2), "utf-8");
 }
 
@@ -320,30 +321,39 @@ async function fetchAndCacheModels(
   return cachePayload;
 }
 
+async function resolveCachePayload(
+  apiKey: string | undefined,
+  refreshCache: boolean,
+  cacheTtlSeconds: number,
+): Promise<CachePayload> {
+  if (refreshCache) {
+    return fetchAndCacheModels(apiKey);
+  }
+
+  try {
+    const cached = await loadCache();
+    const ageSeconds =
+      Math.floor(Date.now() / 1000) - cached.fetched_at_epoch_seconds;
+    if (ageSeconds <= cacheTtlSeconds) {
+      return cached;
+    }
+    return fetchAndCacheModels(apiKey);
+  } catch {
+    return fetchAndCacheModels(apiKey);
+  }
+}
+
 export async function getEvalStats(
   options: EvalStatsOptions = {},
 ): Promise<EvalOutputPayload> {
   const apiKey = options.apiKey ?? process.env.ARTIFICIALANALYSIS_API_KEY;
   const refreshCache = options.refreshCache ?? false;
   const cacheTtlSeconds = options.cacheTtlSeconds ?? DEFAULT_CACHE_TTL_SECONDS;
-
-  let cachePayload: CachePayload;
-  if (!refreshCache) {
-    try {
-      const cached = await loadCache();
-      const ageSeconds =
-        Math.floor(Date.now() / 1000) - cached.fetched_at_epoch_seconds;
-      if (ageSeconds <= cacheTtlSeconds) {
-        cachePayload = cached;
-      } else {
-        cachePayload = await fetchAndCacheModels(apiKey);
-      }
-    } catch {
-      cachePayload = await fetchAndCacheModels(apiKey);
-    }
-  } else {
-    cachePayload = await fetchAndCacheModels(apiKey);
-  }
+  const cachePayload = await resolveCachePayload(
+    apiKey,
+    refreshCache,
+    cacheTtlSeconds,
+  );
 
   const cutoffDate = new Date(Date.now() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000)
     .toISOString()
