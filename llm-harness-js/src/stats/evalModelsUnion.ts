@@ -8,18 +8,37 @@ type EvalStatsModel = Awaited<
   ReturnType<typeof getEvalStats>
 >["models"][number];
 
-const TOKEN_PREFIX_WEIGHTS = [4, 3, 2, 1] as const;
+const TOKEN_PREFIX_WEIGHTS = [5, 4, 3, 2, 1] as const;
 const DEFAULT_MAX_CANDIDATES = 5;
 const TOKEN_PREFIX_REWARD_MULTIPLIER = 2;
 const NUMERIC_EXACT_MATCH_REWARD = 2;
 const NUMERIC_CLOSENESS_REWARD_SCALE = 0.1;
 const NUMERIC_ALL_EQUAL_REWARD = 0.2;
 const VARIANT_SUFFIX_REWARD = 2;
-const COVERAGE_EXACT_REWARD = 2;
+const COVERAGE_EXACT_REWARD = 4;
 const COVERAGE_MISSING_BASE_PENALTY = 1;
-const CHAR_PREFIX_REWARD_SCALE = 0.01;
-const LENGTH_GAP_PENALTY_SCALE = 0.001;
+const B_SCALE_EXACT_REWARD = 3;
+const B_SCALE_MISMATCH_PENALTY = 4;
+const B_SCALE_MISSING_PENALTY = 2;
+const ACTIVE_B_EXACT_REWARD = 2;
+const ACTIVE_B_MISMATCH_PENALTY = 2;
+const CHAR_PREFIX_REWARD_SCALE = 0.03;
+const LENGTH_GAP_PENALTY_SCALE = 0.005;
 const PROVIDER_FILTER = "openrouter" as const;
+const VOID_THRESHOLD_RANGE_RATIO = 0.35;
+// Model-name noise tags that frequently appear as variants/capabilities rather
+// than core model identity, so we exclude them from matching tokens.
+const MODEL_NAME_TAG_TOKENS = new Set([
+  "free",
+  "extended",
+  "exacto",
+  "instruct",
+  "vl",
+  "thinking",
+  "reasoning",
+  "online",
+  "nitro",
+]);
 
 export type EvalMatchCandidate = {
   model_id: string;
@@ -51,9 +70,7 @@ type EvalModelUnionRow = {
 
 export type EvalModelMappingPayload = {
   eval_fetched_at_epoch_seconds: number;
-  eval_status_code: number;
   models_dev_fetched_at_epoch_seconds: number;
-  models_dev_status_code: number;
   total_eval_models: number;
   total_models_dev_models: number;
   max_candidates: number;
@@ -65,12 +82,9 @@ export type EvalModelMappingPayload = {
 
 export type EvalModelsUnionPayload = {
   eval_fetched_at_epoch_seconds: number;
-  eval_status_code: number;
   models_dev_fetched_at_epoch_seconds: number;
-  models_dev_status_code: number;
   total_eval_models: number;
   total_models_dev_models: number;
-  merge_mode: "union_only";
   void_mode: "maxmin_half";
   void_threshold: number | null;
   voided_count: number;
@@ -100,12 +114,73 @@ function splitBaseModelId(modelId: string): string {
   return parts[parts.length - 1] ?? modelId;
 }
 
+function isBScaleToken(token: string): boolean {
+  return /^\d+b$/.test(token) || /^a\d+b$/.test(token);
+}
+
+function splitMixedAlphaNumericToken(token: string): string[] {
+  if (isBScaleToken(token)) {
+    return [token];
+  }
+  return token.split(/(?<=\D)(?=\d)|(?<=\d)(?=\D)/g).filter(Boolean);
+}
+
 function splitTokens(value: string): string[] {
-  return normalize(value).split("-").filter(Boolean);
+  return normalize(value)
+    .split("-")
+    .flatMap((token) => splitMixedAlphaNumericToken(token))
+    .filter((token) => token && !MODEL_NAME_TAG_TOKENS.has(token));
+}
+
+function firstParsedNumber(
+  tokens: string[],
+  parser: (token: string | undefined) => number | null,
+): number | null {
+  for (const token of tokens) {
+    const parsedValue = parser(token);
+    if (parsedValue != null) {
+      return parsedValue;
+    }
+  }
+  return null;
 }
 
 function isNumericToken(token: string | undefined): boolean {
   return Boolean(token && /^\d+$/.test(token));
+}
+
+function parseNumericOrBScaleToken(token: string | undefined): number | null {
+  if (!token) {
+    return null;
+  }
+  if (/^\d+$/.test(token)) {
+    return Number(token);
+  }
+  const billionMatch = /^(\d+)b$/.exec(token);
+  if (billionMatch) {
+    return Number(billionMatch[1]);
+  }
+  const aBillionMatch = /^a(\d+)b$/.exec(token);
+  if (aBillionMatch) {
+    return Number(aBillionMatch[1]);
+  }
+  return null;
+}
+
+function parseBScaleToken(token: string | undefined): number | null {
+  if (!token) {
+    return null;
+  }
+  const billionMatch = /^(\d+)b$/.exec(token);
+  return billionMatch ? Number(billionMatch[1]) : null;
+}
+
+function parseActiveBToken(token: string | undefined): number | null {
+  if (!token) {
+    return null;
+  }
+  const activeMatch = /^a(\d+)b$/.exec(token);
+  return activeMatch ? Number(activeMatch[1]) : null;
 }
 
 function commonPrefixLength(left: string, right: string): number {
@@ -139,8 +214,12 @@ function numericMatchReward(evalSlug: string, modelId: string): number {
   for (let index = 0; index < maxLength; index += 1) {
     const evalToken = evalTokens[index];
     const modelToken = modelTokens[index];
-    if (isNumericToken(evalToken) && isNumericToken(modelToken)) {
-      return evalToken === modelToken ? NUMERIC_EXACT_MATCH_REWARD : 0;
+    const evalNumericValue = parseNumericOrBScaleToken(evalToken);
+    const modelNumericValue = parseNumericOrBScaleToken(modelToken);
+    if (evalNumericValue != null && modelNumericValue != null) {
+      return evalNumericValue === modelNumericValue
+        ? NUMERIC_EXACT_MATCH_REWARD
+        : 0;
     }
   }
   return 0;
@@ -148,11 +227,11 @@ function numericMatchReward(evalSlug: string, modelId: string): number {
 
 function numericClosenessReward(evalSlug: string, modelId: string): number {
   const evalNumbers = splitTokens(evalSlug)
-    .filter((token) => isNumericToken(token))
-    .map((token) => Number(token));
+    .map((token) => parseNumericOrBScaleToken(token))
+    .filter((value): value is number => value != null);
   const modelNumbers = splitTokens(splitBaseModelId(modelId))
-    .filter((token) => isNumericToken(token))
-    .map((token) => Number(token));
+    .map((token) => parseNumericOrBScaleToken(token))
+    .filter((value): value is number => value != null);
 
   const maxLength = Math.max(evalNumbers.length, modelNumbers.length);
   for (let index = 0; index < maxLength; index += 1) {
@@ -169,6 +248,84 @@ function numericClosenessReward(evalSlug: string, modelId: string): number {
     );
   }
   return NUMERIC_ALL_EQUAL_REWARD;
+}
+
+function bScaleRewardOrPenalty(
+  evalSlug: string,
+  modelId: string,
+  modelName: string,
+): number {
+  const evalTokens = splitTokens(evalSlug);
+  const modelBaseTokens = splitTokens(splitBaseModelId(modelId));
+  const modelNameTokens = splitTokens(modelName);
+
+  const evalBScale = firstParsedNumber(evalTokens, parseBScaleToken);
+  if (evalBScale == null) {
+    return 0;
+  }
+
+  const baseBScale = firstParsedNumber(modelBaseTokens, parseBScaleToken);
+  const nameBScale = firstParsedNumber(modelNameTokens, parseBScaleToken);
+  const candidateBScale = baseBScale ?? nameBScale;
+  if (candidateBScale == null) {
+    return -B_SCALE_MISSING_PENALTY;
+  }
+  if (candidateBScale === evalBScale) {
+    return B_SCALE_EXACT_REWARD;
+  }
+  return -B_SCALE_MISMATCH_PENALTY;
+}
+
+function hasHardBScaleMismatch(
+  evalSlug: string,
+  modelId: string,
+  modelName: string,
+): boolean {
+  const evalBScale = firstParsedNumber(splitTokens(evalSlug), parseBScaleToken);
+  if (evalBScale == null) {
+    return false;
+  }
+
+  const modelBaseBScale = firstParsedNumber(
+    splitTokens(splitBaseModelId(modelId)),
+    parseBScaleToken,
+  );
+  const modelNameBScale = firstParsedNumber(
+    splitTokens(modelName),
+    parseBScaleToken,
+  );
+  const candidateBScale = modelBaseBScale ?? modelNameBScale;
+  if (candidateBScale == null) {
+    return false;
+  }
+
+  return candidateBScale !== evalBScale;
+}
+
+function activeBRewardOrPenalty(
+  evalSlug: string,
+  modelId: string,
+  modelName: string,
+): number {
+  const evalTokens = splitTokens(evalSlug);
+  const modelBaseTokens = splitTokens(splitBaseModelId(modelId));
+  const modelNameTokens = splitTokens(modelName);
+
+  const evalActiveB = firstParsedNumber(evalTokens, parseActiveBToken);
+  if (evalActiveB == null) {
+    return 0;
+  }
+
+  const baseActiveB = firstParsedNumber(modelBaseTokens, parseActiveBToken);
+  const nameActiveB = firstParsedNumber(modelNameTokens, parseActiveBToken);
+  const candidateActiveB = baseActiveB ?? nameActiveB;
+  if (candidateActiveB == null) {
+    return 0;
+  }
+  if (candidateActiveB === evalActiveB) {
+    return ACTIVE_B_EXACT_REWARD;
+  }
+  return -ACTIVE_B_MISMATCH_PENALTY;
 }
 
 function sameVariantReward(
@@ -253,6 +410,9 @@ function scoreCandidate(
   if (maxPrefix === 0) {
     return 0;
   }
+  if (hasHardBScaleMismatch(evalSlug, modelId, modelName)) {
+    return 0;
+  }
 
   const weightedTokenScore = Math.max(
     weightedTokenPrefixScore(evalTokens, modelBaseTokens),
@@ -267,6 +427,8 @@ function scoreCandidate(
     numericMatchReward(evalSlug, modelId) +
     numericClosenessReward(evalSlug, modelId) +
     sameVariantReward(evalSlug, modelId, modelName) +
+    bScaleRewardOrPenalty(evalSlug, modelId, modelName) +
+    activeBRewardOrPenalty(evalSlug, modelId, modelName) +
     coverageRewardOrPenalty(evalSlug, modelId, modelName) +
     maxPrefix * CHAR_PREFIX_REWARD_SCALE -
     Math.abs(normalizedEval.length - normalizedModelBase.length) *
@@ -336,9 +498,10 @@ function applyMaxMinHalfVoid<
     return { threshold: null, voided: 0 };
   }
 
-  const min = scores[0] as number;
-  const max = scores[scores.length - 1] as number;
-  const threshold = min + (max - min) / 2;
+  const minScore = scores[0] as number;
+  const maxScore = scores[scores.length - 1] as number;
+  const threshold =
+    minScore + (maxScore - minScore) * VOID_THRESHOLD_RANGE_RATIO;
   let voided = 0;
   for (const model of models) {
     const score = model.best_match?.score;
@@ -399,12 +562,9 @@ export async function getEvalModelsUnion(
 
   return {
     eval_fetched_at_epoch_seconds: evalStats.fetched_at_epoch_seconds,
-    eval_status_code: evalStats.status_code,
     models_dev_fetched_at_epoch_seconds: modelStats.fetched_at_epoch_seconds,
-    models_dev_status_code: modelStats.status_code,
     total_eval_models: evalStats.models.length,
     total_models_dev_models: scopedModelStatsModels.length,
-    merge_mode: "union_only",
     void_mode: "maxmin_half",
     void_threshold: voidStats.threshold,
     voided_count: voidStats.voided,
@@ -445,9 +605,7 @@ export async function getEvalModelMapping(
 
   return {
     eval_fetched_at_epoch_seconds: evalStats.fetched_at_epoch_seconds,
-    eval_status_code: evalStats.status_code,
     models_dev_fetched_at_epoch_seconds: modelStats.fetched_at_epoch_seconds,
-    models_dev_status_code: modelStats.status_code,
     total_eval_models: models.length,
     total_models_dev_models: scopedModelStatsModels.length,
     max_candidates: maxCandidates,
