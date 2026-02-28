@@ -9,6 +9,9 @@ const CACHE_TTL_SECONDS = 60 * 60 * 24;
 
 type JsonObject = Record<string, unknown>;
 
+/**
+ * Final selected model row exposed by the stats API.
+ */
 export type ModelStatsSelectedModel = {
   id: string | null;
   name: string | null;
@@ -27,11 +30,23 @@ export type ModelStatsSelectedModel = {
   percentiles: unknown;
 };
 
+/**
+ * Final model stats payload returned by the public stats API.
+ *
+ * `fetched_at_epoch_seconds` is `null` when the upstream pipeline fails and
+ * the function returns an empty-safe payload.
+ */
 export type ModelStatsSelectedPayload = {
   fetched_at_epoch_seconds: number | null;
   models: ModelStatsSelectedModel[];
 };
 
+/**
+ * Options for model stats lookup.
+ *
+ * - omit `id` (or set `null`) to return the full list
+ * - set `id` to return exact-id matches only
+ */
 export type ModelStatsSelectedOptions = {
   id?: string | null;
 };
@@ -95,6 +110,12 @@ function filterModelsById(
   return models.filter((model) => model.id === id);
 }
 
+/**
+ * Persist the final model stats payload to disk.
+ *
+ * Write failures are intentionally swallowed to keep API behavior in-memory
+ * first.
+ */
 export async function saveModelStatsSelected(
   payload: ModelStatsSelectedPayload,
   outputPath = DEFAULT_OUTPUT_PATH,
@@ -148,6 +169,14 @@ function mapUnionModelToSelected(unionModel: unknown): ModelStatsSelectedModel {
   };
 }
 
+/**
+ * Return final model stats enriched from matcher union data.
+ *
+ * Design:
+ * - list mode (`id == null`): cache-first (< 1 day), else recompute and save
+ * - single-model mode (`id != null`): in-memory only, exact-id filtering
+ * - failure mode: never throw; returns `{ fetched_at_epoch_seconds: null, models: [] }`
+ */
 export async function getModelStatsSelected(
   options: ModelStatsSelectedOptions = {},
 ): Promise<ModelStatsSelectedPayload> {

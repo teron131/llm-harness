@@ -54,12 +54,23 @@ type ModelsDevSourcePayload = {
   payload: ModelsDevPayload;
 };
 
+/**
+ * Normalized models.dev response after flattening and ranking.
+ *
+ * When fetching fails, `fetched_at_epoch_seconds` and `status_code` are `null`
+ * and `models` is an empty array.
+ */
 export type ModelsDevOutputPayload = {
   fetched_at_epoch_seconds: number | null;
   status_code: number | null;
   models: ModelsDevFlatModel[];
 };
 
+/**
+ * models.dev source options.
+ *
+ * Reserved for future extension.
+ */
 export type ModelsDevOptions = Record<string, never>;
 
 function nowEpochSeconds(): number {
@@ -143,6 +154,11 @@ function rankRecentModels(
     });
 }
 
+/**
+ * Fetch, flatten, and rank recent models from models.dev.
+ *
+ * This API is failure-safe by design and returns an empty payload on errors.
+ */
 export async function getModelsDevStats(
   _options: ModelsDevOptions = {},
 ): Promise<ModelsDevOutputPayload> {

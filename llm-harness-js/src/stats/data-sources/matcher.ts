@@ -40,6 +40,9 @@ const MODEL_NAME_TAG_TOKENS = new Set([
   "nitro",
 ]);
 
+/**
+ * Candidate model from models.dev for a given Artificial Analysis model.
+ */
 export type MatchCandidate = {
   model_id: string;
   provider_id: string;
@@ -50,6 +53,9 @@ export type MatchCandidate = {
 
 type MatchResult = MatchCandidate | null;
 
+/**
+ * Mapping entry for one Artificial Analysis model and its match candidates.
+ */
 export type MatchMappedModel = {
   artificial_analysis_slug: string;
   artificial_analysis_name: string | null;
@@ -68,6 +74,9 @@ type MatchUnionRow = {
   union: Record<string, unknown>;
 };
 
+/**
+ * Full mapping payload (Artificial Analysis -> models.dev candidates).
+ */
 export type MatchModelMappingPayload = {
   artificial_analysis_fetched_at_epoch_seconds: number | null;
   models_dev_fetched_at_epoch_seconds: number | null;
@@ -80,6 +89,9 @@ export type MatchModelMappingPayload = {
   models: MatchMappedModel[];
 };
 
+/**
+ * Union payload built from matched Artificial Analysis and models.dev rows.
+ */
 export type MatchModelsUnionPayload = {
   artificial_analysis_fetched_at_epoch_seconds: number | null;
   models_dev_fetched_at_epoch_seconds: number | null;
@@ -92,10 +104,16 @@ export type MatchModelsUnionPayload = {
   models: Array<Record<string, unknown>>;
 };
 
+/**
+ * Options for union generation.
+ */
 export type MatchModelsUnionOptions = {
   maxCandidates?: number;
 };
 
+/**
+ * Options for mapping generation.
+ */
 export type MatchModelMappingOptions = {
   maxCandidates?: number;
 };
@@ -521,6 +539,9 @@ function applyMaxMinHalfVoid<
   return { threshold, voided };
 }
 
+/**
+ * Build union rows from matched Artificial Analysis and models.dev models.
+ */
 export async function getMatchModelsUnion(
   _options: MatchModelsUnionOptions = {},
 ): Promise<MatchModelsUnionPayload> {
@@ -588,6 +609,9 @@ export async function getMatchModelsUnion(
   };
 }
 
+/**
+ * Build candidate mappings from Artificial Analysis models to models.dev models.
+ */
 export async function getMatchModelMapping(
   options: MatchModelMappingOptions = {},
 ): Promise<MatchModelMappingPayload> {

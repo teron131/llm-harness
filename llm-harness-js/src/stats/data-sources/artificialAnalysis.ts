@@ -83,12 +83,21 @@ type SourcePayload = {
   models: BaseModel[];
 };
 
+/**
+ * Ranked and enriched Artificial Analysis models response.
+ *
+ * When fetching fails, `fetched_at_epoch_seconds` and `status_code` are `null`
+ * and `models` is an empty array.
+ */
 export type ArtificialAnalysisOutputPayload = {
   fetched_at_epoch_seconds: number | null;
   status_code: number | null;
   models: ArtificialAnalysisEnrichedModel[];
 };
 
+/**
+ * Artificial Analysis source options.
+ */
 export type ArtificialAnalysisOptions = { apiKey?: string };
 
 function finiteNumbers(values: unknown[]): number[] {
@@ -296,6 +305,11 @@ async function fetchModels(apiKey: string | undefined): Promise<SourcePayload> {
   return sourcePayload;
 }
 
+/**
+ * Fetch, rank, and enrich Artificial Analysis model stats.
+ *
+ * This API is failure-safe by design and returns an empty payload on errors.
+ */
 export async function getArtificialAnalysisStats(
   options: ArtificialAnalysisOptions = {},
 ): Promise<ArtificialAnalysisOutputPayload> {
