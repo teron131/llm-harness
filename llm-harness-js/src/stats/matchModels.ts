@@ -40,7 +40,7 @@ const MODEL_NAME_TAG_TOKENS = new Set([
   "nitro",
 ]);
 
-export type EvalMatchCandidate = {
+export type MatchCandidate = {
   model_id: string;
   provider_id: string;
   provider_name: string;
@@ -48,27 +48,27 @@ export type EvalMatchCandidate = {
   score: number;
 };
 
-type EvalMatch = EvalMatchCandidate | null;
+type MatchResult = MatchCandidate | null;
 
-export type EvalMappedModel = {
+export type MatchMappedModel = {
   eval_slug: string;
   eval_name: string | null;
   eval_release_date: string | null;
-  best_match: EvalMatch;
-  candidates: EvalMatchCandidate[];
+  best_match: MatchResult;
+  candidates: MatchCandidate[];
 };
 
 type EvalModelUnionRow = {
   eval_slug: string;
   eval_name: string | null;
   eval_release_date: string | null;
-  best_match: EvalMatch;
+  best_match: MatchResult;
   eval: EvalStatsModel;
   models_dev: ModelStatsModel | null;
   union: Record<string, unknown>;
 };
 
-export type EvalModelMappingPayload = {
+export type MatchModelMappingPayload = {
   eval_fetched_at_epoch_seconds: number;
   models_dev_fetched_at_epoch_seconds: number;
   total_eval_models: number;
@@ -77,10 +77,10 @@ export type EvalModelMappingPayload = {
   void_mode: "maxmin_half";
   void_threshold: number | null;
   voided_count: number;
-  models: EvalMappedModel[];
+  models: MatchMappedModel[];
 };
 
-export type EvalModelsUnionPayload = {
+export type MatchModelsUnionPayload = {
   eval_fetched_at_epoch_seconds: number;
   models_dev_fetched_at_epoch_seconds: number;
   total_eval_models: number;
@@ -92,11 +92,11 @@ export type EvalModelsUnionPayload = {
   models: Array<Record<string, unknown>>;
 };
 
-export type EvalModelsUnionOptions = {
+export type MatchModelsUnionOptions = {
   maxCandidates?: number;
 };
 
-export type EvalModelMappingOptions = {
+export type MatchModelMappingOptions = {
   maxCandidates?: number;
 };
 
@@ -437,8 +437,8 @@ function scoreCandidate(
 }
 
 function compareCandidates(
-  left: EvalMatchCandidate,
-  right: EvalMatchCandidate,
+  left: MatchCandidate,
+  right: MatchCandidate,
 ): number {
   if (left.score !== right.score) {
     return right.score - left.score;
@@ -449,7 +449,7 @@ function compareCandidates(
 function collectCandidatesForEvalModel(
   evalModel: EvalStatsModel,
   modelStatsModels: ModelStatsModel[],
-): EvalMatchCandidate[] {
+): MatchCandidate[] {
   const evalSlug = String(evalModel.slug ?? "");
   if (!evalSlug) {
     return [];
@@ -483,12 +483,12 @@ function collectCandidatesForEvalModel(
         score,
       };
     })
-    .filter((candidate): candidate is EvalMatchCandidate => candidate != null)
+    .filter((candidate): candidate is MatchCandidate => candidate != null)
     .sort(compareCandidates);
 }
 
 function applyMaxMinHalfVoid<
-  T extends { best_match: EvalMatch; candidates?: unknown[] },
+  T extends { best_match: MatchResult; candidates?: unknown[] },
 >(models: T[]): { threshold: number | null; voided: number } {
   const scores = models
     .map((model) => model.best_match?.score)
@@ -516,9 +516,9 @@ function applyMaxMinHalfVoid<
   return { threshold, voided };
 }
 
-export async function getEvalModelsUnion(
-  _options: EvalModelsUnionOptions = {},
-): Promise<EvalModelsUnionPayload> {
+export async function getMatchModelsUnion(
+  _options: MatchModelsUnionOptions = {},
+): Promise<MatchModelsUnionPayload> {
   const evalStats = await getEvalStats();
   const modelStats = await getModelStats();
   // OpenRouter-only by design: no runtime provider switching.
@@ -554,7 +554,9 @@ export async function getEvalModelsUnion(
         name:
           typeof matchedModelStats?.model?.name === "string"
             ? matchedModelStats.model.name
-            : (typeof evalModel.name === "string" ? evalModel.name : null),
+            : typeof evalModel.name === "string"
+              ? evalModel.name
+              : null,
       },
     };
   });
@@ -577,9 +579,9 @@ export async function getEvalModelsUnion(
   };
 }
 
-export async function getEvalModelMapping(
-  options: EvalModelMappingOptions = {},
-): Promise<EvalModelMappingPayload> {
+export async function getMatchModelMapping(
+  options: MatchModelMappingOptions = {},
+): Promise<MatchModelMappingPayload> {
   const maxCandidates = options.maxCandidates ?? DEFAULT_MAX_CANDIDATES;
   const evalStats = await getEvalStats();
   const modelStats = await getModelStats();
@@ -588,7 +590,7 @@ export async function getEvalModelMapping(
     (model) => model.provider_id === PROVIDER_FILTER,
   );
 
-  const models: EvalMappedModel[] = evalStats.models.map((evalModel) => {
+  const models: MatchMappedModel[] = evalStats.models.map((evalModel) => {
     const candidates = collectCandidatesForEvalModel(
       evalModel,
       scopedModelStatsModels,
