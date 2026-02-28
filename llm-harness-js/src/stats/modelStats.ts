@@ -3,7 +3,6 @@ import { resolve } from "node:path";
 
 const MODELS_DEV_URL = "https://models.dev/api.json";
 const CACHE_PATH = resolve(".cache/models_dev_api.json");
-const RAW_OUTPUT_PATH = resolve(".cache/models_dev_raw.json");
 const OUTPUT_PATH = resolve(".cache/models_dev_output.json");
 const LOOKBACK_DAYS = 365;
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -68,9 +67,9 @@ export type ModelsDevOutputPayload = {
   models: ModelsDevFlatModel[];
 };
 
-type EnvShape = {
-  AA_REFRESH?: string;
-  AA_CACHE_TTL_SECONDS?: string;
+export type ModelStatsOptions = {
+  refreshCache?: boolean;
+  cacheTtlSeconds?: number;
 };
 
 function nowEpochSeconds(): number {
@@ -125,7 +124,6 @@ async function fetchAndCacheModelsDev(): Promise<ModelsDevCachePayload> {
     payload,
   };
   await writeJson(CACHE_PATH, cachePayload);
-  await writeJson(RAW_OUTPUT_PATH, payload);
   return cachePayload;
 }
 
@@ -186,13 +184,11 @@ function rankRecentModels(
     });
 }
 
-export async function getModelStats(): Promise<ModelsDevOutputPayload> {
-  const env =
-    (globalThis as { process?: { env?: EnvShape } }).process?.env ?? {};
-  const refreshCache = env.AA_REFRESH === "1";
-  const cacheTtlSeconds = Number(
-    env.AA_CACHE_TTL_SECONDS ?? DEFAULT_CACHE_TTL_SECONDS,
-  );
+export async function getModelStats(
+  options: ModelStatsOptions = {},
+): Promise<ModelsDevOutputPayload> {
+  const refreshCache = options.refreshCache ?? false;
+  const cacheTtlSeconds = options.cacheTtlSeconds ?? DEFAULT_CACHE_TTL_SECONDS;
   const cachePayload = await resolveCachePayload(refreshCache, cacheTtlSeconds);
   const cutoffIsoDate = isoDateDaysAgo(LOOKBACK_DAYS);
   const outputPayload: ModelsDevOutputPayload = {

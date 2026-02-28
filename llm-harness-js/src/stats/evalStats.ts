@@ -3,8 +3,8 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 const MODELS_URL = "https://artificialanalysis.ai/api/v2/data/llms/models";
-const CACHE_PATH = resolve(".cache/aa_models.json");
-const OUTPUT_PATH = resolve(".cache/aa_output.json");
+const CACHE_PATH = resolve(".cache/eval_models.json");
+const OUTPUT_PATH = resolve(".cache/eval_output.json");
 const LOOKBACK_DAYS = 365;
 const REQUEST_TIMEOUT_MS = 30_000;
 const DEFAULT_CACHE_TTL_SECONDS = 60 * 60 * 24;
@@ -77,7 +77,7 @@ type Percentiles = {
 
 type ScoredModel = BaseModel & { scores: Scores };
 
-export type AaEnrichedModel = BaseModel & {
+export type EvalEnrichedModel = BaseModel & {
   scores: Scores;
   percentiles: Percentiles;
 };
@@ -88,10 +88,16 @@ type CachePayload = {
   models: BaseModel[];
 };
 
-export type AaOutputPayload = {
+export type EvalOutputPayload = {
   fetched_at_epoch_seconds: number;
   status_code: number;
-  models: AaEnrichedModel[];
+  models: EvalEnrichedModel[];
+};
+
+export type EvalStatsOptions = {
+  apiKey?: string;
+  refreshCache?: boolean;
+  cacheTtlSeconds?: number;
 };
 
 function finiteNumbers(values: unknown[]): number[] {
@@ -228,7 +234,7 @@ function computeScores(filteredModels: BaseModel[]): ScoredModel[] {
 function rankAndEnrichModels(
   models: BaseModel[],
   cutoffDate: string,
-): AaEnrichedModel[] {
+): EvalEnrichedModel[] {
   const filteredModels = models.filter((model) => {
     return (
       (model.release_date ?? "") >= cutoffDate &&
@@ -314,12 +320,12 @@ async function fetchAndCacheModels(
   return cachePayload;
 }
 
-export async function getAAStats(): Promise<AaOutputPayload> {
-  const apiKey = process.env.ARTIFICIALANALYSIS_API_KEY;
-  const refreshCache = process.env.AA_REFRESH === "1";
-  const cacheTtlSeconds = Number(
-    process.env.AA_CACHE_TTL_SECONDS ?? DEFAULT_CACHE_TTL_SECONDS,
-  );
+export async function getEvalStats(
+  options: EvalStatsOptions = {},
+): Promise<EvalOutputPayload> {
+  const apiKey = options.apiKey ?? process.env.ARTIFICIALANALYSIS_API_KEY;
+  const refreshCache = options.refreshCache ?? false;
+  const cacheTtlSeconds = options.cacheTtlSeconds ?? DEFAULT_CACHE_TTL_SECONDS;
 
   let cachePayload: CachePayload;
   if (!refreshCache) {
@@ -343,7 +349,7 @@ export async function getAAStats(): Promise<AaOutputPayload> {
     .toISOString()
     .slice(0, 10);
 
-  const outputPayload: AaOutputPayload = {
+  const outputPayload: EvalOutputPayload = {
     fetched_at_epoch_seconds: cachePayload.fetched_at_epoch_seconds,
     status_code: cachePayload.status_code,
     models: rankAndEnrichModels(cachePayload.models, cutoffDate),

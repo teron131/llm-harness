@@ -13,8 +13,9 @@ export {
   YouTubeSummarizerReActAgent,
 } from "../agents/agents.js";
 export { ChatGemini, GeminiEmbeddings, createGeminiCache } from "./gemini.js";
-export { getAAStats } from "./aaStats.js";
-export { getModelStats } from "./modelStats.js";
+export { getEvalStats } from "../stats/evalStats.js";
+export { getEvalModelsUnion } from "../stats/evalModelsUnion.js";
+export { getModelStats } from "../stats/modelStats.js";
 export { MediaMessage } from "./multimodal.js";
 export { ChatOpenRouter, OpenRouterEmbeddings } from "./openrouter.js";
 export {
