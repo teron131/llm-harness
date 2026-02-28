@@ -51,27 +51,27 @@ export type MatchCandidate = {
 type MatchResult = MatchCandidate | null;
 
 export type MatchMappedModel = {
-  eval_slug: string;
-  eval_name: string | null;
-  eval_release_date: string | null;
+  artificial_analysis_slug: string;
+  artificial_analysis_name: string | null;
+  artificial_analysis_release_date: string | null;
   best_match: MatchResult;
   candidates: MatchCandidate[];
 };
 
 type MatchUnionRow = {
-  eval_slug: string;
-  eval_name: string | null;
-  eval_release_date: string | null;
+  artificial_analysis_slug: string;
+  artificial_analysis_name: string | null;
+  artificial_analysis_release_date: string | null;
   best_match: MatchResult;
-  eval: ArtificialAnalysisModel;
+  artificial_analysis: ArtificialAnalysisModel;
   models_dev: ModelsDevModel | null;
   union: Record<string, unknown>;
 };
 
 export type MatchModelMappingPayload = {
-  eval_fetched_at_epoch_seconds: number;
-  models_dev_fetched_at_epoch_seconds: number;
-  total_eval_models: number;
+  artificial_analysis_fetched_at_epoch_seconds: number | null;
+  models_dev_fetched_at_epoch_seconds: number | null;
+  total_artificial_analysis_models: number;
   total_models_dev_models: number;
   max_candidates: number;
   void_mode: "maxmin_half";
@@ -81,9 +81,9 @@ export type MatchModelMappingPayload = {
 };
 
 export type MatchModelsUnionPayload = {
-  eval_fetched_at_epoch_seconds: number;
-  models_dev_fetched_at_epoch_seconds: number;
-  total_eval_models: number;
+  artificial_analysis_fetched_at_epoch_seconds: number | null;
+  models_dev_fetched_at_epoch_seconds: number | null;
+  total_artificial_analysis_models: number;
   total_models_dev_models: number;
   void_mode: "maxmin_half";
   void_threshold: number | null;
@@ -543,14 +543,16 @@ export async function getMatchModelsUnion(
         : null;
 
       return {
-        eval_slug: typeof evalModel.slug === "string" ? evalModel.slug : "",
-        eval_name: typeof evalModel.name === "string" ? evalModel.name : null,
-        eval_release_date:
+        artificial_analysis_slug:
+          typeof evalModel.slug === "string" ? evalModel.slug : "",
+        artificial_analysis_name:
+          typeof evalModel.name === "string" ? evalModel.name : null,
+        artificial_analysis_release_date:
           typeof evalModel.release_date === "string"
             ? evalModel.release_date
             : null,
         best_match: bestMatch,
-        eval: evalModel,
+        artificial_analysis: evalModel,
         models_dev: matchedModelsDev,
         union: {
           ...(matchedModelsDev?.model ?? {}),
@@ -572,11 +574,11 @@ export async function getMatchModelsUnion(
     .map((row) => row.union);
 
   return {
-    eval_fetched_at_epoch_seconds:
+    artificial_analysis_fetched_at_epoch_seconds:
       artificialAnalysisStats.fetched_at_epoch_seconds,
     models_dev_fetched_at_epoch_seconds:
       modelsDevStats.fetched_at_epoch_seconds,
-    total_eval_models: artificialAnalysisStats.models.length,
+    total_artificial_analysis_models: artificialAnalysisStats.models.length,
     total_models_dev_models: scopedModelsDevModels.length,
     void_mode: "maxmin_half",
     void_threshold: voidStats.threshold,
@@ -602,9 +604,11 @@ export async function getMatchModelMapping(
         scopedModelsDevModels,
       ).slice(0, maxCandidates);
       return {
-        eval_slug: typeof evalModel.slug === "string" ? evalModel.slug : "",
-        eval_name: typeof evalModel.name === "string" ? evalModel.name : null,
-        eval_release_date:
+        artificial_analysis_slug:
+          typeof evalModel.slug === "string" ? evalModel.slug : "",
+        artificial_analysis_name:
+          typeof evalModel.name === "string" ? evalModel.name : null,
+        artificial_analysis_release_date:
           typeof evalModel.release_date === "string"
             ? evalModel.release_date
             : null,
@@ -617,11 +621,11 @@ export async function getMatchModelMapping(
   const voidStats = applyMaxMinHalfVoid(models);
 
   return {
-    eval_fetched_at_epoch_seconds:
+    artificial_analysis_fetched_at_epoch_seconds:
       artificialAnalysisStats.fetched_at_epoch_seconds,
     models_dev_fetched_at_epoch_seconds:
       modelsDevStats.fetched_at_epoch_seconds,
-    total_eval_models: models.length,
+    total_artificial_analysis_models: models.length,
     total_models_dev_models: scopedModelsDevModels.length,
     max_candidates: maxCandidates,
     void_mode: "maxmin_half",

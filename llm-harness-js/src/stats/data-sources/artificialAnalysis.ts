@@ -1,14 +1,8 @@
 import { add, mean, multiply } from "mathjs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
 
 const MODELS_URL = "https://artificialanalysis.ai/api/v2/data/llms/models";
-const CACHE_PATH = resolve(".cache/artificial_analysis_models.json");
-const OUTPUT_PATH = resolve(".cache/artificial_analysis_output.json");
-const CACHE_DIR = resolve(".cache");
 const LOOKBACK_DAYS = 365;
 const REQUEST_TIMEOUT_MS = 30_000;
-const DEFAULT_CACHE_TTL_SECONDS = 60 * 60 * 24;
 const BENCHMARK_KEYS = [
   "hle",
   "terminalbench_hard",
@@ -83,23 +77,19 @@ export type ArtificialAnalysisEnrichedModel = BaseModel & {
   percentiles: Percentiles;
 };
 
-type CachePayload = {
-  fetched_at_epoch_seconds: number;
-  status_code: number;
+type SourcePayload = {
+  fetched_at_epoch_seconds: number | null;
+  status_code: number | null;
   models: BaseModel[];
 };
 
 export type ArtificialAnalysisOutputPayload = {
-  fetched_at_epoch_seconds: number;
-  status_code: number;
+  fetched_at_epoch_seconds: number | null;
+  status_code: number | null;
   models: ArtificialAnalysisEnrichedModel[];
 };
 
-export type ArtificialAnalysisOptions = {
-  apiKey?: string;
-  refreshCache?: boolean;
-  cacheTtlSeconds?: number;
-};
+export type ArtificialAnalysisOptions = { apiKey?: string };
 
 function finiteNumbers(values: unknown[]): number[] {
   return values
@@ -280,23 +270,9 @@ function rankAndEnrichModels(
   }));
 }
 
-async function loadCache(): Promise<CachePayload> {
-  const content = await readFile(CACHE_PATH, "utf-8");
-  return JSON.parse(content) as CachePayload;
-}
-
-async function writeJson(path: string, payload: unknown): Promise<void> {
-  await mkdir(CACHE_DIR, { recursive: true });
-  await writeFile(path, JSON.stringify(payload, null, 2), "utf-8");
-}
-
-async function fetchAndCacheModels(
-  apiKey: string | undefined,
-): Promise<CachePayload> {
+async function fetchModels(apiKey: string | undefined): Promise<SourcePayload> {
   if (!apiKey) {
-    throw new Error(
-      "Missing ARTIFICIALANALYSIS_API_KEY for refresh. Set it or use existing cache.",
-    );
+    throw new Error("Missing ARTIFICIALANALYSIS_API_KEY.");
   }
 
   const controller = new AbortController();
@@ -312,59 +288,37 @@ async function fetchAndCacheModels(
   }
 
   const payload = (await response.json()) as { data: BaseModel[] };
-  const cachePayload: CachePayload = {
+  const sourcePayload: SourcePayload = {
     fetched_at_epoch_seconds: Math.floor(Date.now() / 1000),
     status_code: response.status,
     models: payload.data.map((model) => removeIds(model)),
   };
-  await writeJson(CACHE_PATH, cachePayload);
-  return cachePayload;
-}
-
-async function resolveCachePayload(
-  apiKey: string | undefined,
-  refreshCache: boolean,
-  cacheTtlSeconds: number,
-): Promise<CachePayload> {
-  if (refreshCache) {
-    return fetchAndCacheModels(apiKey);
-  }
-
-  try {
-    const cached = await loadCache();
-    const ageSeconds =
-      Math.floor(Date.now() / 1000) - cached.fetched_at_epoch_seconds;
-    if (ageSeconds <= cacheTtlSeconds) {
-      return cached;
-    }
-    return fetchAndCacheModels(apiKey);
-  } catch {
-    return fetchAndCacheModels(apiKey);
-  }
+  return sourcePayload;
 }
 
 export async function getArtificialAnalysisStats(
   options: ArtificialAnalysisOptions = {},
 ): Promise<ArtificialAnalysisOutputPayload> {
-  const apiKey = options.apiKey ?? process.env.ARTIFICIALANALYSIS_API_KEY;
-  const refreshCache = options.refreshCache ?? false;
-  const cacheTtlSeconds = options.cacheTtlSeconds ?? DEFAULT_CACHE_TTL_SECONDS;
-  const cachePayload = await resolveCachePayload(
-    apiKey,
-    refreshCache,
-    cacheTtlSeconds,
-  );
+  try {
+    const apiKey = options.apiKey ?? process.env.ARTIFICIALANALYSIS_API_KEY;
+    const sourcePayload = await fetchModels(apiKey);
 
-  const cutoffDate = new Date(Date.now() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000)
-    .toISOString()
-    .slice(0, 10);
+    const cutoffDate = new Date(
+      Date.now() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000,
+    )
+      .toISOString()
+      .slice(0, 10);
 
-  const outputPayload: ArtificialAnalysisOutputPayload = {
-    fetched_at_epoch_seconds: cachePayload.fetched_at_epoch_seconds,
-    status_code: cachePayload.status_code,
-    models: rankAndEnrichModels(cachePayload.models, cutoffDate),
-  };
-
-  await writeJson(OUTPUT_PATH, outputPayload);
-  return outputPayload;
+    return {
+      fetched_at_epoch_seconds: sourcePayload.fetched_at_epoch_seconds,
+      status_code: sourcePayload.status_code,
+      models: rankAndEnrichModels(sourcePayload.models, cutoffDate),
+    };
+  } catch {
+    return {
+      fetched_at_epoch_seconds: null,
+      status_code: null,
+      models: [],
+    };
+  }
 }

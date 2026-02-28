@@ -11,7 +11,9 @@ export type {
 } from "./data-sources/matcher.js";
 export { getMatchModelMapping } from "./data-sources/matcher.js";
 export { getModelStatsSelected } from "./modelStats.js";
+export { saveModelStatsSelected } from "./modelStats.js";
 export type {
+  ModelStatsSelectedOptions,
   ModelStatsSelectedPayload,
   ModelStatsSelectedModel,
 } from "./modelStats.js";

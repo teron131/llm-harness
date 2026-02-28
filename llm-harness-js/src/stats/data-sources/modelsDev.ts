@@ -1,13 +1,6 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
-
 const MODELS_DEV_URL = "https://models.dev/api.json";
-const CACHE_PATH = resolve(".cache/models_dev_api.json");
-const OUTPUT_PATH = resolve(".cache/models_dev_output.json");
 const LOOKBACK_DAYS = 365;
 const REQUEST_TIMEOUT_MS = 30_000;
-const DEFAULT_CACHE_TTL_SECONDS = 60 * 60 * 12;
-const CACHE_DIR = resolve(".cache");
 
 type NumberOrNull = number | null;
 
@@ -55,22 +48,19 @@ export type ModelsDevFlatModel = {
   model: ModelRecord;
 };
 
-type ModelsDevCachePayload = {
-  fetched_at_epoch_seconds: number;
-  status_code: number;
+type ModelsDevSourcePayload = {
+  fetched_at_epoch_seconds: number | null;
+  status_code: number | null;
   payload: ModelsDevPayload;
 };
 
 export type ModelsDevOutputPayload = {
-  fetched_at_epoch_seconds: number;
-  status_code: number;
+  fetched_at_epoch_seconds: number | null;
+  status_code: number | null;
   models: ModelsDevFlatModel[];
 };
 
-export type ModelsDevOptions = {
-  refreshCache?: boolean;
-  cacheTtlSeconds?: number;
-};
+export type ModelsDevOptions = Record<string, never>;
 
 function nowEpochSeconds(): number {
   return Math.floor(Date.now() / 1000);
@@ -97,17 +87,7 @@ function asFinite(value: unknown): NumberOrNull {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
-async function writeJson(path: string, payload: unknown): Promise<void> {
-  await mkdir(CACHE_DIR, { recursive: true });
-  await writeFile(path, JSON.stringify(payload, null, 2), "utf-8");
-}
-
-async function loadCache(): Promise<ModelsDevCachePayload> {
-  const content = await readFile(CACHE_PATH, "utf-8");
-  return JSON.parse(content) as ModelsDevCachePayload;
-}
-
-async function fetchAndCacheModelsDev(): Promise<ModelsDevCachePayload> {
+async function fetchModelsDev(): Promise<ModelsDevSourcePayload> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   const response = await fetch(MODELS_DEV_URL, { signal: controller.signal });
@@ -118,33 +98,12 @@ async function fetchAndCacheModelsDev(): Promise<ModelsDevCachePayload> {
   }
 
   const payload = (await response.json()) as ModelsDevPayload;
-  const cachePayload: ModelsDevCachePayload = {
+  const sourcePayload: ModelsDevSourcePayload = {
     fetched_at_epoch_seconds: nowEpochSeconds(),
     status_code: response.status,
     payload,
   };
-  await writeJson(CACHE_PATH, cachePayload);
-  return cachePayload;
-}
-
-async function resolveCachePayload(
-  refreshCache: boolean,
-  cacheTtlSeconds: number,
-): Promise<ModelsDevCachePayload> {
-  if (refreshCache) {
-    return fetchAndCacheModelsDev();
-  }
-
-  try {
-    const cached = await loadCache();
-    const ageSeconds = nowEpochSeconds() - cached.fetched_at_epoch_seconds;
-    if (ageSeconds <= cacheTtlSeconds) {
-      return cached;
-    }
-    return fetchAndCacheModelsDev();
-  } catch {
-    return fetchAndCacheModelsDev();
-  }
+  return sourcePayload;
 }
 
 function flattenModels(payload: ModelsDevPayload): ModelsDevFlatModel[] {
@@ -185,21 +144,24 @@ function rankRecentModels(
 }
 
 export async function getModelsDevStats(
-  options: ModelsDevOptions = {},
+  _options: ModelsDevOptions = {},
 ): Promise<ModelsDevOutputPayload> {
-  const refreshCache = options.refreshCache ?? false;
-  const cacheTtlSeconds = options.cacheTtlSeconds ?? DEFAULT_CACHE_TTL_SECONDS;
-  const cachePayload = await resolveCachePayload(refreshCache, cacheTtlSeconds);
-  const cutoffIsoDate = isoDateDaysAgo(LOOKBACK_DAYS);
-  const outputPayload: ModelsDevOutputPayload = {
-    fetched_at_epoch_seconds: cachePayload.fetched_at_epoch_seconds,
-    status_code: cachePayload.status_code,
-    models: rankRecentModels(
-      flattenModels(cachePayload.payload),
-      cutoffIsoDate,
-    ),
-  };
-
-  await writeJson(OUTPUT_PATH, outputPayload);
-  return outputPayload;
+  try {
+    const sourcePayload = await fetchModelsDev();
+    const cutoffIsoDate = isoDateDaysAgo(LOOKBACK_DAYS);
+    return {
+      fetched_at_epoch_seconds: sourcePayload.fetched_at_epoch_seconds,
+      status_code: sourcePayload.status_code,
+      models: rankRecentModels(
+        flattenModels(sourcePayload.payload),
+        cutoffIsoDate,
+      ),
+    };
+  } catch {
+    return {
+      fetched_at_epoch_seconds: null,
+      status_code: null,
+      models: [],
+    };
+  }
 }

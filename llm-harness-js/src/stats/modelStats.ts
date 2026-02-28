@@ -1,10 +1,11 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { getMatchModelsUnion } from "./data-sources/matcher.js";
 
-const OUTPUT_PATH = resolve(".cache/eval_models_union_selected.json");
+const DEFAULT_OUTPUT_PATH = resolve(".cache/model_stats.json");
 const CACHE_DIR = resolve(".cache");
+const CACHE_TTL_SECONDS = 60 * 60 * 24;
 
 type JsonObject = Record<string, unknown>;
 
@@ -27,7 +28,12 @@ export type ModelStatsSelectedModel = {
 };
 
 export type ModelStatsSelectedPayload = {
+  fetched_at_epoch_seconds: number | null;
   models: ModelStatsSelectedModel[];
+};
+
+export type ModelStatsSelectedOptions = {
+  id?: string | null;
 };
 
 function providerFromId(modelId: unknown): string | null {
@@ -67,37 +73,115 @@ async function writeJson(path: string, payload: unknown): Promise<void> {
   await writeFile(path, `${JSON.stringify(payload, null, 2)}\n`, "utf-8");
 }
 
-export async function getModelStatsSelected(): Promise<ModelStatsSelectedPayload> {
-  const matchUnion = await getMatchModelsUnion();
-  const models = matchUnion.models.map(
-    (unionModel): ModelStatsSelectedModel => {
-      const model = asRecord(unionModel);
-      const provider = providerFromId(model.id);
-      return {
-        id: typeof model.id === "string" ? model.id : null,
-        name: typeof model.name === "string" ? model.name : null,
-        provider,
-        logo: buildLogo(model, provider),
-        attachment:
-          typeof model.attachment === "boolean" ? model.attachment : null,
-        reasoning:
-          typeof model.reasoning === "boolean" ? model.reasoning : null,
-        release_date:
-          typeof model.release_date === "string" ? model.release_date : null,
-        modalities: model.modalities ?? null,
-        open_weights:
-          typeof model.open_weights === "boolean" ? model.open_weights : null,
-        cost: model.cost ?? null,
-        context_window: model.limit ?? null,
-        speed: buildSpeed(model),
-        evaluations: model.evaluations ?? null,
-        scores: model.scores ?? null,
-        percentiles: model.percentiles ?? null,
-      };
-    },
-  );
+function nowEpochSeconds(): number {
+  return Math.floor(Date.now() / 1000);
+}
 
-  const outputPayload: ModelStatsSelectedPayload = { models };
-  await writeJson(OUTPUT_PATH, outputPayload);
-  return outputPayload;
+function isFreshCache(fetchedAtEpochSeconds: unknown): boolean {
+  if (typeof fetchedAtEpochSeconds !== "number") {
+    return false;
+  }
+  const ageSeconds = nowEpochSeconds() - fetchedAtEpochSeconds;
+  return ageSeconds >= 0 && ageSeconds <= CACHE_TTL_SECONDS;
+}
+
+function filterModelsById(
+  models: ModelStatsSelectedModel[],
+  id: string | null | undefined,
+): ModelStatsSelectedModel[] {
+  if (id == null) {
+    return models;
+  }
+  return models.filter((model) => model.id === id);
+}
+
+export async function saveModelStatsSelected(
+  payload: ModelStatsSelectedPayload,
+  outputPath = DEFAULT_OUTPUT_PATH,
+): Promise<void> {
+  try {
+    await writeJson(outputPath, payload);
+  } catch {
+    // Intentionally swallow cache write errors: API remains in-memory first.
+  }
+}
+
+async function loadModelStatsSelectedFromCache(
+  outputPath: string,
+): Promise<ModelStatsSelectedPayload | null> {
+  try {
+    const content = await readFile(outputPath, "utf-8");
+    const payload = JSON.parse(content) as ModelStatsSelectedPayload;
+    if (!Array.isArray(payload.models)) {
+      return null;
+    }
+    if (!isFreshCache(payload.fetched_at_epoch_seconds)) {
+      return null;
+    }
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+function mapUnionModelToSelected(unionModel: unknown): ModelStatsSelectedModel {
+  const model = asRecord(unionModel);
+  const provider = providerFromId(model.id);
+  return {
+    id: typeof model.id === "string" ? model.id : null,
+    name: typeof model.name === "string" ? model.name : null,
+    provider,
+    logo: buildLogo(model, provider),
+    attachment: typeof model.attachment === "boolean" ? model.attachment : null,
+    reasoning: typeof model.reasoning === "boolean" ? model.reasoning : null,
+    release_date:
+      typeof model.release_date === "string" ? model.release_date : null,
+    modalities: model.modalities ?? null,
+    open_weights:
+      typeof model.open_weights === "boolean" ? model.open_weights : null,
+    cost: model.cost ?? null,
+    context_window: model.limit ?? null,
+    speed: buildSpeed(model),
+    evaluations: model.evaluations ?? null,
+    scores: model.scores ?? null,
+    percentiles: model.percentiles ?? null,
+  };
+}
+
+export async function getModelStatsSelected(
+  options: ModelStatsSelectedOptions = {},
+): Promise<ModelStatsSelectedPayload> {
+  try {
+    if (options.id == null) {
+      const cachedPayload =
+        await loadModelStatsSelectedFromCache(DEFAULT_OUTPUT_PATH);
+      if (cachedPayload) {
+        return cachedPayload;
+      }
+    }
+
+    const matchUnion = await getMatchModelsUnion();
+    const allModels = matchUnion.models.map(mapUnionModelToSelected);
+    const filteredModels = filterModelsById(allModels, options.id);
+    const fetchedAt = nowEpochSeconds();
+
+    if (options.id != null) {
+      return {
+        fetched_at_epoch_seconds: fetchedAt,
+        models: filteredModels,
+      };
+    }
+
+    const listPayload: ModelStatsSelectedPayload = {
+      fetched_at_epoch_seconds: fetchedAt,
+      models: filteredModels,
+    };
+    await saveModelStatsSelected(listPayload, DEFAULT_OUTPUT_PATH);
+    return listPayload;
+  } catch {
+    return {
+      fetched_at_epoch_seconds: null,
+      models: [],
+    };
+  }
 }
