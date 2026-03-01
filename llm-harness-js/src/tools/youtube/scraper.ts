@@ -29,8 +29,8 @@ export const ChannelSchema = z
 export const TranscriptSegmentSchema = z
   .object({
     text: z.string().optional(),
-    startMs: z.number().optional(),
-    endMs: z.number().optional(),
+    startMs: z.coerce.number().optional(),
+    endMs: z.coerce.number().optional(),
     startTimeText: z.string().optional(),
   })
   .passthrough();
