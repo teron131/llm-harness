@@ -1,18 +1,24 @@
+import type { ClientTool, ServerTool } from "@langchain/core/tools";
 import Exa from "exa-js";
+import { createAgent } from "langchain";
 import type { ZodTypeAny, z } from "zod";
 
 import { MediaMessage } from "../clients/multimodal.js";
 import { ChatOpenRouter } from "../clients/openrouter.js";
 import { webloaderTool } from "../tools/web/webloader.js";
 import type { Summary } from "./youtube/schemas.js";
-import { summarizeVideo as summarizeVideoReact } from "./youtube/summarizer.js";
+import { summarizeVideo as summarizeVideoLite } from "./youtube/summarizer.js";
 import { summarizeVideo as summarizeVideoGemini } from "./youtube/summarizer-gemini.js";
-import { summarizeVideo as summarizeVideoLite } from "./youtube/summarizer-lite.js";
+import { summarizeVideo as summarizeVideoReact } from "./youtube/summarizer-react.js";
 
-function extractUrls(text: string): string[] {
-  const matches = text.match(/https?:\/\/[^\s)]+/g);
-  return matches ?? [];
-}
+type GenericTool = ClientTool | ServerTool;
+type AgentResponse<T extends ZodTypeAny | null> = {
+  messages: unknown[];
+  structuredResponse?: T extends ZodTypeAny ? z.output<T> : never;
+};
+type AgentOutput<T extends ZodTypeAny | null> = T extends ZodTypeAny
+  ? z.output<T>
+  : string;
 
 export class ExaAgent<T extends ZodTypeAny> {
   private readonly exa: any;
@@ -29,6 +35,7 @@ export class ExaAgent<T extends ZodTypeAny> {
     const result = await this.exa.answer(query, {
       systemPrompt: this.systemPrompt,
       text: true,
+      outputSchema: this.outputSchema,
     });
 
     return this.outputSchema.parse(result.answer);
@@ -36,6 +43,7 @@ export class ExaAgent<T extends ZodTypeAny> {
 }
 
 export class BaseHarnessAgent<T extends ZodTypeAny | null = null> {
+  protected readonly agent: ReturnType<typeof createAgent>;
   protected readonly model: any;
   protected readonly responseFormat: T | undefined;
 
@@ -43,13 +51,17 @@ export class BaseHarnessAgent<T extends ZodTypeAny | null = null> {
     model,
     temperature = 0,
     reasoningEffort = "medium",
+    systemPrompt,
     responseFormat,
+    tools = [],
     ...modelKwargs
   }: {
     model?: string;
     temperature?: number;
     reasoningEffort?: "minimal" | "low" | "medium" | "high";
+    systemPrompt?: string;
     responseFormat?: T;
+    tools?: readonly GenericTool[];
     [key: string]: unknown;
   }) {
     const modelName = model ?? process.env.FAST_LLM;
@@ -67,18 +79,44 @@ export class BaseHarnessAgent<T extends ZodTypeAny | null = null> {
     });
 
     this.responseFormat = responseFormat;
-  }
 
-  protected async invokeModel(
-    messages: Array<{ role: string; content: unknown }>,
-  ): Promise<unknown> {
+    const agentParams: {
+      model: unknown;
+      tools: GenericTool[];
+      systemPrompt?: string;
+      responseFormat?: T;
+    } = {
+      model: this.model,
+      tools: [...tools],
+    };
+    if (systemPrompt !== undefined) {
+      agentParams.systemPrompt = systemPrompt;
+    }
     if (this.responseFormat) {
-      const structured = this.model.withStructuredOutput(this.responseFormat);
-      return structured.invoke(messages);
+      agentParams.responseFormat = this.responseFormat;
     }
 
-    const response = await this.model.invoke(messages);
-    return response?.content ?? "";
+    this.agent = createAgent(agentParams as any);
+  }
+
+  protected processResponse(response: AgentResponse<T>): AgentOutput<T> {
+    if (this.responseFormat) {
+      if (response.structuredResponse === undefined) {
+        throw new Error("Expected structuredResponse but none was returned.");
+      }
+      return response.structuredResponse as AgentOutput<T>;
+    }
+
+    const messageList = response.messages;
+    const lastMessage =
+      Array.isArray(messageList) && messageList.length > 0
+        ? messageList.at(-1)
+        : null;
+    if (!lastMessage || typeof lastMessage !== "object") {
+      return "" as AgentOutput<T>;
+    }
+    const content = (lastMessage as { content?: unknown }).content;
+    return (content ?? "") as AgentOutput<T>;
   }
 }
 
@@ -101,19 +139,29 @@ export class WebSearchAgent<
     });
   }
 
-  invoke(userInput: string): Promise<unknown> {
-    return this.invokeModel([{ role: "user", content: userInput }]);
+  async invoke(userInput: string): Promise<AgentOutput<T>> {
+    const response = (await this.agent.invoke({
+      messages: [{ role: "user", content: userInput }],
+    } as any)) as AgentResponse<T>;
+    return this.processResponse(response);
   }
 }
 
 export class WebLoaderAgent<
   T extends ZodTypeAny | null = null,
 > extends BaseHarnessAgent<T> {
-  async invoke(userInput: string): Promise<unknown> {
-    const urls = extractUrls(userInput);
-    const loaded = urls.length ? await webloaderTool(urls) : [];
-    const content = `${userInput}${loaded.length ? `\n\nLoaded URLs:\n${loaded.join("\n\n")}` : ""}`;
-    return this.invokeModel([{ role: "user", content }]);
+  constructor(args: Record<string, unknown> = {}) {
+    super({
+      ...args,
+      tools: [webloaderTool],
+    });
+  }
+
+  async invoke(userInput: string): Promise<AgentOutput<T>> {
+    const response = (await this.agent.invoke({
+      messages: [{ role: "user", content: userInput }],
+    } as any)) as AgentResponse<T>;
+    return this.processResponse(response);
   }
 }
 
@@ -130,17 +178,18 @@ export class WebSearchLoaderAgent<
   } & Record<string, unknown> = {}) {
     super({
       ...args,
+      tools: [webloaderTool],
       webSearch: true,
       webSearchEngine,
       webSearchMaxResults,
     });
   }
 
-  async invoke(userInput: string): Promise<unknown> {
-    const urls = extractUrls(userInput);
-    const loaded = urls.length ? await webloaderTool(urls) : [];
-    const content = `${userInput}${loaded.length ? `\n\nLoaded URLs:\n${loaded.join("\n\n")}` : ""}`;
-    return this.invokeModel([{ role: "user", content }]);
+  async invoke(userInput: string): Promise<AgentOutput<T>> {
+    const response = (await this.agent.invoke({
+      messages: [{ role: "user", content: userInput }],
+    } as any)) as AgentResponse<T>;
+    return this.processResponse(response);
   }
 }
 
@@ -150,12 +199,15 @@ export class ImageAnalysisAgent<
   async invoke(
     imagePaths: string | string[],
     description = "",
-  ): Promise<unknown> {
+  ): Promise<AgentOutput<T>> {
     const mediaMessage = await MediaMessage.fromPathAsync({
       paths: imagePaths,
       description,
     });
-    return this.invokeModel([mediaMessage]);
+    const response = (await this.agent.invoke({
+      messages: [mediaMessage],
+    } as any)) as AgentResponse<T>;
+    return this.processResponse(response);
   }
 }
 
@@ -233,7 +285,3 @@ export class YouTubeSummarizerGemini {
     return summarizeVideoGemini(payload);
   }
 }
-
-export const YouTubeSummarizerReActAgent = YouTubeSummarizerReAct;
-export const YouTubeSummarizerLiteAgent = YouTubeSummarizer;
-export const YouTubeSummarizerGeminiAgent = YouTubeSummarizerGemini;
