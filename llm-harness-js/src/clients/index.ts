@@ -23,8 +23,12 @@ export { ChatGemini, createGeminiCache, GeminiEmbeddings } from "./gemini.js";
 export { MediaMessage } from "./multimodal.js";
 export { ChatOpenRouter, OpenRouterEmbeddings } from "./openrouter.js";
 export {
+  getHarnessEventStream,
   getMetadata,
   getStreamGenerator,
+  HarnessEventStreamOptions,
+  HarnessStreamEvent,
+  HarnessToolState,
   parseBatch,
   parseInvoke,
   parseStream,
