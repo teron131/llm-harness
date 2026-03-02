@@ -12,13 +12,13 @@ export {
   YouTubeSummarizerReAct,
   YouTubeSummarizerReActAgent,
 } from "../agents/agents.js";
-export { getArtificialAnalysisStats } from "../stats/data-sources/artificialAnalysis.js";
-export { getModelsDevStats } from "../stats/data-sources/modelsDev.js";
+export { getArtificialAnalysisStats } from "../stats/data-sources/artificial-analysis.js";
 export {
   getMatchModelMapping,
   getMatchModelsUnion,
 } from "../stats/data-sources/matcher.js";
-export { getModelStatsSelected } from "../stats/modelStats.js";
+export { getModelsDevStats } from "../stats/data-sources/models-dev.js";
+export { getModelStatsSelected } from "../stats/model-stats.js";
 export { ChatGemini, createGeminiCache, GeminiEmbeddings } from "./gemini.js";
 export { MediaMessage } from "./multimodal.js";
 export { ChatOpenRouter, OpenRouterEmbeddings } from "./openrouter.js";

@@ -1,5 +1,5 @@
-import { getArtificialAnalysisStats } from "./artificialAnalysis";
-import { getModelsDevStats } from "./modelsDev";
+import { getArtificialAnalysisStats } from "./artificial-analysis";
+import { getModelsDevStats } from "./models-dev";
 
 type ModelsDevModel = Awaited<
   ReturnType<typeof getModelsDevStats>
@@ -101,7 +101,7 @@ export type MatchModelsUnionPayload = {
   void_threshold: number | null;
   voided_count: number;
   total_union_models: number;
-  models: Array<Record<string, unknown>>;
+  models: Record<string, unknown>[];
 };
 
 /**
@@ -129,7 +129,7 @@ function normalize(value: string): string {
 
 function splitBaseModelId(modelId: string): string {
   const parts = modelId.split("/");
-  return parts[parts.length - 1] ?? modelId;
+  return parts.at(-1) ?? modelId;
 }
 
 function isBScaleToken(token: string): boolean {
@@ -354,12 +354,12 @@ function sameVariantReward(
   const evalTokens = splitTokens(evalSlug);
   const modelBaseTokens = splitTokens(splitBaseModelId(modelId));
   const modelNameTokens = splitTokens(modelName);
-  const evalLastToken = evalTokens[evalTokens.length - 1];
+  const evalLastToken = evalTokens.at(-1);
   if (!evalLastToken || isNumericToken(evalLastToken)) {
     return 0;
   }
-  const baseLastToken = modelBaseTokens[modelBaseTokens.length - 1];
-  const nameLastToken = modelNameTokens[modelNameTokens.length - 1];
+  const baseLastToken = modelBaseTokens.at(-1);
+  const nameLastToken = modelNameTokens.at(-1);
   if (evalLastToken === baseLastToken || evalLastToken === nameLastToken) {
     return VARIANT_SUFFIX_REWARD;
   }
@@ -522,7 +522,7 @@ function applyMaxMinHalfVoid<
   }
 
   const minScore = scores[0] as number;
-  const maxScore = scores[scores.length - 1] as number;
+  const maxScore = scores.at(-1) as number;
   const threshold =
     minScore + (maxScore - minScore) * VOID_THRESHOLD_RANGE_RATIO;
   let voided = 0;

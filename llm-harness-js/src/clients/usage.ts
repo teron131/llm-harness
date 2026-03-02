@@ -1,11 +1,15 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 
 export class UsageMetadata {
-  constructor(
-    public total_input_tokens = 0,
-    public total_output_tokens = 0,
-    public total_cost = 0,
-  ) {}
+  total_input_tokens: number;
+  total_output_tokens: number;
+  total_cost: number;
+
+  constructor(total_input_tokens = 0, total_output_tokens = 0, total_cost = 0) {
+    this.total_input_tokens = total_input_tokens;
+    this.total_output_tokens = total_output_tokens;
+    this.total_cost = total_cost;
+  }
 
   add(other: UsageMetadata): UsageMetadata {
     return new UsageMetadata(
@@ -80,9 +84,8 @@ export function getAccumulatedUsage(): UsageMetadata {
 
 export function createResetUsageNode() {
   return function resetUsageNode<TState>(
-    state: TState,
+    _state: TState,
   ): Record<string, number> {
-    void state;
     resetUsage();
     return {
       total_input_tokens: 0,

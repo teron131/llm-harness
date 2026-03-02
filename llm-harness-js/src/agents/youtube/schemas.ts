@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-import { TagRangeSchema } from "../../tools/fs/fastCopy.js";
-import { s2hk } from "../../utils/textUtils.js";
+import { TagRangeSchema } from "../../tools/fs/fast-copy.js";
+import { s2hk } from "../../utils/text-utils.js";
 
 export const ChapterSchema = z.object({
   title: z.string().transform((value) => s2hk(value)),

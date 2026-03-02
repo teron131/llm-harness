@@ -1,7 +1,7 @@
 export {
-  TagRangeSchema,
   filterContent,
+  TagRangeSchema,
   tagContent,
   untagContent,
-} from "./fastCopy.js";
-export { makeFsTools } from "./fsTools.js";
+} from "./fast-copy.js";
+export { makeFsTools } from "./fs-tools.js";

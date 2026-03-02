@@ -5,23 +5,23 @@ import {
   filterContent,
   tagContent,
   untagContent,
-} from "../../tools/fs/fastCopy.js";
+} from "../../tools/fs/fast-copy.js";
 import { getTranscript } from "../../tools/youtube/scraper.js";
-import { isYoutubeUrl } from "../../utils/youtubeUtils.js";
+import { isYoutubeUrl } from "../../utils/youtube-utils.js";
 import {
   getGarbageFilterPrompt,
   getLangchainSummaryPrompt,
 } from "./prompts.js";
 import {
   GarbageIdentificationSchema,
-  Summary,
+  type Summary,
   SummarySchema,
 } from "./schemas.js";
 
 const DEFAULT_MODEL = "google/gemini-3-flash-preview";
 const FAST_MODEL = "google/gemini-2.5-flash-lite-preview-09-2025";
 
-async function scrapeYoutube(youtubeUrl: string): Promise<string> {
+function scrapeYoutube(youtubeUrl: string): Promise<string> {
   return getTranscript(youtubeUrl);
 }
 

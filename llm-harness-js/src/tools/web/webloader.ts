@@ -23,15 +23,13 @@ async function convertUrl(url: string): Promise<string | null> {
   }
 }
 
-export async function webloader(
+export function webloader(
   urls: string | string[],
 ): Promise<Array<string | null>> {
   const normalizedUrls = Array.isArray(urls) ? urls : [urls];
   return Promise.all(normalizedUrls.map((url) => convertUrl(url)));
 }
 
-export async function webloaderTool(
-  urls: string[],
-): Promise<Array<string | null>> {
+export function webloaderTool(urls: string[]): Promise<Array<string | null>> {
   return webloader(urls);
 }

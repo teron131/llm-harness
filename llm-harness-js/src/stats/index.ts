@@ -1,21 +1,25 @@
-export { getArtificialAnalysisStats } from "./data-sources/artificialAnalysis.js";
-export type { ArtificialAnalysisOptions } from "./data-sources/artificialAnalysis.js";
-export { getMatchModelsUnion } from "./data-sources/matcher.js";
+export type { ArtificialAnalysisOptions } from "./data-sources/artificial-analysis.js";
+export { getArtificialAnalysisStats } from "./data-sources/artificial-analysis.js";
 export type {
-  MatchMappedModel,
   MatchCandidate,
+  MatchMappedModel,
   MatchModelMappingOptions,
   MatchModelMappingPayload,
   MatchModelsUnionOptions,
   MatchModelsUnionPayload,
 } from "./data-sources/matcher.js";
-export { getMatchModelMapping } from "./data-sources/matcher.js";
-export { getModelStatsSelected } from "./modelStats.js";
-export { saveModelStatsSelected } from "./modelStats.js";
+export {
+  getMatchModelMapping,
+  getMatchModelsUnion,
+} from "./data-sources/matcher.js";
+export type { ModelsDevOptions } from "./data-sources/models-dev.js";
+export { getModelsDevStats } from "./data-sources/models-dev.js";
 export type {
+  ModelStatsSelectedModel,
   ModelStatsSelectedOptions,
   ModelStatsSelectedPayload,
-  ModelStatsSelectedModel,
-} from "./modelStats.js";
-export { getModelsDevStats } from "./data-sources/modelsDev.js";
-export type { ModelsDevOptions } from "./data-sources/modelsDev.js";
+} from "./model-stats.js";
+export {
+  getModelStatsSelected,
+  saveModelStatsSelected,
+} from "./model-stats.js";

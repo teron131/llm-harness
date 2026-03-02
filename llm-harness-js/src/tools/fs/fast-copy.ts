@@ -25,24 +25,24 @@ export function filterContent(taggedText: string, ranges: TagRange[]): string {
   }
 
   const tagToIdx = new Map<string, number>();
-  lines.forEach((line, idx) => {
+  for (const [idx, line] of lines.entries()) {
     if (!line.startsWith("[L")) {
-      return;
+      continue;
     }
 
     const end = line.indexOf("]");
     if (end !== -1) {
       tagToIdx.set(line.slice(0, end + 1), idx);
     }
-  });
+  }
 
   const keepMask = Array.from({ length: lines.length }, () => true);
 
-  ranges.forEach((range) => {
+  for (const range of ranges) {
     const startIdx = tagToIdx.get(range.start_tag);
     const endIdx = tagToIdx.get(range.end_tag);
     if (startIdx === undefined || endIdx === undefined) {
-      return;
+      continue;
     }
 
     const [firstIdx, lastIdx] =
@@ -50,7 +50,7 @@ export function filterContent(taggedText: string, ranges: TagRange[]): string {
     for (let i = firstIdx; i <= lastIdx; i += 1) {
       keepMask[i] = false;
     }
-  });
+  }
 
   return lines.filter((_, idx) => keepMask[idx]).join("\n");
 }

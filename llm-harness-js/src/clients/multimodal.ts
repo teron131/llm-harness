@@ -47,8 +47,8 @@ function createAudioBlock(
 }
 
 export class MediaMessage {
-  public readonly role = "user";
-  public readonly content: Array<Record<string, unknown>>;
+  readonly role = "user";
+  readonly content: Record<string, unknown>[];
 
   constructor({
     paths,
@@ -92,12 +92,12 @@ export class MediaMessage {
   private fromBytes(
     data: Uint8Array,
     mimeType: string,
-  ): Array<Record<string, unknown>> {
+  ): Record<string, unknown>[] {
     const dataUrl = `data:${mimeType};base64,${encodeBase64(data)}`;
     return [createImageBlock(dataUrl)];
   }
 
-  private fromPath(filePath: string): Array<Record<string, unknown>> {
+  private fromPath(filePath: string): Record<string, unknown>[] {
     const suffix = path.extname(filePath).toLowerCase();
     const supported = SUPPORTED_EXTENSIONS[suffix];
 
@@ -132,13 +132,13 @@ export class MediaMessage {
     return [];
   }
 
-  static async fromPathAsync(options: {
+  static fromPathAsync(options: {
     paths?: string | Uint8Array | Array<string | Uint8Array>;
     media?: string | Uint8Array | Array<string | Uint8Array>;
     description?: string;
     labelPages?: boolean;
     mimeType?: string;
   }): Promise<MediaMessage> {
-    return new MediaMessage(options);
+    return Promise.resolve(new MediaMessage(options));
   }
 }

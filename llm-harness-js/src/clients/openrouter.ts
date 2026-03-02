@@ -53,22 +53,22 @@ function mergePlugins(
 ): PluginConfig[] {
   const byId = new Map<string, PluginConfig>();
 
-  derivedPlugins.forEach((plugin) => {
+  for (const plugin of derivedPlugins) {
     const id = typeof plugin.id === "string" ? plugin.id : null;
     if (id) {
       byId.set(id, plugin);
     }
-  });
+  }
 
   if (Array.isArray(explicitPlugins)) {
-    explicitPlugins.forEach((plugin, idx) => {
+    for (const [idx, plugin] of explicitPlugins.entries()) {
       if (!plugin || typeof plugin !== "object") {
-        return;
+        continue;
       }
       const typed = plugin as PluginConfig;
       const id = typeof typed.id === "string" ? typed.id : `__anon_${idx}`;
       byId.set(id, typed);
-    });
+    }
   }
 
   return [...byId.values()];
@@ -115,13 +115,13 @@ export function ChatOpenRouter({
   validateOpenRouterModel(model);
 
   const explicitPlugins = kwargs.plugins;
-  delete kwargs.plugins;
+  kwargs.plugins = undefined;
 
   const openrouterProvider = kwargs.openrouter_provider;
-  delete kwargs.openrouter_provider;
+  kwargs.openrouter_provider = undefined;
 
-  delete kwargs.model;
-  delete kwargs.temperature;
+  kwargs.model = undefined;
+  kwargs.temperature = undefined;
 
   const mergedPlugins = mergePlugins(
     buildDerivedPlugins({

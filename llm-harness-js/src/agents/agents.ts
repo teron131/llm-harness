@@ -1,13 +1,13 @@
 import Exa from "exa-js";
-import { z, ZodTypeAny } from "zod";
+import type { ZodTypeAny, z } from "zod";
 
 import { MediaMessage } from "../clients/multimodal.js";
 import { ChatOpenRouter } from "../clients/openrouter.js";
 import { webloaderTool } from "../tools/web/webloader.js";
-import { Summary } from "./youtube/schemas.js";
-import { summarizeVideo as summarizeVideoGemini } from "./youtube/summarizerGemini.js";
-import { summarizeVideo as summarizeVideoLite } from "./youtube/summarizerLite.js";
+import type { Summary } from "./youtube/schemas.js";
 import { summarizeVideo as summarizeVideoReact } from "./youtube/summarizer.js";
+import { summarizeVideo as summarizeVideoGemini } from "./youtube/summarizer-gemini.js";
+import { summarizeVideo as summarizeVideoLite } from "./youtube/summarizer-lite.js";
 
 function extractUrls(text: string): string[] {
   const matches = text.match(/https?:\/\/[^\s)]+/g);
@@ -15,12 +15,13 @@ function extractUrls(text: string): string[] {
 }
 
 export class ExaAgent<T extends ZodTypeAny> {
-  private exa: any;
+  private readonly exa: any;
+  private readonly systemPrompt: string;
+  private readonly outputSchema: T;
 
-  constructor(
-    private readonly systemPrompt: string,
-    private readonly outputSchema: T,
-  ) {
+  constructor(systemPrompt: string, outputSchema: T) {
+    this.systemPrompt = systemPrompt;
+    this.outputSchema = outputSchema;
     this.exa = new (Exa as any)(process.env.EXA_API_KEY);
   }
 
@@ -100,7 +101,7 @@ export class WebSearchAgent<
     });
   }
 
-  async invoke(userInput: string): Promise<unknown> {
+  invoke(userInput: string): Promise<unknown> {
     return this.invokeModel([{ role: "user", content: userInput }]);
   }
 }
@@ -159,9 +160,13 @@ export class ImageAnalysisAgent<
 }
 
 export class YouTubeSummarizerReAct {
-  constructor(private readonly targetLanguage?: string | null) {}
+  private readonly targetLanguage: string | null | undefined;
 
-  async invoke(transcriptOrUrl: string): Promise<Summary> {
+  constructor(targetLanguage?: string | null) {
+    this.targetLanguage = targetLanguage;
+  }
+
+  invoke(transcriptOrUrl: string): Promise<Summary> {
     return summarizeVideoReact({
       transcriptOrUrl,
       targetLanguage: this.targetLanguage ?? null,
@@ -170,9 +175,13 @@ export class YouTubeSummarizerReAct {
 }
 
 export class YouTubeSummarizer {
-  constructor(private readonly targetLanguage?: string | null) {}
+  private readonly targetLanguage: string | null | undefined;
 
-  async invoke(transcriptOrUrl: string): Promise<Summary> {
+  constructor(targetLanguage?: string | null) {
+    this.targetLanguage = targetLanguage;
+  }
+
+  invoke(transcriptOrUrl: string): Promise<Summary> {
     return summarizeVideoLite({
       transcriptOrUrl,
       targetLanguage: this.targetLanguage ?? null,
@@ -181,16 +190,25 @@ export class YouTubeSummarizer {
 }
 
 export class YouTubeSummarizerGemini {
+  private readonly options: {
+    model?: string;
+    thinkingLevel?: "minimal" | "low" | "medium" | "high";
+    targetLanguage?: string;
+    apiKey?: string;
+  };
+
   constructor(
-    private readonly options: {
+    options: {
       model?: string;
       thinkingLevel?: "minimal" | "low" | "medium" | "high";
       targetLanguage?: string;
       apiKey?: string;
     } = {},
-  ) {}
+  ) {
+    this.options = options;
+  }
 
-  async invoke(videoUrl: string): Promise<Summary | null> {
+  invoke(videoUrl: string): Promise<Summary | null> {
     const payload: {
       videoUrl: string;
       model?: string;
@@ -199,12 +217,18 @@ export class YouTubeSummarizerGemini {
       apiKey?: string;
     } = { videoUrl };
 
-    if (this.options.model) payload.model = this.options.model;
-    if (this.options.thinkingLevel)
+    if (this.options.model) {
+      payload.model = this.options.model;
+    }
+    if (this.options.thinkingLevel) {
       payload.thinkingLevel = this.options.thinkingLevel;
-    if (this.options.targetLanguage)
+    }
+    if (this.options.targetLanguage) {
       payload.targetLanguage = this.options.targetLanguage;
-    if (this.options.apiKey) payload.apiKey = this.options.apiKey;
+    }
+    if (this.options.apiKey) {
+      payload.apiKey = this.options.apiKey;
+    }
 
     return summarizeVideoGemini(payload);
   }

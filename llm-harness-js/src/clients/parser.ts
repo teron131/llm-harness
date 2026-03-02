@@ -52,7 +52,7 @@ export function getMetadata(
 }
 
 function extractReasoning(
-  contentBlocks: Array<Record<string, unknown>>,
+  contentBlocks: Record<string, unknown>[],
 ): string | null {
   const firstBlock = contentBlocks[0];
   if (!firstBlock) {
@@ -74,7 +74,7 @@ function extractReasoning(
     return null;
   }
 
-  const last = nestedContent[nestedContent.length - 1];
+  const last = nestedContent.at(-1);
   if (!last || typeof last !== "object") {
     return null;
   }
@@ -88,7 +88,7 @@ function extractAnswer(response: Record<string, unknown>): string {
   if (!Array.isArray(blocks) || blocks.length === 0) {
     return "";
   }
-  const last = blocks[blocks.length - 1] as Record<string, unknown>;
+  const last = blocks.at(-1) as Record<string, unknown>;
   return typeof last.text === "string" ? last.text : "";
 }
 
@@ -102,14 +102,14 @@ export function parseInvoke(
   }
 
   const blocks = Array.isArray(response.content_blocks)
-    ? (response.content_blocks as Array<Record<string, unknown>>)
+    ? (response.content_blocks as Record<string, unknown>[])
     : [];
   const reasoning = extractReasoning(blocks);
   return [reasoning, answer];
 }
 
 export function parseBatch(
-  responses: Array<Record<string, unknown>>,
+  responses: Record<string, unknown>[],
   includeReasoning = false,
 ): Array<string | [string | null, string]> {
   return responses.map((response) => parseInvoke(response, includeReasoning));
@@ -127,7 +127,7 @@ export async function* getStreamGenerator(
       continue;
     }
 
-    const typedBlocks = blocks as Array<Record<string, unknown>>;
+    const typedBlocks = blocks as Record<string, unknown>[];
 
     if (includeReasoning && !reasoningYielded) {
       const reasoning = extractReasoning(typedBlocks);
@@ -137,7 +137,7 @@ export async function* getStreamGenerator(
       }
     }
 
-    const last = typedBlocks[typedBlocks.length - 1];
+    const last = typedBlocks.at(-1);
     const answer = typeof last?.text === "string" ? last.text : null;
     if (answer) {
       yield includeReasoning ? [null, answer] : answer;

@@ -6,9 +6,9 @@ import {
   filterContent,
   tagContent,
   untagContent,
-} from "../../tools/fs/fastCopy.js";
+} from "../../tools/fs/fast-copy.js";
 import { getTranscript } from "../../tools/youtube/scraper.js";
-import { isYoutubeUrl } from "../../utils/youtubeUtils.js";
+import { isYoutubeUrl } from "../../utils/youtube-utils.js";
 import {
   getGarbageFilterPrompt,
   getLangchainSummaryPrompt,
@@ -16,11 +16,11 @@ import {
 } from "./prompts.js";
 import {
   GarbageIdentificationSchema,
-  QualitySchema,
-  Summary,
-  SummarySchema,
   isAcceptable,
   percentageScore,
+  QualitySchema,
+  type Summary,
+  SummarySchema,
 } from "./schemas.js";
 
 const SUMMARY_MODEL = "x-ai/grok-4.1-fast";
@@ -144,14 +144,14 @@ function createGraph() {
     .compile();
 }
 
-async function extractTranscript(transcriptOrUrl: string): Promise<string> {
+function extractTranscript(transcriptOrUrl: string): Promise<string> {
   if (isYoutubeUrl(transcriptOrUrl)) {
     return getTranscript(transcriptOrUrl);
   }
   if (!transcriptOrUrl.trim()) {
     throw new Error("Transcript cannot be empty");
   }
-  return transcriptOrUrl;
+  return Promise.resolve(transcriptOrUrl);
 }
 
 export async function summarizeVideo({

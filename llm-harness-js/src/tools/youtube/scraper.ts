@@ -5,7 +5,7 @@ import {
   cleanYoutubeUrl,
   extractVideoId,
   isYoutubeUrl,
-} from "../../utils/youtubeUtils.js";
+} from "../../utils/youtube-utils.js";
 
 const SCRAPECREATORS_ENDPOINT =
   "https://api.scrapecreators.com/v1/youtube/video/transcript";
@@ -151,7 +151,7 @@ async function fetchSupadata(
     const content = data.content;
 
     let transcript_only_text: string | undefined;
-    let transcript: Array<z.infer<typeof TranscriptSegmentSchema>> | undefined;
+    let transcript: z.infer<typeof TranscriptSegmentSchema>[] | undefined;
 
     if (typeof content === "string") {
       transcript_only_text = content;

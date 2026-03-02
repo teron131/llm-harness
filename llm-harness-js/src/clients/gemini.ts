@@ -39,7 +39,10 @@ export function ChatGemini({
 export function GeminiEmbeddings({
   model = "models/text-embedding-004",
   ...kwargs
-}: { model?: string; [key: string]: unknown } = {}) {
+}: {
+  model?: string;
+  [key: string]: unknown;
+} = {}) {
   resolveGeminiApiKey();
   const resolvedModel = model.startsWith("models/") ? model : `models/${model}`;
   return new GoogleGenerativeAIEmbeddings({
@@ -71,7 +74,7 @@ export async function createGeminiCache({
 
   let fileRef = await ai.files.get({ name: uploadedName });
   while (fileRef.state === "PROCESSING") {
-    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    await new Promise((resolve) => setTimeout(resolve, 1000));
     fileRef = await ai.files.get({ name: uploadedName });
   }
 

@@ -2,7 +2,7 @@ import {
   formatYoutubeLoaderOutput,
   scrapeYoutube,
 } from "../../tools/youtube/scraper.js";
-import { Summary } from "./schemas.js";
+import type { Summary } from "./schemas.js";
 
 export { SummarySchema } from "./schemas.js";
 
@@ -10,7 +10,7 @@ export async function summarizeVideo(
   transcriptOrUrl: string,
   targetLanguage?: string | null,
 ): Promise<Summary> {
-  const { summarizeVideo } = await import("./summarizerLite.js");
+  const { summarizeVideo } = await import("./summarizer-lite.js");
   return summarizeVideo({
     transcriptOrUrl,
     ...(targetLanguage !== undefined ? { targetLanguage } : {}),

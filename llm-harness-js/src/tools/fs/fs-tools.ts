@@ -1,12 +1,16 @@
+import { spawn } from "node:child_process";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { relative, resolve } from "node:path";
-import { spawn } from "node:child_process";
 
 export const PATH_TRAVERSAL_ERROR = "Path traversal not allowed";
 export const PATH_OUTSIDE_ROOT_ERROR = "Path outside root";
 
 export class SandboxFS {
-  constructor(public readonly rootDir: string) {}
+  readonly rootDir: string;
+
+  constructor(rootDir: string) {
+    this.rootDir = rootDir;
+  }
 
   resolve(userPath: string): string {
     const cleanedPath = userPath.trim();

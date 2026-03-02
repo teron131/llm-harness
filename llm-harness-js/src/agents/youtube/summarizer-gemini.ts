@@ -2,7 +2,7 @@ import { GoogleGenAI, Type } from "@google/genai";
 
 import { trackUsage } from "../../clients/usage.js";
 import { getGeminiSummaryPrompt } from "./prompts.js";
-import { Summary, SummarySchema } from "./schemas.js";
+import { type Summary, SummarySchema } from "./schemas.js";
 
 const DEFAULT_MODEL = "gemini-3-flash-preview";
 
@@ -123,7 +123,7 @@ export async function analyzeVideoUrl({
   }
 }
 
-export async function summarizeVideo({
+export function summarizeVideo({
   videoUrl,
   model = DEFAULT_MODEL,
   thinkingLevel = "medium",
