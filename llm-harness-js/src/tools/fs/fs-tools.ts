@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { relative, resolve } from "node:path";
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
 
 export const PATH_TRAVERSAL_ERROR = "Path traversal not allowed";
 export const PATH_OUTSIDE_ROOT_ERROR = "Path outside root";
@@ -60,54 +62,89 @@ export function makeFsTools({ rootDir }: { rootDir: string }) {
     return filePath;
   }
 
-  async function fsReadText(path: string): Promise<string> {
-    const filePath = await resolveExistingFile(path);
-    return readFile(filePath, "utf-8");
-  }
+  const fsReadText = tool(
+    async ({ path }: { path: string }): Promise<string> => {
+      const filePath = await resolveExistingFile(path);
+      return readFile(filePath, "utf-8");
+    },
+    {
+      name: "fs_read_text",
+      description: "Read a UTF-8 text file from the sandboxed workspace.",
+      schema: z.object({
+        path: z.string(),
+      }),
+    },
+  );
 
-  async function fsWriteText(path: string, text: string): Promise<string> {
-    const filePath = fs.resolve(path);
-    await mkdir(resolve(filePath, ".."), { recursive: true });
-    await writeFile(filePath, text, "utf-8");
-    return `Wrote ${path}`;
-  }
+  const fsWriteText = tool(
+    async ({ path, text }: { path: string; text: string }): Promise<string> => {
+      const filePath = fs.resolve(path);
+      await mkdir(resolve(filePath, ".."), { recursive: true });
+      await writeFile(filePath, text, "utf-8");
+      return `Wrote ${path}`;
+    },
+    {
+      name: "fs_write_text",
+      description: "Write a UTF-8 text file into the sandboxed workspace.",
+      schema: z.object({
+        path: z.string(),
+        text: z.string(),
+      }),
+    },
+  );
 
-  async function fsEditWithEd(path: string, script: string): Promise<string> {
-    const filePath = await resolveExistingFile(path);
+  const fsEditWithEd = tool(
+    async ({
+      path,
+      script,
+    }: {
+      path: string;
+      script: string;
+    }): Promise<string> => {
+      const filePath = await resolveExistingFile(path);
 
-    await new Promise<void>((resolvePromise, rejectPromise) => {
-      const child = spawn("ed", ["-s", filePath], {
-        stdio: ["pipe", "pipe", "pipe"],
+      await new Promise<void>((resolvePromise, rejectPromise) => {
+        const child = spawn("ed", ["-s", filePath], {
+          stdio: ["pipe", "pipe", "pipe"],
+        });
+        let stderr = "";
+        let stdout = "";
+
+        child.stderr.on("data", (chunk) => {
+          stderr += String(chunk);
+        });
+        child.stdout.on("data", (chunk) => {
+          stdout += String(chunk);
+        });
+
+        child.on("error", (error) => {
+          rejectPromise(error);
+        });
+
+        child.on("close", (code) => {
+          if (code !== 0) {
+            const err = (stderr || stdout || "").trim();
+            rejectPromise(new Error(`ed failed (code=${code}): ${err}`));
+            return;
+          }
+          resolvePromise();
+        });
+
+        child.stdin.write(script);
+        child.stdin.end();
       });
-      let stderr = "";
-      let stdout = "";
 
-      child.stderr.on("data", (chunk) => {
-        stderr += String(chunk);
-      });
-      child.stdout.on("data", (chunk) => {
-        stdout += String(chunk);
-      });
-
-      child.on("error", (error) => {
-        rejectPromise(error);
-      });
-
-      child.on("close", (code) => {
-        if (code !== 0) {
-          const err = (stderr || stdout || "").trim();
-          rejectPromise(new Error(`ed failed (code=${code}): ${err}`));
-          return;
-        }
-        resolvePromise();
-      });
-
-      child.stdin.write(script);
-      child.stdin.end();
-    });
-
-    return `Edited ${path}`;
-  }
+      return `Edited ${path}`;
+    },
+    {
+      name: "fs_edit_with_ed",
+      description: "Edit a file by running an `ed` script against it.",
+      schema: z.object({
+        path: z.string(),
+        script: z.string(),
+      }),
+    },
+  );
 
   return [fsReadText, fsWriteText, fsEditWithEd] as const;
 }

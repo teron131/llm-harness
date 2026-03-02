@@ -1,4 +1,6 @@
+import { tool } from "@langchain/core/tools";
 import TurndownService from "turndown";
+import { z } from "zod";
 
 function cleanMarkdown(markdown: string): string {
   return markdown
@@ -30,6 +32,14 @@ export function webloader(
   return Promise.all(normalizedUrls.map((url) => convertUrl(url)));
 }
 
-export function webloaderTool(urls: string[]): Promise<Array<string | null>> {
-  return webloader(urls);
-}
+export const webloaderTool = tool(
+  async ({ urls }: { urls: string[] }): Promise<Array<string | null>> =>
+    webloader(urls),
+  {
+    name: "webloader_tool",
+    description: "Load the web content from the given URLs.",
+    schema: z.object({
+      urls: z.array(z.string()),
+    }),
+  },
+);
