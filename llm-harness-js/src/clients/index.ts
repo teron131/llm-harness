@@ -7,10 +7,7 @@ export {
   WebSearchLoaderAgent,
   YouTubeSummarizer,
   YouTubeSummarizerGemini,
-  YouTubeSummarizerGeminiAgent,
-  YouTubeSummarizerLiteAgent,
   YouTubeSummarizerReAct,
-  YouTubeSummarizerReActAgent,
 } from "../agents/agents.js";
 export { getArtificialAnalysisStats } from "../stats/data-sources/artificial-analysis.js";
 export {

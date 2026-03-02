@@ -19,9 +19,6 @@ export {
   WebSearchLoaderAgent,
   YouTubeSummarizer,
   YouTubeSummarizerGemini,
-  YouTubeSummarizerGeminiAgent,
-  YouTubeSummarizerLiteAgent,
   YouTubeSummarizerReAct,
-  YouTubeSummarizerReActAgent,
 } from "./agents.js";
 export { youtubeLoader } from "./youtube/index.js";

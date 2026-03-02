@@ -10,7 +10,7 @@ export async function summarizeVideo(
   transcriptOrUrl: string,
   targetLanguage?: string | null,
 ): Promise<Summary> {
-  const { summarizeVideo } = await import("./summarizer-lite.js");
+  const { summarizeVideo } = await import("./summarizer.js");
   return summarizeVideo({
     transcriptOrUrl,
     ...(targetLanguage !== undefined ? { targetLanguage } : {}),
@@ -21,7 +21,7 @@ export async function streamSummarizeVideo(
   transcriptOrUrl: string,
   targetLanguage?: string | null,
 ) {
-  const { streamSummarizeVideo } = await import("./summarizer.js");
+  const { streamSummarizeVideo } = await import("./summarizer-react.js");
   return streamSummarizeVideo({
     transcriptOrUrl,
     ...(targetLanguage !== undefined ? { targetLanguage } : {}),
@@ -32,7 +32,7 @@ export async function summarizeVideoReact(
   transcriptOrUrl: string,
   targetLanguage?: string | null,
 ): Promise<Summary> {
-  const { summarizeVideo } = await import("./summarizer.js");
+  const { summarizeVideo } = await import("./summarizer-react.js");
   return summarizeVideo({
     transcriptOrUrl,
     ...(targetLanguage !== undefined ? { targetLanguage } : {}),
