@@ -100,6 +100,10 @@ export type ArtificialAnalysisOutputPayload = {
  */
 export type ArtificialAnalysisOptions = { apiKey?: string };
 
+function nowEpochSeconds(): number {
+  return Math.floor(Date.now() / 1000);
+}
+
 function finiteNumbers(values: unknown[]): number[] {
   return values
     .filter((value) => value != null)
@@ -289,8 +293,7 @@ async function fetchModels(apiKey: string | undefined): Promise<SourcePayload> {
   const response = await fetch(MODELS_URL, {
     headers: { "x-api-key": apiKey },
     signal: controller.signal,
-  });
-  clearTimeout(timeout);
+  }).finally(() => clearTimeout(timeout));
 
   if (!response.ok) {
     throw new Error(`Artificial Analysis request failed: ${response.status}`);
@@ -298,7 +301,7 @@ async function fetchModels(apiKey: string | undefined): Promise<SourcePayload> {
 
   const payload = (await response.json()) as { data: BaseModel[] };
   const sourcePayload: SourcePayload = {
-    fetched_at_epoch_seconds: Math.floor(Date.now() / 1000),
+    fetched_at_epoch_seconds: nowEpochSeconds(),
     status_code: response.status,
     models: payload.data.map((model) => removeIds(model)),
   };

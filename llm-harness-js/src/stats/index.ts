@@ -6,10 +6,10 @@ export type {
 } from "./data-sources/artificial-analysis-image.js";
 export { getArtificialAnalysisImageStats } from "./data-sources/artificial-analysis-image.js";
 export type {
-  ArenaAiOptions,
-  ArenaAiOutputPayload,
-} from "./data-sources/arena-ai.js";
-export { getArenaAiTextToImageStats } from "./data-sources/arena-ai.js";
+  ArenaAiImageOptions,
+  ArenaAiImageOutputPayload,
+} from "./data-sources/arena-ai-image.js";
+export { getArenaAiImageStats } from "./data-sources/arena-ai-image.js";
 export type {
   MatchCandidate,
   MatchMappedModel,
@@ -29,7 +29,4 @@ export type {
   ModelStatsSelectedOptions,
   ModelStatsSelectedPayload,
 } from "./llm-stats.js";
-export {
-  getModelStatsSelected,
-  saveModelStatsSelected,
-} from "./llm-stats.js";
+export { getModelStatsSelected, saveModelStatsSelected } from "./llm-stats.js";

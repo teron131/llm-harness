@@ -101,8 +101,9 @@ function asFinite(value: unknown): NumberOrNull {
 async function fetchModelsDev(): Promise<ModelsDevSourcePayload> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  const response = await fetch(MODELS_DEV_URL, { signal: controller.signal });
-  clearTimeout(timeout);
+  const response = await fetch(MODELS_DEV_URL, {
+    signal: controller.signal,
+  }).finally(() => clearTimeout(timeout));
 
   if (!response.ok) {
     throw new Error(`models.dev request failed: ${response.status}`);

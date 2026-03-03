@@ -39,6 +39,15 @@ const GROUP_NAMES: GroupName[] = [
   "Contextual",
 ];
 
+const GROUP_BY_CATEGORY_LABEL = new Map<string, GroupName>(
+  GROUP_NAMES.flatMap((groupName) =>
+    ARTIFICIAL_ANALYSIS_IMAGE_GROUPS[groupName].map((label) => [
+      label,
+      groupName,
+    ]),
+  ),
+);
+
 type RawCategory = {
   style_category?: string;
   subject_matter_category?: string;
@@ -196,24 +205,16 @@ function isOlderThanDays(
 
 function detectGroup(category: RawCategory): GroupName | null {
   const style =
-    typeof category.style_category === "string"
-      ? category.style_category
-      : null;
+    typeof category.style_category === "string" ? category.style_category : "";
   const subject =
     typeof category.subject_matter_category === "string"
       ? category.subject_matter_category
-      : null;
-
-  for (const groupName of GROUP_NAMES) {
-    const labels = ARTIFICIAL_ANALYSIS_IMAGE_GROUPS[groupName];
-    if (
-      (style && labels.includes(style)) ||
-      (subject && labels.includes(subject))
-    ) {
-      return groupName;
-    }
-  }
-  return null;
+      : "";
+  return (
+    GROUP_BY_CATEGORY_LABEL.get(style) ??
+    GROUP_BY_CATEGORY_LABEL.get(subject) ??
+    null
+  );
 }
 
 function initAccumulator(): Aggregator {
@@ -386,6 +387,17 @@ function enrichPayload(
   };
 }
 
+function createFailurePayload(
+  minModelAgeDays: number,
+): ArtificialAnalysisImageOutputPayload {
+  return {
+    fetched_at_epoch_seconds: null,
+    status_code: null,
+    endpoint: TEXT_TO_IMAGE_URL,
+    ...enrichPayload({}, minModelAgeDays),
+  };
+}
+
 /**
  * Fetch and enrich Artificial Analysis text-to-image leaderboard data.
  */
@@ -393,16 +405,9 @@ export async function getArtificialAnalysisImageStats(
   options: ArtificialAnalysisImageOptions = {},
 ): Promise<ArtificialAnalysisImageOutputPayload> {
   const apiKey = options.apiKey ?? process.env.ARTIFICIALANALYSIS_API_KEY;
+  const minModelAgeDays = options.minModelAgeDays ?? DEFAULT_MIN_MODEL_AGE_DAYS;
   if (!apiKey) {
-    return {
-      fetched_at_epoch_seconds: null,
-      status_code: null,
-      endpoint: TEXT_TO_IMAGE_URL,
-      ...enrichPayload(
-        {},
-        options.minModelAgeDays ?? DEFAULT_MIN_MODEL_AGE_DAYS,
-      ),
-    };
+    return createFailurePayload(minModelAgeDays);
   }
 
   try {
@@ -411,8 +416,7 @@ export async function getArtificialAnalysisImageStats(
     const response = await fetch(TEXT_TO_IMAGE_URL, {
       headers: { "x-api-key": apiKey },
       signal: controller.signal,
-    });
-    clearTimeout(timeout);
+    }).finally(() => clearTimeout(timeout));
 
     if (!response.ok) {
       throw new Error(
@@ -425,20 +429,9 @@ export async function getArtificialAnalysisImageStats(
       fetched_at_epoch_seconds: nowEpochSeconds(),
       status_code: response.status,
       endpoint: TEXT_TO_IMAGE_URL,
-      ...enrichPayload(
-        rawPayload,
-        options.minModelAgeDays ?? DEFAULT_MIN_MODEL_AGE_DAYS,
-      ),
+      ...enrichPayload(rawPayload, minModelAgeDays),
     };
   } catch {
-    return {
-      fetched_at_epoch_seconds: null,
-      status_code: null,
-      endpoint: TEXT_TO_IMAGE_URL,
-      ...enrichPayload(
-        {},
-        options.minModelAgeDays ?? DEFAULT_MIN_MODEL_AGE_DAYS,
-      ),
-    };
+    return createFailurePayload(minModelAgeDays);
   }
 }
