@@ -1,4 +1,4 @@
-import { fetchWithTimeout, nowEpochSeconds, percentileRank } from "./utils";
+import { fetchWithTimeout, nowEpochSeconds, percentileRank } from "../utils";
 
 const ARENA_AI_BASE_URL = "https://arena.ai/leaderboard/text-to-image";
 const REQUEST_TIMEOUT_MS = 30_000;

@@ -1,15 +1,15 @@
-export type { ArtificialAnalysisOptions } from "./data-sources/artificial-analysis-llm.js";
-export { getArtificialAnalysisStats } from "./data-sources/artificial-analysis-llm.js";
+export type { ArtificialAnalysisOptions } from "./data-sources/llm/artificial-analysis.js";
+export { getArtificialAnalysisStats } from "./data-sources/llm/artificial-analysis.js";
 export type {
   ArtificialAnalysisImageOptions,
   ArtificialAnalysisImageOutputPayload,
-} from "./data-sources/artificial-analysis-image.js";
-export { getArtificialAnalysisImageStats } from "./data-sources/artificial-analysis-image.js";
+} from "./data-sources/image/artificial-analysis.js";
+export { getArtificialAnalysisImageStats } from "./data-sources/image/artificial-analysis.js";
 export type {
   ArenaAiImageOptions,
   ArenaAiImageOutputPayload,
-} from "./data-sources/arena-ai-image.js";
-export { getArenaAiImageStats } from "./data-sources/arena-ai-image.js";
+} from "./data-sources/image/arena-ai.js";
+export { getArenaAiImageStats } from "./data-sources/image/arena-ai.js";
 export type {
   MatchCandidate,
   MatchMappedModel,
@@ -17,13 +17,13 @@ export type {
   MatchModelMappingPayload,
   MatchModelsUnionOptions,
   MatchModelsUnionPayload,
-} from "./data-sources/matcher.js";
+} from "./data-sources/llm/matcher.js";
 export {
   getMatchModelMapping,
   getMatchModelsUnion,
-} from "./data-sources/matcher.js";
-export type { ModelsDevOptions } from "./data-sources/models-dev.js";
-export { getModelsDevStats } from "./data-sources/models-dev.js";
+} from "./data-sources/llm/matcher.js";
+export type { ModelsDevOptions } from "./data-sources/llm/models-dev.js";
+export { getModelsDevStats } from "./data-sources/llm/models-dev.js";
 export type {
   ModelStatsSelectedModel,
   ModelStatsSelectedOptions,

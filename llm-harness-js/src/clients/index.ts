@@ -9,14 +9,6 @@ export {
   YouTubeSummarizerGemini,
   YouTubeSummarizerReAct,
 } from "../agents/agents.js";
-export { getArtificialAnalysisImageStats } from "../stats/data-sources/artificial-analysis-image.js";
-export { getArtificialAnalysisStats } from "../stats/data-sources/artificial-analysis-llm.js";
-export {
-  getMatchModelMapping,
-  getMatchModelsUnion,
-} from "../stats/data-sources/matcher.js";
-export { getModelsDevStats } from "../stats/data-sources/models-dev.js";
-export { getModelStatsSelected } from "../stats/llm-stats.js";
 export { ChatGemini, createGeminiCache, GeminiEmbeddings } from "./gemini.js";
 export { MediaMessage } from "./multimodal.js";
 export { ChatOpenRouter, OpenRouterEmbeddings } from "./openrouter.js";
