@@ -9,7 +9,7 @@ export {
   YouTubeSummarizerGemini,
   YouTubeSummarizerReAct,
 } from "../agents/agents.js";
-export { getArtificialAnalysisStats } from "../stats/data-sources/artificial-analysis.js";
+export { getArtificialAnalysisStats } from "../stats/data-sources/artificial-analysis-llm.js";
 export {
   getMatchModelMapping,
   getMatchModelsUnion,

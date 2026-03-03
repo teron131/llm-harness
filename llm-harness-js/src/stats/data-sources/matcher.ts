@@ -1,4 +1,4 @@
-import { getArtificialAnalysisStats } from "./artificial-analysis";
+import { getArtificialAnalysisStats } from "./artificial-analysis-llm";
 import { getModelsDevStats } from "./models-dev";
 
 type ModelsDevModel = Awaited<

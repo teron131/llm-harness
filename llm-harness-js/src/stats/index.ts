@@ -1,5 +1,10 @@
-export type { ArtificialAnalysisOptions } from "./data-sources/artificial-analysis.js";
-export { getArtificialAnalysisStats } from "./data-sources/artificial-analysis.js";
+export type { ArtificialAnalysisOptions } from "./data-sources/artificial-analysis-llm.js";
+export { getArtificialAnalysisStats } from "./data-sources/artificial-analysis-llm.js";
+export type {
+  ArenaAiOptions,
+  ArenaAiOutputPayload,
+} from "./data-sources/arena-ai.js";
+export { getArenaAiTextToImageStats } from "./data-sources/arena-ai.js";
 export type {
   MatchCandidate,
   MatchMappedModel,
