@@ -13,6 +13,32 @@ export const ARENA_AI_DEFAULT_CATEGORY_SLUGS = [
   "text-rendering",
 ] as const;
 
+type ArenaAiGroupedCategoryName =
+  | "photorealistic"
+  | "illustrative"
+  | "contextual";
+
+export const ARENA_AI_GROUPED_CATEGORY_SLUGS: Record<
+  ArenaAiGroupedCategoryName,
+  readonly string[]
+> = {
+  photorealistic: ["photorealistic", "portraits"],
+  illustrative: ["cartoon", "art"],
+  contextual: ["commercial-design", "3d-modeling", "text-rendering"],
+};
+
+const ARENA_AI_GROUPED_CATEGORY_NAMES: readonly ArenaAiGroupedCategoryName[] = [
+  "photorealistic",
+  "illustrative",
+  "contextual",
+];
+
+const ARENA_AI_GROUP_BY_SLUG = new Map<string, ArenaAiGroupedCategoryName>(
+  ARENA_AI_GROUPED_CATEGORY_NAMES.flatMap((groupName) =>
+    ARENA_AI_GROUPED_CATEGORY_SLUGS[groupName].map((slug) => [slug, groupName]),
+  ),
+);
+
 type NumberOrNull = number | null;
 
 export type ArenaAiRow = {
@@ -50,6 +76,18 @@ export type ArenaAiAggregatedModel = {
   average_rank: NumberOrNull;
   votes_sum: number;
   categories: Record<string, ArenaAiAggregatedCategoryRow>;
+  weighted_scores: {
+    photorealistic: NumberOrNull;
+    illustrative: NumberOrNull;
+    contextual: NumberOrNull;
+    grouped_overall: NumberOrNull;
+  };
+  grouped_votes: {
+    photorealistic: number;
+    illustrative: number;
+    contextual: number;
+    total: number;
+  };
 };
 
 /**
@@ -63,6 +101,7 @@ export type ArenaAiOutputPayload = {
   base_url: string;
   category_slugs: string[];
   categories: ArenaAiCategoryPayload[];
+  grouped_category_slugs: Record<ArenaAiGroupedCategoryName, readonly string[]>;
   valid_categories: string[];
   total_valid_categories: number;
   total_models_aggregated: number;
@@ -89,6 +128,18 @@ type ArenaAiAggregateAccumulator = {
   score_weighted_sum: number;
   rank_sum: number;
 };
+
+type ArenaAiGroupedAccumulatorValue = {
+  score_weighted_sum: number;
+  votes_sum: number;
+  score_sum: number;
+  count: number;
+};
+
+type ArenaAiGroupedAccumulator = Record<
+  ArenaAiGroupedCategoryName,
+  ArenaAiGroupedAccumulatorValue
+>;
 
 function nowEpochSeconds(): number {
   return Math.floor(Date.now() / 1000);
@@ -189,6 +240,120 @@ function roundTo4(value: number): number {
   return Number(value.toFixed(4));
 }
 
+function weightedScoreOrAverage(
+  weightedSum: number,
+  votesSum: number,
+  scoreSum: number,
+  count: number,
+): NumberOrNull {
+  if (votesSum > 0) {
+    return roundTo4(weightedSum / votesSum);
+  }
+  if (count > 0) {
+    return roundTo4(scoreSum / count);
+  }
+  return null;
+}
+
+function detectGroupedCategory(
+  categorySlug: string,
+): ArenaAiGroupedCategoryName | null {
+  return ARENA_AI_GROUP_BY_SLUG.get(categorySlug) ?? null;
+}
+
+function createGroupedAccumulator(): ArenaAiGroupedAccumulator {
+  return {
+    photorealistic: {
+      score_weighted_sum: 0,
+      votes_sum: 0,
+      score_sum: 0,
+      count: 0,
+    },
+    illustrative: {
+      score_weighted_sum: 0,
+      votes_sum: 0,
+      score_sum: 0,
+      count: 0,
+    },
+    contextual: {
+      score_weighted_sum: 0,
+      votes_sum: 0,
+      score_sum: 0,
+      count: 0,
+    },
+  };
+}
+
+function buildGroupedScores(
+  categoryRows: Record<string, ArenaAiAggregatedCategoryRow>,
+): Pick<ArenaAiAggregatedModel, "weighted_scores" | "grouped_votes"> {
+  const groupedAccumulator = createGroupedAccumulator();
+  for (const [categorySlug, row] of Object.entries(categoryRows)) {
+    const groupedCategory = detectGroupedCategory(categorySlug);
+    if (!groupedCategory) {
+      continue;
+    }
+    const score = row.score ?? 0;
+    const votes = row.votes ?? 0;
+    groupedAccumulator[groupedCategory].score_weighted_sum += score * votes;
+    groupedAccumulator[groupedCategory].votes_sum += votes;
+    groupedAccumulator[groupedCategory].score_sum += score;
+    groupedAccumulator[groupedCategory].count += 1;
+  }
+
+  const groupedScores = {
+    photorealistic: weightedScoreOrAverage(
+      groupedAccumulator.photorealistic.score_weighted_sum,
+      groupedAccumulator.photorealistic.votes_sum,
+      groupedAccumulator.photorealistic.score_sum,
+      groupedAccumulator.photorealistic.count,
+    ),
+    illustrative: weightedScoreOrAverage(
+      groupedAccumulator.illustrative.score_weighted_sum,
+      groupedAccumulator.illustrative.votes_sum,
+      groupedAccumulator.illustrative.score_sum,
+      groupedAccumulator.illustrative.count,
+    ),
+    contextual: weightedScoreOrAverage(
+      groupedAccumulator.contextual.score_weighted_sum,
+      groupedAccumulator.contextual.votes_sum,
+      groupedAccumulator.contextual.score_sum,
+      groupedAccumulator.contextual.count,
+    ),
+    grouped_overall: null as NumberOrNull,
+  };
+  const groupedTotalVotes = ARENA_AI_GROUPED_CATEGORY_NAMES.reduce(
+    (sum, groupName) => sum + groupedAccumulator[groupName].votes_sum,
+    0,
+  );
+  groupedScores.grouped_overall = weightedScoreOrAverage(
+    ARENA_AI_GROUPED_CATEGORY_NAMES.reduce(
+      (sum, groupName) =>
+        sum + groupedAccumulator[groupName].score_weighted_sum,
+      0,
+    ),
+    groupedTotalVotes,
+    ARENA_AI_GROUPED_CATEGORY_NAMES.reduce(
+      (sum, groupName) => sum + groupedAccumulator[groupName].score_sum,
+      0,
+    ),
+    ARENA_AI_GROUPED_CATEGORY_NAMES.reduce(
+      (sum, groupName) => sum + groupedAccumulator[groupName].count,
+      0,
+    ),
+  );
+
+  return {
+    weighted_scores: groupedScores,
+    grouped_votes: {
+      photorealistic: groupedAccumulator.photorealistic.votes_sum,
+      illustrative: groupedAccumulator.illustrative.votes_sum,
+      contextual: groupedAccumulator.contextual.votes_sum,
+      total: groupedTotalVotes,
+    },
+  };
+}
+
 function buildAggregatedRows(
   categoryPayloads: ArenaAiCategoryPayload[],
 ): ArenaAiAggregatedModel[] {
@@ -245,6 +410,7 @@ function buildAggregatedRows(
       aggregate.category_count > 0
         ? roundTo4(aggregate.rank_sum / aggregate.category_count)
         : null;
+    const grouped = buildGroupedScores(aggregate.category_rows);
 
     aggregatedRows.push({
       model: aggregate.model,
@@ -255,6 +421,8 @@ function buildAggregatedRows(
       average_rank: averageRank,
       votes_sum: aggregate.votes_sum,
       categories: aggregate.category_rows,
+      weighted_scores: grouped.weighted_scores,
+      grouped_votes: grouped.grouped_votes,
     });
   }
 
@@ -302,6 +470,7 @@ export async function getArenaAiTextToImageStats(
     base_url: ARENA_AI_BASE_URL,
     category_slugs: categorySlugs,
     categories,
+    grouped_category_slugs: ARENA_AI_GROUPED_CATEGORY_SLUGS,
     valid_categories: validCategories.map((category) => category.category_slug),
     total_valid_categories: validCategories.length,
     total_models_aggregated: rows.length,

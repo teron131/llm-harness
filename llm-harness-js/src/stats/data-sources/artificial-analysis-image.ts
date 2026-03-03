@@ -70,7 +70,7 @@ export type ArtificialAnalysisImagePercentiles = {
 
 export type ArtificialAnalysisImageEnrichedModel =
   ArtificialAnalysisImageModel & {
-    frequency_weighted_scores: {
+    weighted_scores: {
       photorealistic: NumberOrNull;
       illustrative: NumberOrNull;
       contextual: NumberOrNull;
@@ -118,7 +118,7 @@ export type ArtificialAnalysisImageOutputPayload = {
   grouping_version: "v1";
   grouped_taxonomy: Record<GroupName, readonly string[]>;
   global_aggregates: {
-    frequency_weighted_scores: {
+    weighted_scores: {
       photorealistic: NumberOrNull;
       illustrative: NumberOrNull;
       contextual: NumberOrNull;
@@ -262,7 +262,7 @@ function toAggregatedFields(accumulator: Aggregator) {
   );
 
   return {
-    frequency_weighted_scores: {
+    weighted_scores: {
       photorealistic,
       illustrative,
       contextual,
@@ -334,23 +334,21 @@ function enrichPayload(
 
   enrichedModels.sort(
     (left, right) =>
-      (right.frequency_weighted_scores.grouped_overall ??
-        Number.NEGATIVE_INFINITY) -
-      (left.frequency_weighted_scores.grouped_overall ??
-        Number.NEGATIVE_INFINITY),
+      (right.weighted_scores.grouped_overall ?? Number.NEGATIVE_INFINITY) -
+      (left.weighted_scores.grouped_overall ?? Number.NEGATIVE_INFINITY),
   );
 
   const photorealisticValues = enrichedModels.map(
-    (model) => model.frequency_weighted_scores.photorealistic,
+    (model) => model.weighted_scores.photorealistic,
   );
   const illustrativeValues = enrichedModels.map(
-    (model) => model.frequency_weighted_scores.illustrative,
+    (model) => model.weighted_scores.illustrative,
   );
   const contextualValues = enrichedModels.map(
-    (model) => model.frequency_weighted_scores.contextual,
+    (model) => model.weighted_scores.contextual,
   );
   const groupedOverallValues = enrichedModels.map(
-    (model) => model.frequency_weighted_scores.grouped_overall,
+    (model) => model.weighted_scores.grouped_overall,
   );
 
   const data = enrichedModels.map((model) => ({
@@ -358,19 +356,19 @@ function enrichPayload(
     percentiles: {
       photorealistic_percentile: percentileRank(
         photorealisticValues,
-        model.frequency_weighted_scores.photorealistic,
+        model.weighted_scores.photorealistic,
       ),
       illustrative_percentile: percentileRank(
         illustrativeValues,
-        model.frequency_weighted_scores.illustrative,
+        model.weighted_scores.illustrative,
       ),
       contextual_percentile: percentileRank(
         contextualValues,
-        model.frequency_weighted_scores.contextual,
+        model.weighted_scores.contextual,
       ),
       grouped_overall_percentile: percentileRank(
         groupedOverallValues,
-        model.frequency_weighted_scores.grouped_overall,
+        model.weighted_scores.grouped_overall,
       ),
     },
   }));

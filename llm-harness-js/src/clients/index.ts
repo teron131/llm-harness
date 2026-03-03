@@ -16,7 +16,7 @@ export {
   getMatchModelsUnion,
 } from "../stats/data-sources/matcher.js";
 export { getModelsDevStats } from "../stats/data-sources/models-dev.js";
-export { getModelStatsSelected } from "../stats/model-stats.js";
+export { getModelStatsSelected } from "../stats/llm-stats.js";
 export { ChatGemini, createGeminiCache, GeminiEmbeddings } from "./gemini.js";
 export { MediaMessage } from "./multimodal.js";
 export { ChatOpenRouter, OpenRouterEmbeddings } from "./openrouter.js";

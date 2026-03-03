@@ -28,8 +28,8 @@ export type {
   ModelStatsSelectedModel,
   ModelStatsSelectedOptions,
   ModelStatsSelectedPayload,
-} from "./model-stats.js";
+} from "./llm-stats.js";
 export {
   getModelStatsSelected,
   saveModelStatsSelected,
-} from "./model-stats.js";
+} from "./llm-stats.js";
