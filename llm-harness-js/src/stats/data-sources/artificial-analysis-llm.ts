@@ -1,4 +1,10 @@
 import { add, mean, multiply } from "mathjs";
+import {
+  fetchWithTimeout,
+  finiteNumbers,
+  nowEpochSeconds,
+  percentileRank,
+} from "./utils";
 
 const MODELS_URL = "https://artificialanalysis.ai/api/v2/data/llms/models";
 const LOOKBACK_DAYS = 365;
@@ -100,19 +106,8 @@ export type ArtificialAnalysisOutputPayload = {
  */
 export type ArtificialAnalysisOptions = { apiKey?: string };
 
-function nowEpochSeconds(): number {
-  return Math.floor(Date.now() / 1000);
-}
-
-function finiteNumbers(values: unknown[]): number[] {
-  return values
-    .filter((value) => value != null)
-    .map((value) => Number(value))
-    .filter((value) => Number.isFinite(value));
-}
-
 function meanOfFinite(values: unknown[]): NumberOrNull {
-  const numbers = finiteNumbers(values);
+  const numbers = finiteNumbers(values.filter((value) => value != null));
   if (numbers.length === 0) {
     return null;
   }
@@ -156,22 +151,14 @@ function weightedMean(
   return weightedSum / weightSum;
 }
 
-function percentileRank(values: unknown[], value: unknown): NumberOrNull {
+function percentileRankWithNull(
+  values: unknown[],
+  value: unknown,
+): NumberOrNull {
   if (value == null) {
     return null;
   }
-  const numericValue = Number(value);
-  if (!Number.isFinite(numericValue)) {
-    return null;
-  }
-  const finiteValues = finiteNumbers(values);
-  if (finiteValues.length === 0) {
-    return null;
-  }
-  const lessOrEqualCount = finiteValues.filter(
-    (item) => item <= numericValue,
-  ).length;
-  return (lessOrEqualCount / finiteValues.length) * 100;
+  return percentileRank(values, value);
 }
 
 function removeIds<T>(value: T): T {
@@ -269,16 +256,22 @@ function rankAndEnrichModels(
   return ranked.map((model) => ({
     ...model,
     percentiles: {
-      overall_percentile: percentileRank(
+      overall_percentile: percentileRankWithNull(
         overallValues,
         model.scores.overall_score,
       ),
-      intelligence_percentile: percentileRank(
+      intelligence_percentile: percentileRankWithNull(
         intelligenceValues,
         model.scores.intelligence_score,
       ),
-      speed_percentile: percentileRank(speedValues, model.scores.speed_score),
-      price_percentile: percentileRank(priceValues, model.scores.price_score),
+      speed_percentile: percentileRankWithNull(
+        speedValues,
+        model.scores.speed_score,
+      ),
+      price_percentile: percentileRankWithNull(
+        priceValues,
+        model.scores.price_score,
+      ),
     },
   }));
 }
@@ -288,12 +281,13 @@ async function fetchModels(apiKey: string | undefined): Promise<SourcePayload> {
     throw new Error("Missing ARTIFICIALANALYSIS_API_KEY.");
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  const response = await fetch(MODELS_URL, {
-    headers: { "x-api-key": apiKey },
-    signal: controller.signal,
-  }).finally(() => clearTimeout(timeout));
+  const response = await fetchWithTimeout(
+    MODELS_URL,
+    {
+      headers: { "x-api-key": apiKey },
+    },
+    REQUEST_TIMEOUT_MS,
+  );
 
   if (!response.ok) {
     throw new Error(`Artificial Analysis request failed: ${response.status}`);

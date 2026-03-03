@@ -1,3 +1,5 @@
+import { fetchWithTimeout, nowEpochSeconds, percentileRank } from "./utils";
+
 const TEXT_TO_IMAGE_URL =
   "https://artificialanalysis.ai/api/v2/data/media/text-to-image?include_categories=true";
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -144,31 +146,6 @@ export type ArtificialAnalysisImageOutputPayload = {
   };
   data: ArtificialAnalysisImageEnrichedModel[];
 };
-
-function nowEpochSeconds(): number {
-  return Math.floor(Date.now() / 1000);
-}
-
-function finiteNumbers(values: unknown[]): number[] {
-  return values
-    .map((value) => Number(value))
-    .filter((value) => Number.isFinite(value));
-}
-
-function percentileRank(values: unknown[], value: unknown): NumberOrNull {
-  const numericValue = Number(value);
-  if (!Number.isFinite(numericValue)) {
-    return null;
-  }
-  const finiteValues = finiteNumbers(values);
-  if (finiteValues.length === 0) {
-    return null;
-  }
-  const lessOrEqualCount = finiteValues.filter(
-    (item) => item <= numericValue,
-  ).length;
-  return Number(((lessOrEqualCount / finiteValues.length) * 100).toFixed(4));
-}
 
 function parseReleaseDateToUtc(releaseDate: string | undefined): number | null {
   if (!releaseDate) {
@@ -411,12 +388,11 @@ export async function getArtificialAnalysisImageStats(
   }
 
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-    const response = await fetch(TEXT_TO_IMAGE_URL, {
-      headers: { "x-api-key": apiKey },
-      signal: controller.signal,
-    }).finally(() => clearTimeout(timeout));
+    const response = await fetchWithTimeout(
+      TEXT_TO_IMAGE_URL,
+      { headers: { "x-api-key": apiKey } },
+      REQUEST_TIMEOUT_MS,
+    );
 
     if (!response.ok) {
       throw new Error(

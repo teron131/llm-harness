@@ -31,7 +31,6 @@
     "exa-js": "^1.7.3",
     "langchain": "^1.2.27",
     "mathjs": "^15.1.1",
-    "nodejs-polars": "^0.24.0",
     "opencc-js": "^1.0.5",
     "sharp": "^0.34.4",
     "turndown": "^7.2.0",

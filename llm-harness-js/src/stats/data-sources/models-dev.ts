@@ -1,3 +1,5 @@
+import { fetchWithTimeout, nowEpochSeconds } from "./utils";
+
 const MODELS_DEV_URL = "https://models.dev/api.json";
 const LOOKBACK_DAYS = 365;
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -73,10 +75,6 @@ export type ModelsDevOutputPayload = {
  */
 export type ModelsDevOptions = Record<string, never>;
 
-function nowEpochSeconds(): number {
-  return Math.floor(Date.now() / 1000);
-}
-
 function isoDateDaysAgo(days: number): string {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000)
     .toISOString()
@@ -99,11 +97,11 @@ function asFinite(value: unknown): NumberOrNull {
 }
 
 async function fetchModelsDev(): Promise<ModelsDevSourcePayload> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  const response = await fetch(MODELS_DEV_URL, {
-    signal: controller.signal,
-  }).finally(() => clearTimeout(timeout));
+  const response = await fetchWithTimeout(
+    MODELS_DEV_URL,
+    {},
+    REQUEST_TIMEOUT_MS,
+  );
 
   if (!response.ok) {
     throw new Error(`models.dev request failed: ${response.status}`);

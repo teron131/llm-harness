@@ -1,3 +1,5 @@
+import { fetchWithTimeout, nowEpochSeconds, percentileRank } from "./utils";
+
 const ARENA_AI_BASE_URL = "https://arena.ai/leaderboard/text-to-image";
 const REQUEST_TIMEOUT_MS = 30_000;
 const MIN_VALID_ROWS = 20;
@@ -148,10 +150,6 @@ type ArenaAiImageGroupedAccumulator = Record<
   ArenaAiImageGroupedAccumulatorValue
 >;
 
-function nowEpochSeconds(): number {
-  return Math.floor(Date.now() / 1000);
-}
-
 function detectChallenge(html: string): boolean {
   return /challenge-platform|__CF\$cv\$params|Verify you are human|Security Verification/i.test(
     html,
@@ -161,27 +159,6 @@ function detectChallenge(html: string): boolean {
 function asFiniteNumber(value: unknown): NumberOrNull {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : null;
-}
-
-function finiteNumbers(values: unknown[]): number[] {
-  return values
-    .map((value) => Number(value))
-    .filter((value) => Number.isFinite(value));
-}
-
-function percentileRank(values: unknown[], value: unknown): NumberOrNull {
-  const numericValue = Number(value);
-  if (!Number.isFinite(numericValue)) {
-    return null;
-  }
-  const finiteValues = finiteNumbers(values);
-  if (finiteValues.length === 0) {
-    return null;
-  }
-  const lessOrEqualCount = finiteValues.filter(
-    (item) => item <= numericValue,
-  ).length;
-  return Number(((lessOrEqualCount / finiteValues.length) * 100).toFixed(4));
 }
 
 function extractLeaderboardRows(html: string): ArenaAiImageRow[] {
@@ -222,17 +199,18 @@ async function fetchCategory(
 ): Promise<ArenaAiImageCategoryPayload> {
   const sourceUrl = `${baseUrl}/${categorySlug}`;
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-    const response = await fetch(sourceUrl, {
-      headers: {
-        "user-agent":
-          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
-        "accept-language": "en-US,en;q=0.9",
+    const response = await fetchWithTimeout(
+      sourceUrl,
+      {
+        headers: {
+          "user-agent":
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36",
+          "accept-language": "en-US,en;q=0.9",
+        },
+        redirect: "follow",
       },
-      redirect: "follow",
-      signal: controller.signal,
-    }).finally(() => clearTimeout(timeout));
+      REQUEST_TIMEOUT_MS,
+    );
 
     const html = await response.text();
     const rowsWithScore = extractLeaderboardRows(html).filter(
