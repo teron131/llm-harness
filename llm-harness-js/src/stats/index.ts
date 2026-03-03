@@ -1,6 +1,11 @@
 export type { ArtificialAnalysisOptions } from "./data-sources/artificial-analysis-llm.js";
 export { getArtificialAnalysisStats } from "./data-sources/artificial-analysis-llm.js";
 export type {
+  ArtificialAnalysisImageOptions,
+  ArtificialAnalysisImageOutputPayload,
+} from "./data-sources/artificial-analysis-image.js";
+export { getArtificialAnalysisImageStats } from "./data-sources/artificial-analysis-image.js";
+export type {
   ArenaAiOptions,
   ArenaAiOutputPayload,
 } from "./data-sources/arena-ai.js";
