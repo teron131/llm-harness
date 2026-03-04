@@ -1,5 +1,5 @@
-export type { ArtificialAnalysisOptions } from "./data-sources/llm/artificial-analysis.js";
-export { getArtificialAnalysisStats } from "./data-sources/llm/artificial-analysis.js";
+export type { ArtificialAnalysisOptions } from "./data-sources/llm/artificial-analysis-api.js";
+export { getArtificialAnalysisStats } from "./data-sources/llm/artificial-analysis-api.js";
 export type {
   ArtificialAnalysisImageOptions,
   ArtificialAnalysisImageOutputPayload,
