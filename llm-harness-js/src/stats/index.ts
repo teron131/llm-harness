@@ -1,6 +1,11 @@
 export type { ArtificialAnalysisOptions } from "./data-sources/llm/artificial-analysis-api.js";
 export { getArtificialAnalysisStats } from "./data-sources/llm/artificial-analysis-api.js";
 export type {
+  ArtificialAnalysisScrapedPayload,
+  ArtificialAnalysisScraperOptions,
+} from "./data-sources/llm/artificial-analysis-scraper.js";
+export { getArtificialAnalysisScrapedStats } from "./data-sources/llm/artificial-analysis-scraper.js";
+export type {
   ArtificialAnalysisImageOptions,
   ArtificialAnalysisImageOutputPayload,
 } from "./data-sources/image/artificial-analysis.js";
