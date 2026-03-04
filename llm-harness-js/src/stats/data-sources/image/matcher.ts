@@ -1,7 +1,3 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { resolve } from "node:path";
-
-import { OpenRouterEmbeddings } from "../../../clients/openrouter";
 import { getArtificialAnalysisImageStats } from "./artificial-analysis";
 import { getArenaAiImageStats } from "./arena-ai";
 
@@ -25,11 +21,16 @@ const RANK_PROXIMITY_MAX_BONUS = 3;
 const TOP_RANK_PROTECTION_COUNT = 20;
 const TOP_RANK_PROTECTION_MARGIN = 0.6;
 const TOP_RANK_PROTECTION_THRESHOLD_DELTA = 0.6;
-const DEFAULT_EMBEDDING_MODEL = "openai/text-embedding-3-small";
-const DEFAULT_EMBEDDING_WEIGHT = 4;
-const EMBEDDING_BATCH_SIZE = 64;
-const EMBEDDING_CACHE_PATH = resolve(".cache/image_match_embedding_cache.json");
-
+const VERSION_EXACT_BONUS = 10;
+const VERSION_MAJOR_EXACT_BONUS = 4;
+const VERSION_MAJOR_MISMATCH_PENALTY = 8;
+const VERSION_MINOR_MISMATCH_PENALTY_SCALE = 1.25;
+const VERSION_MINOR_MISMATCH_PENALTY_MAX = 4;
+const VERSION_MISSING_PENALTY = 1.5;
+const STRUCTURED_VERSION_EXACT_BONUS = 10;
+const STRUCTURED_VERSION_MISMATCH_PENALTY = 6;
+const VERSION_FAMILY_GUARD_PENALTY = 5;
+const FAMILY_OVERLAP_WEIGHT = 5;
 const NOISE_TOKENS = new Set([
   "image",
   "images",
@@ -121,21 +122,10 @@ export type ImageModelsUnionPayload = {
 
 export type ImageMatchModelMappingOptions = {
   maxCandidates?: number;
-  useEmbeddings?: boolean;
-  embeddingModel?: string;
-  embeddingWeight?: number;
 };
 
 export type ImageModelsUnionOptions = {
   maxCandidates?: number;
-  useEmbeddings?: boolean;
-  embeddingModel?: string;
-  embeddingWeight?: number;
-};
-
-type EmbeddingCachePayload = {
-  model: string;
-  vectors: Record<string, number[]>;
 };
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -144,23 +134,24 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
+function getModelCreatorName(
+  model: ArtificialAnalysisImageModel,
+): string | null {
+  const modelCreatorName = asRecord(model.model_creator).name;
+  return typeof modelCreatorName === "string" ? modelCreatorName : null;
+}
+
 function normalizeModelName(value: string): string {
   return (
     value
       .toLowerCase()
       // Preserve bracketed qualifiers as tokens, only strip bracket chars.
       .replace(/[\[\]()]/g, " ")
-      .replace(/gpt[\s-]*image/g, "gptimage")
-      .replace(/nano[\s-]*banana/g, "nanobanana")
       .replace(/[._:/]+/g, "-")
       .replace(/[^a-z0-9-]+/g, "-")
       .replace(/-+/g, "-")
       .replace(/^-+|-+$/g, "")
   );
-}
-
-function embeddingText(value: string): string {
-  return normalizeModelName(value).replace(/-/g, " ").trim();
 }
 
 function splitTokens(value: string): string[] {
@@ -178,6 +169,23 @@ function providerPrefix(provider: string | null | undefined): string | null {
   return left && left.length > 0 ? left : null;
 }
 
+function rankProximityBonus(
+  artificialAnalysisRank: number | null,
+  arenaRank: number | null,
+): number {
+  if (artificialAnalysisRank == null || arenaRank == null) {
+    return 0;
+  }
+  const gap = Math.abs(artificialAnalysisRank - arenaRank);
+  if (gap > RANK_PROXIMITY_RADIUS) {
+    return 0;
+  }
+  return (
+    ((RANK_PROXIMITY_RADIUS - gap + 1) / (RANK_PROXIMITY_RADIUS + 1)) *
+    RANK_PROXIMITY_MAX_BONUS
+  );
+}
+
 function commonPrefixLength(left: string, right: string): number {
   const maxLength = Math.min(left.length, right.length);
   let index = 0;
@@ -193,6 +201,13 @@ function toNumericToken(token: string): number | null {
   }
   const numeric = Number(token);
   return Number.isFinite(numeric) ? numeric : null;
+}
+
+function extractStructuredVersions(value: string): string[] {
+  const matches = [
+    ...value.toLowerCase().matchAll(/\b\d+\.\d+\b|\b\d+-\d+\b/g),
+  ].map((match) => match[0]);
+  return [...new Set(matches.filter(Boolean))];
 }
 
 function tokenSimilarity(left: string, right: string): number {
@@ -347,6 +362,20 @@ function computeNameSimilarity(left: string, right: string): number {
   const exact = leftNormalized === rightNormalized ? 1 : 0;
   const coverage = distinctiveCoverage(leftTokens, rightTokens);
   const qualifier = qualifierSignals(leftTokens, rightTokens);
+  const leftFamilyAnchors = getFamilyAnchorTokens(left);
+  const rightFamilyAnchors = getFamilyAnchorTokens(right);
+  const rightFamilyAnchorSet = new Set(rightFamilyAnchors);
+  const familyOverlapCount = leftFamilyAnchors.filter((token) =>
+    rightFamilyAnchorSet.has(token),
+  ).length;
+  const familyOverlap =
+    Math.max(leftFamilyAnchors.length, rightFamilyAnchors.length) > 0
+      ? familyOverlapCount /
+        Math.max(leftFamilyAnchors.length, rightFamilyAnchors.length)
+      : 0;
+  const hasFamilySignal =
+    leftFamilyAnchors.length > 0 && rightFamilyAnchors.length > 0;
+  const hasFamilyOverlap = familyOverlapCount > 0;
   const leftVersion = leftTokens
     .map((token) => toNumericToken(token))
     .filter((value): value is number => value != null)
@@ -355,18 +384,55 @@ function computeNameSimilarity(left: string, right: string): number {
     .map((token) => toNumericToken(token))
     .filter((value): value is number => value != null)
     .slice(0, 2);
+  let versionBonus = 0;
   let versionPenalty = 0;
-  if (leftVersion.length > 0 && rightVersion.length > 0) {
-    if (leftVersion[0] !== rightVersion[0]) {
-      versionPenalty += 3;
+  if (leftVersion.length > 0 || rightVersion.length > 0) {
+    if (hasFamilySignal && !hasFamilyOverlap) {
+      versionPenalty += VERSION_FAMILY_GUARD_PENALTY;
+    } else if (leftVersion.length === 0 || rightVersion.length === 0) {
+      versionPenalty += VERSION_MISSING_PENALTY;
+    } else {
+      const leftMajor = leftVersion[0] as number;
+      const rightMajor = rightVersion[0] as number;
+      if (leftMajor !== rightMajor) {
+        versionPenalty += VERSION_MAJOR_MISMATCH_PENALTY;
+      } else {
+        versionBonus += VERSION_MAJOR_EXACT_BONUS;
+        if (leftVersion.length > 1 && rightVersion.length > 1) {
+          const leftMinor = leftVersion[1] as number;
+          const rightMinor = rightVersion[1] as number;
+          if (leftMinor === rightMinor) {
+            versionBonus += VERSION_EXACT_BONUS;
+          } else {
+            versionPenalty += Math.min(
+              VERSION_MINOR_MISMATCH_PENALTY_MAX,
+              Math.abs(leftMinor - rightMinor) *
+                VERSION_MINOR_MISMATCH_PENALTY_SCALE,
+            );
+          }
+        }
+      }
+    }
+  }
+
+  const leftStructuredVersions = extractStructuredVersions(left);
+  const rightStructuredVersions = extractStructuredVersions(right);
+  if (leftStructuredVersions.length > 0 || rightStructuredVersions.length > 0) {
+    if (hasFamilySignal && !hasFamilyOverlap) {
+      versionPenalty += VERSION_FAMILY_GUARD_PENALTY;
     } else if (
-      leftVersion.length > 1 &&
-      rightVersion.length > 1 &&
-      leftVersion[1] !== rightVersion[1]
+      leftStructuredVersions.length === 0 ||
+      rightStructuredVersions.length === 0
     ) {
-      const leftMinor = leftVersion[1] as number;
-      const rightMinor = rightVersion[1] as number;
-      versionPenalty += Math.min(2, Math.abs(leftMinor - rightMinor) * 0.8);
+      versionPenalty += VERSION_MISSING_PENALTY;
+    } else {
+      const leftPrimary = leftStructuredVersions[0] as string;
+      const rightPrimary = rightStructuredVersions[0] as string;
+      if (leftPrimary === rightPrimary) {
+        versionBonus += STRUCTURED_VERSION_EXACT_BONUS;
+      } else {
+        versionPenalty += STRUCTURED_VERSION_MISMATCH_PENALTY;
+      }
     }
   }
 
@@ -377,9 +443,11 @@ function computeNameSimilarity(left: string, right: string): number {
     positional * 5 +
     containment * 2 +
     coverage * TOKEN_COVERAGE_WEIGHT +
+    familyOverlap * FAMILY_OVERLAP_WEIGHT +
     qualifier.matchBonus -
     qualifier.missPenalty -
-    versionPenalty;
+    versionPenalty +
+    versionBonus;
   return Number(weighted.toFixed(4));
 }
 
@@ -396,165 +464,30 @@ function getArtificialAnalysisNames(
   return names.length > 0 ? names : [""];
 }
 
-function getArtificialAnalysisEmbeddingText(
+function computeArtificialAnalysisNameScore(
   model: ArtificialAnalysisImageModel,
-): string {
-  const text = [...new Set(getArtificialAnalysisNames(model))]
-    .map((name) => embeddingText(name))
-    .filter((name) => name.length > 0)
-    .join(" | ");
-  return text.length > 0 ? text : "unknown";
-}
+  arenaModelName: string,
+): number {
+  const displayName =
+    typeof model.name === "string" && model.name.length > 0 ? model.name : "";
+  const slugName =
+    typeof model.slug === "string" && model.slug.length > 0 ? model.slug : "";
 
-function getArenaEmbeddingText(model: ArenaAiImageModel): string {
-  const text = embeddingText(model.model);
-  return text.length > 0 ? text : "unknown";
-}
-
-function cosineSimilarity(left: number[], right: number[]): number {
-  if (left.length === 0 || right.length === 0 || left.length !== right.length) {
-    return 0;
-  }
-  let dot = 0;
-  let leftNorm = 0;
-  let rightNorm = 0;
-  for (let index = 0; index < left.length; index += 1) {
-    const leftValue = left[index] ?? 0;
-    const rightValue = right[index] ?? 0;
-    dot += leftValue * rightValue;
-    leftNorm += leftValue * leftValue;
-    rightNorm += rightValue * rightValue;
-  }
-  if (leftNorm === 0 || rightNorm === 0) {
-    return 0;
-  }
-  return dot / (Math.sqrt(leftNorm) * Math.sqrt(rightNorm));
-}
-
-async function readEmbeddingCache(
-  embeddingModel: string,
-): Promise<Record<string, number[]>> {
-  try {
-    const raw = await readFile(EMBEDDING_CACHE_PATH, "utf-8");
-    const parsed = JSON.parse(raw) as EmbeddingCachePayload;
-    if (parsed.model !== embeddingModel) {
-      return {};
-    }
-    if (!parsed.vectors || typeof parsed.vectors !== "object") {
-      return {};
-    }
-    return parsed.vectors;
-  } catch {
-    return {};
-  }
-}
-
-async function writeEmbeddingCache(
-  embeddingModel: string,
-  vectors: Record<string, number[]>,
-): Promise<void> {
-  try {
-    await mkdir(resolve(".cache"), { recursive: true });
-    const payload: EmbeddingCachePayload = {
-      model: embeddingModel,
-      vectors,
-    };
-    await writeFile(
-      EMBEDDING_CACHE_PATH,
-      `${JSON.stringify(payload, null, 2)}\n`,
-      "utf-8",
-    );
-  } catch {
-    // Best-effort cache.
-  }
-}
-
-async function getEmbeddingVectorsByText(
-  texts: string[],
-  embeddingModel: string,
-): Promise<Record<string, number[]>> {
-  const uniqueTexts = [...new Set(texts)].filter((text) => text.length > 0);
-  if (uniqueTexts.length === 0) {
-    return {};
+  if (displayName && slugName && displayName !== slugName) {
+    const displayScore = computeNameSimilarity(displayName, arenaModelName);
+    const slugScore = computeNameSimilarity(slugName, arenaModelName);
+    // Prefer full display name (often includes explicit version lineage),
+    // while still using slug as a weaker fallback signal.
+    return Number((displayScore * 0.8 + slugScore * 0.2).toFixed(4));
   }
 
-  const cache = await readEmbeddingCache(embeddingModel);
-  const missingTexts = uniqueTexts.filter((text) => !cache[text]);
-  if (missingTexts.length > 0) {
-    const embeddings = OpenRouterEmbeddings({ model: embeddingModel });
-    for (
-      let index = 0;
-      index < missingTexts.length;
-      index += EMBEDDING_BATCH_SIZE
-    ) {
-      const batch = missingTexts.slice(index, index + EMBEDDING_BATCH_SIZE);
-      if (batch.length === 0) {
-        continue;
-      }
-      const vectors = await embeddings.embedDocuments(batch);
-      for (let vectorIndex = 0; vectorIndex < batch.length; vectorIndex += 1) {
-        const text = batch[vectorIndex];
-        const vector = vectors[vectorIndex];
-        if (text && Array.isArray(vector)) {
-          cache[text] = vector;
-        }
-      }
-    }
-    await writeEmbeddingCache(embeddingModel, cache);
+  if (displayName) {
+    return computeNameSimilarity(displayName, arenaModelName);
   }
-
-  return Object.fromEntries(
-    uniqueTexts.map((text) => [text, cache[text] ?? []]),
-  );
-}
-
-async function getEmbeddingBonusByPair(
-  artificialAnalysisModels: ArtificialAnalysisImageModel[],
-  arenaModels: ArenaAiImageModel[],
-  {
-    useEmbeddings,
-    embeddingModel,
-    embeddingWeight,
-  }: {
-    useEmbeddings: boolean;
-    embeddingModel: string;
-    embeddingWeight: number;
-  },
-): Promise<Map<string, number>> {
-  const pairBonus = new Map<string, number>();
-  if (!useEmbeddings) {
-    return pairBonus;
+  if (slugName) {
+    return computeNameSimilarity(slugName, arenaModelName);
   }
-  if (!process.env.OPENROUTER_API_KEY) {
-    return pairBonus;
-  }
-
-  try {
-    const aaTexts = artificialAnalysisModels.map((model) =>
-      getArtificialAnalysisEmbeddingText(model),
-    );
-    const arenaTexts = arenaModels.map((model) => getArenaEmbeddingText(model));
-    const vectorsByText = await getEmbeddingVectorsByText(
-      [...aaTexts, ...arenaTexts],
-      embeddingModel,
-    );
-    for (let aaIndex = 0; aaIndex < aaTexts.length; aaIndex += 1) {
-      const aaVector = vectorsByText[aaTexts[aaIndex] ?? ""] ?? [];
-      for (
-        let arenaIndex = 0;
-        arenaIndex < arenaTexts.length;
-        arenaIndex += 1
-      ) {
-        const arenaVector = vectorsByText[arenaTexts[arenaIndex] ?? ""] ?? [];
-        const similarity = Math.max(0, cosineSimilarity(aaVector, arenaVector));
-        const bonus = similarity * embeddingWeight;
-        pairBonus.set(`${aaIndex}:${arenaIndex}`, Number(bonus.toFixed(4)));
-      }
-    }
-    return pairBonus;
-  } catch {
-    return pairBonus;
-  }
+  return 0;
 }
 
 function getFamilyAnchorTokens(name: string): string[] {
@@ -586,45 +519,26 @@ function computeCandidateScore(
   arenaModel: ArenaAiImageModel,
   artificialAnalysisRank: number | null,
   arenaRank: number | null,
-  embeddingBonus = 0,
 ): number {
-  const baseScore = Math.max(
-    ...getArtificialAnalysisNames(artificialAnalysisModel).map((name) =>
-      computeNameSimilarity(name, arenaModel.model),
-    ),
+  const baseScore = computeArtificialAnalysisNameScore(
+    artificialAnalysisModel,
+    arenaModel.model,
   );
-  const modelCreator = asRecord(artificialAnalysisModel.model_creator);
-  const aaProvider =
-    typeof modelCreator.name === "string"
-      ? modelCreator.name.toLowerCase()
-      : null;
+  const aaProvider = getModelCreatorName(
+    artificialAnalysisModel,
+  )?.toLowerCase();
   const arenaProvider = providerPrefix(arenaModel.provider);
-  if (
+  const providerMatchBonus =
     aaProvider &&
     arenaProvider &&
     (aaProvider.includes(arenaProvider) || arenaProvider.includes(aaProvider))
-  ) {
-    let score = baseScore + PROVIDER_MATCH_REWARD;
-    if (artificialAnalysisRank != null && arenaRank != null) {
-      const gap = Math.abs(artificialAnalysisRank - arenaRank);
-      if (gap <= RANK_PROXIMITY_RADIUS) {
-        score +=
-          ((RANK_PROXIMITY_RADIUS - gap + 1) / (RANK_PROXIMITY_RADIUS + 1)) *
-          RANK_PROXIMITY_MAX_BONUS;
-      }
-    }
-    return Number((score + embeddingBonus).toFixed(4));
-  }
-  let score = baseScore;
-  if (artificialAnalysisRank != null && arenaRank != null) {
-    const gap = Math.abs(artificialAnalysisRank - arenaRank);
-    if (gap <= RANK_PROXIMITY_RADIUS) {
-      score +=
-        ((RANK_PROXIMITY_RADIUS - gap + 1) / (RANK_PROXIMITY_RADIUS + 1)) *
-        RANK_PROXIMITY_MAX_BONUS;
-    }
-  }
-  return Number((score + embeddingBonus).toFixed(4));
+      ? PROVIDER_MATCH_REWARD
+      : 0;
+  const score =
+    baseScore +
+    providerMatchBonus +
+    rankProximityBonus(artificialAnalysisRank, arenaRank);
+  return Number(score.toFixed(4));
 }
 
 function isAcceptedBestCandidate(candidates: ImageMatchCandidate[]): boolean {
@@ -694,7 +608,7 @@ function applyDynamicVoid<
   const threshold =
     minScore + (maxScore - minScore) * VOID_THRESHOLD_RANGE_RATIO;
   let voided = 0;
-  for (const model of models) {
+  for (const [rowIndex, model] of models.entries()) {
     const score = model.best_match?.score;
     const topCandidate = model.candidates?.[0];
     const secondCandidate = model.candidates?.[1];
@@ -702,7 +616,6 @@ function applyDynamicVoid<
       topCandidate && secondCandidate
         ? topCandidate.score - secondCandidate.score
         : null;
-    const rowIndex = models.indexOf(model);
     const isProtectedTopRank =
       rowIndex < TOP_RANK_PROTECTION_COUNT &&
       score != null &&
@@ -725,8 +638,6 @@ function mapModel(
   arenaModels: ArenaAiImageModel[],
   maxCandidates: number,
   artificialAnalysisRank: number | null,
-  embeddingBonusByPair: Map<string, number>,
-  artificialAnalysisIndex: number,
 ): ImageMatchMappedModel {
   const scoredCandidates = arenaModels
     .map((arenaModel, arenaIndex) => ({
@@ -737,8 +648,6 @@ function mapModel(
         arenaModel,
         artificialAnalysisRank,
         arenaIndex + 1,
-        embeddingBonusByPair.get(`${artificialAnalysisIndex}:${arenaIndex}`) ??
-          0,
       ),
     }))
     .sort((left, right) => right.score - left.score);
@@ -761,10 +670,7 @@ function mapModel(
       typeof artificialAnalysisModel.name === "string"
         ? artificialAnalysisModel.name
         : null,
-    artificial_analysis_provider:
-      typeof asRecord(artificialAnalysisModel.model_creator).name === "string"
-        ? (asRecord(artificialAnalysisModel.model_creator).name as string)
-        : null,
+    artificial_analysis_provider: getModelCreatorName(artificialAnalysisModel),
     best_match: bestCandidate,
     candidates: topCandidates,
   };
@@ -774,33 +680,14 @@ export async function getImageMatchModelMapping(
   options: ImageMatchModelMappingOptions = {},
 ): Promise<ImageMatchModelMappingPayload> {
   const maxCandidates = options.maxCandidates ?? DEFAULT_MAX_CANDIDATES;
-  const useEmbeddings = options.useEmbeddings ?? false;
-  const embeddingModel = options.embeddingModel ?? DEFAULT_EMBEDDING_MODEL;
-  const embeddingWeight = options.embeddingWeight ?? DEFAULT_EMBEDDING_WEIGHT;
   const [artificialAnalysisPayload, arenaPayload] = await Promise.all([
     getArtificialAnalysisImageStats(),
     getArenaAiImageStats(),
   ]);
   const artificialAnalysisModels = artificialAnalysisPayload.data ?? [];
   const arenaModels = arenaPayload.rows ?? [];
-  const embeddingBonusByPair = await getEmbeddingBonusByPair(
-    artificialAnalysisModels,
-    arenaModels,
-    {
-      useEmbeddings,
-      embeddingModel,
-      embeddingWeight,
-    },
-  );
   const models = artificialAnalysisModels.map((model, index) =>
-    mapModel(
-      model,
-      arenaModels,
-      maxCandidates,
-      index + 1,
-      embeddingBonusByPair,
-      index,
-    ),
+    mapModel(model, arenaModels, maxCandidates, index + 1),
   );
   const voidStats = applyDynamicVoid(models);
 
@@ -850,24 +737,7 @@ function mergeRows(
 export async function getImageModelsUnion(
   options: ImageModelsUnionOptions = {},
 ): Promise<ImageModelsUnionPayload> {
-  const mappingOptions: ImageMatchModelMappingOptions = {
-    ...(options.maxCandidates != null
-      ? { maxCandidates: options.maxCandidates }
-      : {}),
-    ...(options.useEmbeddings != null
-      ? { useEmbeddings: options.useEmbeddings }
-      : {}),
-    ...(options.embeddingModel != null
-      ? { embeddingModel: options.embeddingModel }
-      : {}),
-    ...(options.embeddingWeight != null
-      ? { embeddingWeight: options.embeddingWeight }
-      : {}),
-  };
-  const mapping =
-    options.maxCandidates != null
-      ? await getImageMatchModelMapping(mappingOptions)
-      : await getImageMatchModelMapping(mappingOptions);
+  const mapping = await getImageMatchModelMapping(options);
   const [artificialAnalysisPayload, arenaPayload] = await Promise.all([
     getArtificialAnalysisImageStats(),
     getArenaAiImageStats(),
