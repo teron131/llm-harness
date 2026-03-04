@@ -68,20 +68,23 @@ const EVALUATION_KEY_HINT_REGEX =
   /(index|bench|mmlu|gpqa|hle|aime|math|vision|omniscience|ifbench|gdpval|lcr|arc|musr|humanity)/i;
 const NON_EVALUATION_KEY_REGEX =
   /(token|time|speed|price|cost|window|modality|reasoning_model|release_date|display_order|deprecated|deleted|commercial_allowed|frontier_model|is_open_weights|logo|url|license|creator|host|slug|name|id$|^id$|model_|timescale|response|performance|voice|image|audio|video|text)/i;
-const EVALUATION_EXPLICIT_KEYS = new Set([
-  "intelligence_index_cost",
+const EVALUATION_EXCLUDED_KEYS = new Set([
+  "omniscience",
+  "omniscience_accuracy",
+  "omniscience_hallucination_rate",
+  "intelligence_index_is_estimated",
+  "intelligence_index",
+  "agentic_index",
+  "coding_index",
   "intelligence_index_per_m_output_tokens",
+  "intelligence_index_cost",
 ]);
+const NO_COLUMN_VALUE = Symbol("no_column_value");
 
 function pickEvaluations(row: JsonObject): JsonObject {
   const evaluations: JsonObject = {};
   for (const [key, value] of Object.entries(row)) {
-    if (EVALUATION_EXPLICIT_KEYS.has(key)) {
-      if (key === "intelligence_index_cost") {
-        evaluations[key] = asRecord(value);
-      } else {
-        evaluations[key] = value;
-      }
+    if (EVALUATION_EXCLUDED_KEYS.has(key)) {
       continue;
     }
     if (!EVALUATION_KEY_HINT_REGEX.test(key)) {
@@ -94,33 +97,25 @@ function pickEvaluations(row: JsonObject): JsonObject {
       evaluations[key] = value;
     }
   }
-
-  delete evaluations.omniscience;
-  delete evaluations.omniscience_accuracy;
-  delete evaluations.omniscience_hallucination_rate;
-  delete evaluations.intelligence_index_is_estimated;
-  delete evaluations.intelligence_index;
-  delete evaluations.agentic_index;
-  delete evaluations.coding_index;
-  delete evaluations.intelligence_index_per_m_output_tokens;
-  delete evaluations.intelligence_index_cost;
   return evaluations;
 }
 
 function pickIntelligence(row: JsonObject): JsonObject {
-  const intelligence: JsonObject = {};
-  if (typeof row.intelligence_index === "number") {
-    intelligence.intelligence_index = row.intelligence_index;
-  }
-  if (typeof row.agentic_index === "number") {
-    intelligence.agentic_index = row.agentic_index;
-  }
-  if (typeof row.coding_index === "number") {
-    intelligence.coding_index = row.coding_index;
-  }
-  if (typeof row.omniscience === "number") {
-    intelligence.omniscience_index = row.omniscience;
-  }
+  const intelligence: JsonObject = {
+    intelligence_index:
+      typeof row.intelligence_index === "number"
+        ? row.intelligence_index
+        : null,
+    agentic_index:
+      typeof row.agentic_index === "number" ? row.agentic_index : null,
+    coding_index:
+      typeof row.coding_index === "number" ? row.coding_index : null,
+    omniscience_index:
+      typeof row.omniscience === "number" ? row.omniscience : null,
+    omniscience_accuracy: null,
+    omniscience_hallucination_rate: null,
+    intelligence_index_cost_total_cost: null,
+  };
   const omniscienceBreakdown = asRecord(row.omniscience_breakdown);
   const omniscienceTotal = asRecord(omniscienceBreakdown.total);
   if (typeof omniscienceTotal.accuracy === "number") {
@@ -136,6 +131,24 @@ function pickIntelligence(row: JsonObject): JsonObject {
       intelligenceIndexCost.total_cost;
   }
   return intelligence;
+}
+
+function normalizeUndefinedToNull(value: unknown): unknown {
+  if (value === undefined) {
+    return null;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => normalizeUndefinedToNull(item));
+  }
+  if (value != null && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, nestedValue]) => [
+        key,
+        normalizeUndefinedToNull(nestedValue),
+      ]),
+    );
+  }
+  return value;
 }
 
 function extractFlightCorpus(pageHtml: string): string {
@@ -268,6 +281,188 @@ function dropMostlyNullColumns(
   );
 }
 
+type RowSelectionContext = {
+  creator: JsonObject;
+  modelCreators: JsonObject;
+  providerSlug: string | null;
+  modelSlug: string | null;
+  creatorSlug: string | null;
+  modelUrlSlug: string | null;
+};
+
+function getProviderSlug(row: JsonObject, creator: JsonObject): string | null {
+  const providerName =
+    typeof creator.name === "string"
+      ? creator.name
+      : typeof row.provider === "string"
+        ? row.provider
+        : null;
+  if (providerName == null) {
+    return null;
+  }
+  return providerName
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function buildRowSelectionContext(row: JsonObject): RowSelectionContext {
+  const creator = asRecord(row.creator);
+  const modelCreators = asRecord(row.model_creators);
+  const providerSlug = getProviderSlug(row, creator);
+  const modelSlug =
+    typeof row.slug === "string" && row.slug.length > 0 ? row.slug : null;
+  const creatorSlug =
+    typeof modelCreators.slug === "string" && modelCreators.slug.length > 0
+      ? modelCreators.slug
+      : providerSlug;
+  const modelUrlSlug =
+    typeof row.model_url === "string"
+      ? row.model_url.replace(/^\/models\//, "")
+      : null;
+  return {
+    creator,
+    modelCreators,
+    providerSlug,
+    modelSlug,
+    creatorSlug,
+    modelUrlSlug,
+  };
+}
+
+function selectModalities(row: JsonObject, type: "input" | "output"): string[] {
+  return [
+    row[`${type}_modality_text`] ? "text" : null,
+    row[`${type}_modality_image`] ? "image" : null,
+    row[`${type}_modality_video`] ? "video" : null,
+    row[`${type}_modality_speech`] ? "speech" : null,
+  ].filter((value): value is string => value != null);
+}
+
+function selectReasoningFlag(row: JsonObject): boolean | null {
+  if (typeof row.reasoning_model === "boolean") {
+    return row.reasoning_model;
+  }
+  if (typeof row.isReasoning === "boolean") {
+    return row.isReasoning;
+  }
+  return null;
+}
+
+function getSelectedColumnValue(
+  column: string,
+  row: JsonObject,
+  context: RowSelectionContext,
+): unknown {
+  const {
+    creator,
+    modelCreators,
+    providerSlug,
+    modelSlug,
+    creatorSlug,
+    modelUrlSlug,
+  } = context;
+
+  switch (column) {
+    case "id":
+      return providerSlug && modelSlug
+        ? `${providerSlug}/${modelSlug}`
+        : (modelSlug ?? row.id ?? null);
+    case "model_url":
+      return row.model_url ?? (typeof row.id === "string" ? row.id : null);
+    case "model_id":
+      return creatorSlug && modelUrlSlug
+        ? `${creatorSlug}/${modelUrlSlug}`
+        : (modelUrlSlug ?? row.model_url ?? null);
+    case "name":
+      return (
+        row.short_name ??
+        row.shortName ??
+        row.name ??
+        (typeof row.slug === "string" ? row.slug : null)
+      );
+    case "provider":
+      return (
+        providerSlug ??
+        creator.name ??
+        modelCreators.name ??
+        row.model_creator_id ??
+        row.creator_name ??
+        null
+      );
+    case "logo":
+      return toAbsoluteAaLogoUrl(
+        row.logo_small_url ??
+          row.logo_url ??
+          row.logoSmall ??
+          row.logo_small ??
+          modelCreators.logo_small_url ??
+          modelCreators.logo_url ??
+          modelCreators.logo_small ??
+          modelCreators.logo ??
+          creator.logo_small_url ??
+          creator.logo_url ??
+          creator.logo_small ??
+          creator.logo,
+      );
+    case "attachment":
+      return (
+        Boolean(row.input_modality_image) ||
+        Boolean(row.input_modality_video) ||
+        Boolean(row.input_modality_speech)
+      );
+    case "reasoning":
+    case "reasoning_model":
+      return selectReasoningFlag(row);
+    case "input_modalities":
+      return selectModalities(row, "input");
+    case "output_modalities":
+      return selectModalities(row, "output");
+    case "release_date":
+      return typeof row.release_date === "string" ? row.release_date : null;
+    case "input_tokens": {
+      const intelligenceTokenCounts = asRecord(
+        row.intelligence_index_token_counts,
+      );
+      return (
+        row.input_tokens ??
+        intelligenceTokenCounts.input_tokens ??
+        row.total_input_tokens_api ??
+        null
+      );
+    }
+    case "output_tokens": {
+      const intelligenceTokenCounts = asRecord(
+        row.intelligence_index_token_counts,
+      );
+      return (
+        row.output_tokens ??
+        intelligenceTokenCounts.output_tokens ??
+        row.total_answer_tokens_api ??
+        null
+      );
+    }
+    case "median_speed":
+      return (
+        row.median_output_speed ??
+        asRecord(row.timescaleData).median_output_speed ??
+        null
+      );
+    case "median_time":
+      return (
+        row.median_time_to_first_chunk ??
+        asRecord(row.timescaleData).median_time_to_first_chunk ??
+        null
+      );
+    case "evaluations":
+      return pickEvaluations(row);
+    case "intelligence":
+      return pickIntelligence(row);
+    default:
+      return NO_COLUMN_VALUE;
+  }
+}
+
 function selectColumns(
   rows: JsonObject[],
   selectedColumns: string[],
@@ -282,182 +477,15 @@ function selectColumns(
   }
   return rows.map((row) => {
     const selectedRow: JsonObject = {};
-    const creator = asRecord(row.creator);
-    const modelCreators = asRecord(row.model_creators);
-    const providerName =
-      typeof creator.name === "string"
-        ? creator.name
-        : typeof row.provider === "string"
-          ? row.provider
-          : null;
-    const providerSlug =
-      typeof providerName === "string"
-        ? providerName
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, "-")
-            .replace(/^-+|-+$/g, "")
-        : null;
-    const modelSlug =
-      typeof row.slug === "string" && row.slug.length > 0 ? row.slug : null;
-    const creatorSlug =
-      typeof modelCreators.slug === "string" && modelCreators.slug.length > 0
-        ? modelCreators.slug
-        : providerSlug;
-    const modelUrlSlug =
-      typeof row.model_url === "string"
-        ? row.model_url.replace(/^\/models\//, "")
-        : null;
+    const context = buildRowSelectionContext(row);
 
     for (const column of keepSet) {
-      if (column === "id") {
-        selectedRow.id =
-          providerSlug && modelSlug
-            ? `${providerSlug}/${modelSlug}`
-            : (modelSlug ?? row.id ?? null);
-        continue;
+      const columnValue = getSelectedColumnValue(column, row, context);
+      if (columnValue !== NO_COLUMN_VALUE) {
+        selectedRow[column] = normalizeUndefinedToNull(columnValue);
+      } else {
+        selectedRow[column] = normalizeUndefinedToNull(row[column] ?? null);
       }
-      if (column === "model_url") {
-        selectedRow.model_url =
-          row.model_url ?? (typeof row.id === "string" ? row.id : null);
-        continue;
-      }
-      if (column === "model_id") {
-        selectedRow.model_id =
-          creatorSlug && modelUrlSlug
-            ? `${creatorSlug}/${modelUrlSlug}`
-            : (modelUrlSlug ?? row.model_url ?? null);
-        continue;
-      }
-      if (column === "name") {
-        selectedRow.name =
-          row.short_name ??
-          row.shortName ??
-          row.name ??
-          (typeof row.slug === "string" ? row.slug : null);
-        continue;
-      }
-      if (column === "provider") {
-        selectedRow.provider =
-          providerSlug ??
-          creator.name ??
-          modelCreators.name ??
-          row.model_creator_id ??
-          row.creator_name ??
-          null;
-        continue;
-      }
-      if (column === "logo") {
-        selectedRow.logo = toAbsoluteAaLogoUrl(
-          row.logo_small_url ??
-            row.logo_url ??
-            row.logoSmall ??
-            row.logo_small ??
-            modelCreators.logo_small_url ??
-            modelCreators.logo_url ??
-            modelCreators.logo_small ??
-            modelCreators.logo ??
-            creator.logo_small_url ??
-            creator.logo_url ??
-            creator.logo_small ??
-            creator.logo,
-        );
-        continue;
-      }
-      if (column === "attachment") {
-        selectedRow.attachment =
-          Boolean(row.input_modality_image) ||
-          Boolean(row.input_modality_video) ||
-          Boolean(row.input_modality_speech);
-        continue;
-      }
-      if (column === "reasoning") {
-        selectedRow.reasoning =
-          typeof row.reasoning_model === "boolean"
-            ? row.reasoning_model
-            : typeof row.isReasoning === "boolean"
-              ? row.isReasoning
-              : null;
-        continue;
-      }
-      if (column === "reasoning_model") {
-        selectedRow.reasoning_model =
-          typeof row.reasoning_model === "boolean"
-            ? row.reasoning_model
-            : typeof row.isReasoning === "boolean"
-              ? row.isReasoning
-              : null;
-        continue;
-      }
-      if (column === "input_modalities") {
-        const inputModalities = [
-          row.input_modality_text ? "text" : null,
-          row.input_modality_image ? "image" : null,
-          row.input_modality_video ? "video" : null,
-          row.input_modality_speech ? "speech" : null,
-        ].filter((value): value is string => value != null);
-        selectedRow.input_modalities = inputModalities;
-        continue;
-      }
-      if (column === "output_modalities") {
-        const outputModalities = [
-          row.output_modality_text ? "text" : null,
-          row.output_modality_image ? "image" : null,
-          row.output_modality_video ? "video" : null,
-          row.output_modality_speech ? "speech" : null,
-        ].filter((value): value is string => value != null);
-        selectedRow.output_modalities = outputModalities;
-        continue;
-      }
-      if (column === "release_date") {
-        selectedRow.release_date =
-          typeof row.release_date === "string" ? row.release_date : null;
-        continue;
-      }
-      if (column === "input_tokens") {
-        const intelligenceTokenCounts = asRecord(
-          row.intelligence_index_token_counts,
-        );
-        selectedRow.input_tokens =
-          row.input_tokens ??
-          intelligenceTokenCounts.input_tokens ??
-          row.total_input_tokens_api ??
-          null;
-        continue;
-      }
-      if (column === "output_tokens") {
-        const intelligenceTokenCounts = asRecord(
-          row.intelligence_index_token_counts,
-        );
-        selectedRow.output_tokens =
-          row.output_tokens ??
-          intelligenceTokenCounts.output_tokens ??
-          row.total_answer_tokens_api ??
-          null;
-        continue;
-      }
-      if (column === "median_speed") {
-        selectedRow.median_speed =
-          row.median_output_speed ??
-          asRecord(row.timescaleData).median_output_speed ??
-          null;
-        continue;
-      }
-      if (column === "median_time") {
-        selectedRow.median_time =
-          row.median_time_to_first_chunk ??
-          asRecord(row.timescaleData).median_time_to_first_chunk ??
-          null;
-        continue;
-      }
-      if (column === "evaluations") {
-        selectedRow.evaluations = pickEvaluations(row);
-        continue;
-      }
-      if (column === "intelligence") {
-        selectedRow.intelligence = pickIntelligence(row);
-        continue;
-      }
-      selectedRow[column] = row[column] ?? null;
     }
     return selectedRow;
   });
