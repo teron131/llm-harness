@@ -11,6 +11,18 @@ export type {
 } from "./data-sources/image/arena-ai.js";
 export { getArenaAiImageStats } from "./data-sources/image/arena-ai.js";
 export type {
+  ImageMatchCandidate,
+  ImageMatchMappedModel,
+  ImageMatchModelMappingOptions,
+  ImageMatchModelMappingPayload,
+  ImageModelsUnionOptions,
+  ImageModelsUnionPayload,
+} from "./data-sources/image/matcher.js";
+export {
+  getImageMatchModelMapping,
+  getImageModelsUnion,
+} from "./data-sources/image/matcher.js";
+export type {
   MatchCandidate,
   MatchMappedModel,
   MatchModelMappingOptions,
@@ -24,6 +36,15 @@ export {
 } from "./data-sources/llm/matcher.js";
 export type { ModelsDevOptions } from "./data-sources/llm/models-dev.js";
 export { getModelsDevStats } from "./data-sources/llm/models-dev.js";
+export type {
+  ImageStatsSelectedModel,
+  ImageStatsSelectedOptions,
+  ImageStatsSelectedPayload,
+} from "./image-stats.js";
+export {
+  getImageStatsSelected,
+  saveImageStatsSelected,
+} from "./image-stats.js";
 export type {
   ModelStatsSelectedModel,
   ModelStatsSelectedOptions,
