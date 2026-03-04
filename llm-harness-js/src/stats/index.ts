@@ -2,9 +2,17 @@ export type { ArtificialAnalysisOptions } from "./data-sources/llm/artificial-an
 export { getArtificialAnalysisStats } from "./data-sources/llm/artificial-analysis-api.js";
 export type {
   ArtificialAnalysisScrapedPayload,
+  ArtificialAnalysisScrapedRawPayload,
+  ArtificialAnalysisScraperProcessOptions,
   ArtificialAnalysisScraperOptions,
 } from "./data-sources/llm/artificial-analysis-scraper.js";
-export { getArtificialAnalysisScrapedStats } from "./data-sources/llm/artificial-analysis-scraper.js";
+export {
+  ARTIFICIAL_ANALYSIS_EVALS_ONLY_COLUMNS,
+  getArtificialAnalysisScrapedEvalsOnlyStats,
+  getArtificialAnalysisScrapedRawStats,
+  getArtificialAnalysisScrapedStats,
+  processArtificialAnalysisScrapedRows,
+} from "./data-sources/llm/artificial-analysis-scraper.js";
 export type {
   ArtificialAnalysisImageOptions,
   ArtificialAnalysisImageOutputPayload,
