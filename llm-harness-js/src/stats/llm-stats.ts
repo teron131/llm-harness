@@ -115,6 +115,33 @@ function asRecord(value: unknown): JsonObject {
     : {};
 }
 
+function asFiniteNumber(value: unknown): number | null {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : null;
+}
+
+function buildEvaluations(model: JsonObject): unknown {
+  const evaluations = asRecord(model.evaluations);
+  return Object.keys(evaluations).length > 0 ? evaluations : null;
+}
+
+function buildScores(model: JsonObject): unknown {
+  const baseScores = asRecord(model.scores);
+  const intelligence = asRecord(model.intelligence);
+  const evaluations = asRecord(model.evaluations);
+  const agenticScore =
+    asFiniteNumber(intelligence.agentic_index) ??
+    asFiniteNumber(evaluations.agentic_index) ??
+    asFiniteNumber(evaluations.artificial_analysis_agentic_index);
+  if (agenticScore == null) {
+    return model.scores ?? null;
+  }
+  return {
+    ...baseScores,
+    agentic_score: agenticScore,
+  };
+}
+
 function normalize(value: string): string {
   return value
     .toLowerCase()
@@ -509,8 +536,8 @@ function mapUnionModelToSelected(unionModel: unknown): ModelStatsSelectedModel {
     cost: model.cost ?? null,
     context_window: model.limit ?? null,
     speed: buildSpeed(model),
-    evaluations: model.evaluations ?? null,
-    scores: model.scores ?? null,
+    evaluations: buildEvaluations(model),
+    scores: buildScores(model),
     percentiles: model.percentiles ?? null,
   };
 }
