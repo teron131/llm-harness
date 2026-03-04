@@ -25,7 +25,8 @@ const ACTIVE_B_EXACT_REWARD = 2;
 const ACTIVE_B_MISMATCH_PENALTY = 2;
 const CHAR_PREFIX_REWARD_SCALE = 0.03;
 const LENGTH_GAP_PENALTY_SCALE = 0.005;
-const PROVIDER_FILTER = "openrouter" as const;
+const PRIMARY_PROVIDER_FILTER = "openrouter" as const;
+const FALLBACK_PROVIDER_FILTERS = new Set(["openai", "google", "anthropic"]);
 const VOID_THRESHOLD_RANGE_RATIO = 0.35;
 // Model-name noise tags that frequently appear as variants/capabilities rather
 // than core model identity, so we exclude them from matching tokens.
@@ -44,7 +45,7 @@ const MODEL_NAME_TAG_TOKENS = new Set([
 /**
  * Candidate model from models.dev for a given Artificial Analysis model.
  */
-export type MatchCandidate = {
+export type LlmMatchCandidate = {
   model_id: string;
   provider_id: string;
   provider_name: string;
@@ -52,40 +53,23 @@ export type MatchCandidate = {
   score: number;
 };
 
-type MatchResult = MatchCandidate | null;
+export type LlmMatchResult = LlmMatchCandidate | null;
 
 /**
  * Mapping entry for one Artificial Analysis model and its match candidates.
  */
-export type MatchMappedModel = {
+export type LlmMatchMappedModel = {
   artificial_analysis_slug: string;
   artificial_analysis_name: string | null;
   artificial_analysis_release_date: string | null;
-  best_match: MatchResult;
-  candidates: MatchCandidate[];
-};
-
-type MatchUnionRow = {
-  artificial_analysis_slug: string;
-  artificial_analysis_name: string | null;
-  artificial_analysis_release_date: string | null;
-  best_match: MatchResult;
-  artificial_analysis: ArtificialAnalysisModel;
-  models_dev: ModelsDevModel | null;
-  union: Record<string, unknown>;
-};
-
-type ScrapedEvalModel = {
-  model_id?: unknown;
-  logo?: unknown;
-  evaluations?: unknown;
-  intelligence?: unknown;
+  best_match: LlmMatchResult;
+  candidates: LlmMatchCandidate[];
 };
 
 /**
  * Full mapping payload (Artificial Analysis -> models.dev candidates).
  */
-export type MatchModelMappingPayload = {
+export type LlmMatchModelMappingPayload = {
   artificial_analysis_fetched_at_epoch_seconds: number | null;
   models_dev_fetched_at_epoch_seconds: number | null;
   total_artificial_analysis_models: number;
@@ -94,39 +78,20 @@ export type MatchModelMappingPayload = {
   void_mode: "maxmin_half";
   void_threshold: number | null;
   voided_count: number;
-  models: MatchMappedModel[];
-};
-
-/**
- * Union payload built from matched Artificial Analysis and models.dev rows.
- */
-export type MatchModelsUnionPayload = {
-  artificial_analysis_fetched_at_epoch_seconds: number | null;
-  models_dev_fetched_at_epoch_seconds: number | null;
-  total_artificial_analysis_models: number;
-  total_models_dev_models: number;
-  void_mode: "maxmin_half";
-  void_threshold: number | null;
-  voided_count: number;
-  total_union_models: number;
-  models: Record<string, unknown>[];
-};
-
-/**
- * Options for union generation.
- */
-export type MatchModelsUnionOptions = {
-  maxCandidates?: number;
+  models: LlmMatchMappedModel[];
 };
 
 /**
  * Options for mapping generation.
  */
-export type MatchModelMappingOptions = {
+export type LlmMatchModelMappingOptions = {
   maxCandidates?: number;
+  artificialAnalysisModels?: ArtificialAnalysisModel[];
+  modelsDevModels?: ModelsDevModel[];
+  scrapedRows?: unknown[];
 };
 
-export type ScraperFallbackMatchDiagnosticsPayload = {
+export type LlmScraperFallbackMatchDiagnosticsPayload = {
   scraped_fetched_at_epoch_seconds: number | null;
   models_dev_fetched_at_epoch_seconds: number | null;
   total_scraped_models: number;
@@ -139,19 +104,7 @@ export type ScraperFallbackMatchDiagnosticsPayload = {
   voided_count: number;
   matched_count: number;
   unmatched_count: number;
-  models: MatchMappedModel[];
-};
-
-export type ScraperFallbackModelsUnionPayload = {
-  scraped_fetched_at_epoch_seconds: number | null;
-  models_dev_fetched_at_epoch_seconds: number | null;
-  total_scraped_models: number;
-  total_models_dev_models: number;
-  void_mode: "maxmin_half";
-  void_threshold: number | null;
-  voided_count: number;
-  total_union_models: number;
-  models: Record<string, unknown>[];
+  models: LlmMatchMappedModel[];
 };
 
 function normalize(value: string): string {
@@ -167,30 +120,6 @@ function asRecord(value: unknown): Record<string, unknown> {
   return value != null && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
-}
-
-function creatorSlugFromApiModel(
-  model: ArtificialAnalysisModel,
-): string | null {
-  const creator = asRecord(model.model_creator);
-  if (typeof creator.slug === "string" && creator.slug.length > 0) {
-    return creator.slug;
-  }
-  if (typeof creator.name === "string" && creator.name.length > 0) {
-    return normalize(creator.name);
-  }
-  return null;
-}
-
-function artificialAnalysisModelId(
-  model: ArtificialAnalysisModel,
-): string | null {
-  const creatorSlug = creatorSlugFromApiModel(model);
-  const modelSlug = typeof model.slug === "string" ? model.slug : null;
-  if (!creatorSlug || !modelSlug) {
-    return null;
-  }
-  return `${creatorSlug}/${modelSlug}`;
 }
 
 function modelSlugFromModelId(modelId: unknown): string | null {
@@ -529,8 +458,8 @@ function scoreCandidate(
 }
 
 function compareCandidates(
-  left: MatchCandidate,
-  right: MatchCandidate,
+  left: LlmMatchCandidate,
+  right: LlmMatchCandidate,
 ): number {
   if (left.score !== right.score) {
     return right.score - left.score;
@@ -538,18 +467,68 @@ function compareCandidates(
   return left.model_id.localeCompare(right.model_id);
 }
 
-function scopeToOpenRouterModels(
+type PreferredProviderScopedModels = {
+  primary: ModelsDevModel[];
+  fallback: ModelsDevModel[];
+};
+
+function uniqueModelCount(models: ModelsDevModel[]): number {
+  return new Set(models.map((model) => model.model_id)).size;
+}
+
+function hasExactSlugFallbackCandidate(
+  evalModel: ArtificialAnalysisModel,
+  fallbackCandidates: LlmMatchCandidate[],
+): boolean {
+  const evalSlug =
+    typeof evalModel.slug === "string" ? normalize(evalModel.slug) : "";
+  if (evalSlug.length === 0) {
+    return false;
+  }
+  return fallbackCandidates.some((candidate) => {
+    const candidateSlug = normalize(splitBaseModelId(candidate.model_id));
+    return candidateSlug.length > 0 && candidateSlug === evalSlug;
+  });
+}
+
+function scopeToPreferredProviderModels(
   modelsDevModels: ModelsDevModel[],
-): ModelsDevModel[] {
-  return modelsDevModels.filter(
-    (modelStatsModel) => modelStatsModel.provider_id === PROVIDER_FILTER,
+): PreferredProviderScopedModels {
+  const primary = modelsDevModels.filter(
+    (modelStatsModel) =>
+      modelStatsModel.provider_id === PRIMARY_PROVIDER_FILTER,
   );
+  const fallback = modelsDevModels.filter((modelStatsModel) =>
+    FALLBACK_PROVIDER_FILTERS.has(modelStatsModel.provider_id),
+  );
+  return { primary, fallback };
+}
+
+function selectPreferredCandidatesForEvalModel(
+  evalModel: ArtificialAnalysisModel,
+  scopedModels: PreferredProviderScopedModels,
+): LlmMatchCandidate[] {
+  const primaryCandidates = collectCandidatesForEvalModel(
+    evalModel,
+    scopedModels.primary,
+  );
+  const fallbackCandidates = collectCandidatesForEvalModel(
+    evalModel,
+    scopedModels.fallback,
+  );
+  if (primaryCandidates.length === 0) {
+    return fallbackCandidates;
+  }
+  if (hasExactSlugFallbackCandidate(evalModel, fallbackCandidates)) {
+    return fallbackCandidates;
+  }
+  return primaryCandidates;
 }
 
 function collectCandidatesForEvalModel(
   evalModel: ArtificialAnalysisModel,
   modelsDevModels: ModelsDevModel[],
-): MatchCandidate[] {
+): LlmMatchCandidate[] {
   const evalSlug = String(evalModel.slug ?? "");
   if (!evalSlug) {
     return [];
@@ -580,12 +559,12 @@ function collectCandidatesForEvalModel(
         score,
       };
     })
-    .filter((candidate): candidate is MatchCandidate => candidate != null)
+    .filter((candidate): candidate is LlmMatchCandidate => candidate != null)
     .sort(compareCandidates);
 }
 
 function applyMaxMinHalfVoid<
-  T extends { best_match: MatchResult; candidates?: unknown[] },
+  T extends { best_match: LlmMatchResult; candidates?: unknown[] },
 >(models: T[]): { threshold: number | null; voided: number } {
   const scores = models
     .map((model) => model.best_match?.score)
@@ -614,155 +593,37 @@ function applyMaxMinHalfVoid<
 }
 
 /**
- * Build union rows from matched Artificial Analysis and models.dev models.
- */
-export async function getMatchModelsUnion(
-  _options: MatchModelsUnionOptions = {},
-): Promise<MatchModelsUnionPayload> {
-  const artificialAnalysisStats = await getArtificialAnalysisStats();
-  if (artificialAnalysisStats.models.length === 0) {
-    const fallback = await getScraperFallbackModelsUnion();
-    return {
-      artificial_analysis_fetched_at_epoch_seconds:
-        fallback.scraped_fetched_at_epoch_seconds,
-      models_dev_fetched_at_epoch_seconds:
-        fallback.models_dev_fetched_at_epoch_seconds,
-      total_artificial_analysis_models: fallback.total_scraped_models,
-      total_models_dev_models: fallback.total_models_dev_models,
-      void_mode: fallback.void_mode,
-      void_threshold: fallback.void_threshold,
-      voided_count: fallback.voided_count,
-      total_union_models: fallback.total_union_models,
-      models: fallback.models,
-    };
-  }
-  const artificialAnalysisScrapedStats =
-    await getArtificialAnalysisScrapedEvalsOnlyStats();
-  const modelsDevStats = await getModelsDevStats();
-  // OpenRouter-only by design: no runtime provider switching.
-  const scopedModelsDevModels = scopeToOpenRouterModels(modelsDevStats.models);
-  const scrapedByModelId = new Map<string, ScrapedEvalModel>();
-  for (const model of artificialAnalysisScrapedStats.data) {
-    const typedModel = model as ScrapedEvalModel;
-    if (
-      typeof typedModel.model_id === "string" &&
-      typedModel.model_id.length > 0
-    ) {
-      scrapedByModelId.set(typedModel.model_id, typedModel);
-    }
-  }
-
-  const rows: MatchUnionRow[] = artificialAnalysisStats.models.map(
-    (evalModel) => {
-      const modelId = artificialAnalysisModelId(evalModel);
-      const scrapedModel = modelId ? scrapedByModelId.get(modelId) : undefined;
-      const apiEvaluations = asRecord(evalModel.evaluations);
-      const scrapedEvaluations = asRecord(scrapedModel?.evaluations);
-      const mergedEvaluations = {
-        ...apiEvaluations,
-        ...scrapedEvaluations,
-      };
-      const intelligence = asRecord(scrapedModel?.intelligence);
-      const logo =
-        typeof scrapedModel?.logo === "string" ? scrapedModel.logo : null;
-      const candidates = collectCandidatesForEvalModel(
-        evalModel,
-        scopedModelsDevModels,
-      );
-      const bestMatch = candidates[0] ?? null;
-      const matchedModelsDev = bestMatch
-        ? (scopedModelsDevModels.find(
-            (model) => model.model_id === bestMatch.model_id,
-          ) ?? null)
-        : null;
-      const matchedModelFields = asRecord(matchedModelsDev?.model);
-      const {
-        id: _matchedId,
-        name: _matchedName,
-        family: matchedFamily,
-        model_id: _matchedModelId,
-        slug: _matchedSlug,
-        ...matchedModelFieldsWithoutIdFamilyAndModelRefs
-      } = matchedModelFields;
-      const evalModelFields = asRecord(evalModel);
-      const {
-        name: _evalName,
-        slug: _evalSlug,
-        evaluations: _evalEvaluations,
-        model_creator: _evalModelCreator,
-        ...evalModelFieldsWithoutIdentity
-      } = evalModelFields;
-
-      return {
-        artificial_analysis_slug:
-          typeof evalModel.slug === "string" ? evalModel.slug : "",
-        artificial_analysis_name:
-          typeof evalModel.name === "string" ? evalModel.name : null,
-        artificial_analysis_release_date:
-          typeof evalModel.release_date === "string"
-            ? evalModel.release_date
-            : null,
-        best_match: bestMatch,
-        artificial_analysis: evalModel,
-        models_dev: matchedModelsDev,
-        union: {
-          ...matchedModelFieldsWithoutIdFamilyAndModelRefs,
-          ...evalModelFieldsWithoutIdentity,
-          openrouter_id: matchedModelsDev?.model?.id ?? null,
-          name:
-            typeof matchedModelsDev?.model?.name === "string"
-              ? matchedModelsDev.model.name
-              : typeof evalModel.name === "string"
-                ? evalModel.name
-                : null,
-          aa_id: modelId,
-          aa_slug: typeof evalModel.slug === "string" ? evalModel.slug : null,
-          family: matchedFamily,
-          logo,
-          evaluations: mergedEvaluations,
-          intelligence,
-        },
-      };
-    },
-  );
-
-  const voidStats = applyMaxMinHalfVoid(rows);
-  const unions = rows
-    .filter((row) => row.best_match != null)
-    .map((row) => row.union);
-
-  return {
-    artificial_analysis_fetched_at_epoch_seconds:
-      artificialAnalysisStats.fetched_at_epoch_seconds,
-    models_dev_fetched_at_epoch_seconds:
-      modelsDevStats.fetched_at_epoch_seconds,
-    total_artificial_analysis_models: artificialAnalysisStats.models.length,
-    total_models_dev_models: scopedModelsDevModels.length,
-    void_mode: "maxmin_half",
-    void_threshold: voidStats.threshold,
-    voided_count: voidStats.voided,
-    total_union_models: unions.length,
-    models: unions,
-  };
-}
-
-/**
  * Build candidate mappings from Artificial Analysis models to models.dev models.
  */
 export async function getMatchModelMapping(
-  options: MatchModelMappingOptions = {},
-): Promise<MatchModelMappingPayload> {
+  options: LlmMatchModelMappingOptions = {},
+): Promise<LlmMatchModelMappingPayload> {
   const maxCandidates = options.maxCandidates ?? DEFAULT_MAX_CANDIDATES;
-  const artificialAnalysisStats = await getArtificialAnalysisStats();
-  const modelsDevStats = await getModelsDevStats();
-  // OpenRouter-only by design: no runtime provider switching.
-  const scopedModelsDevModels = scopeToOpenRouterModels(modelsDevStats.models);
+  const artificialAnalysisStats =
+    options.artificialAnalysisModels != null
+      ? {
+          fetched_at_epoch_seconds: null,
+          models: options.artificialAnalysisModels,
+        }
+      : await getArtificialAnalysisStats();
+  const modelsDevStats =
+    options.modelsDevModels != null
+      ? {
+          fetched_at_epoch_seconds: null,
+          models: options.modelsDevModels,
+        }
+      : await getModelsDevStats();
+  const scopedModels = scopeToPreferredProviderModels(modelsDevStats.models);
+  const totalScopedModels = uniqueModelCount([
+    ...scopedModels.primary,
+    ...scopedModels.fallback,
+  ]);
 
-  const models: MatchMappedModel[] = artificialAnalysisStats.models.map(
+  const models: LlmMatchMappedModel[] = artificialAnalysisStats.models.map(
     (evalModel) => {
-      const candidates = collectCandidatesForEvalModel(
+      const candidates = selectPreferredCandidatesForEvalModel(
         evalModel,
-        scopedModelsDevModels,
+        scopedModels,
       ).slice(0, maxCandidates);
       return {
         artificial_analysis_slug:
@@ -787,7 +648,7 @@ export async function getMatchModelMapping(
     models_dev_fetched_at_epoch_seconds:
       modelsDevStats.fetched_at_epoch_seconds,
     total_artificial_analysis_models: models.length,
-    total_models_dev_models: scopedModelsDevModels.length,
+    total_models_dev_models: totalScopedModels,
     max_candidates: maxCandidates,
     void_mode: "maxmin_half",
     void_threshold: voidStats.threshold,
@@ -800,14 +661,30 @@ export async function getMatchModelMapping(
  * Run the same matcher algorithm using scraper-only AA models (API-keyless fallback).
  */
 export async function getScraperFallbackMatchDiagnostics(
-  options: MatchModelMappingOptions = {},
-): Promise<ScraperFallbackMatchDiagnosticsPayload> {
+  options: LlmMatchModelMappingOptions = {},
+): Promise<LlmScraperFallbackMatchDiagnosticsPayload> {
   const maxCandidates = options.maxCandidates ?? DEFAULT_MAX_CANDIDATES;
-  const scrapedStats = await getArtificialAnalysisScrapedEvalsOnlyStats();
-  const modelsDevStats = await getModelsDevStats();
-  const scopedModelsDevModels = scopeToOpenRouterModels(modelsDevStats.models);
+  const scrapedStats =
+    options.scrapedRows != null
+      ? {
+          fetched_at_epoch_seconds: null,
+          data: options.scrapedRows,
+        }
+      : await getArtificialAnalysisScrapedEvalsOnlyStats();
+  const modelsDevStats =
+    options.modelsDevModels != null
+      ? {
+          fetched_at_epoch_seconds: null,
+          models: options.modelsDevModels,
+        }
+      : await getModelsDevStats();
+  const scopedModels = scopeToPreferredProviderModels(modelsDevStats.models);
+  const totalScopedModels = uniqueModelCount([
+    ...scopedModels.primary,
+    ...scopedModels.fallback,
+  ]);
 
-  const models: MatchMappedModel[] = scrapedStats.data.map((row) => {
+  const models: LlmMatchMappedModel[] = scrapedStats.data.map((row) => {
     const rowRecord = asRecord(row);
     const modelId =
       typeof rowRecord.model_id === "string" ? rowRecord.model_id : null;
@@ -820,7 +697,7 @@ export async function getScraperFallbackMatchDiagnostics(
     } as unknown as ArtificialAnalysisModel;
 
     const candidates = slug
-      ? collectCandidatesForEvalModel(evalModel, scopedModelsDevModels)
+      ? selectPreferredCandidatesForEvalModel(evalModel, scopedModels)
       : [];
     const topCandidates = candidates.slice(0, maxCandidates);
 
@@ -848,7 +725,7 @@ export async function getScraperFallbackMatchDiagnostics(
     models_dev_fetched_at_epoch_seconds:
       modelsDevStats.fetched_at_epoch_seconds,
     total_scraped_models: scrapedStats.data.length,
-    total_models_dev_models: scopedModelsDevModels.length,
+    total_models_dev_models: totalScopedModels,
     max_candidates: maxCandidates,
     pre_void_matched_count: preVoidMatchedCount,
     pre_void_unmatched_count: preVoidUnmatchedCount,
@@ -858,93 +735,5 @@ export async function getScraperFallbackMatchDiagnostics(
     matched_count: matchedCount,
     unmatched_count: unmatchedCount,
     models,
-  };
-}
-
-/**
- * Build union rows from scraper-only AA models and models.dev models.
- *
- * This path does not depend on the Artificial Analysis API key.
- */
-export async function getScraperFallbackModelsUnion(
-  options: MatchModelsUnionOptions = {},
-): Promise<ScraperFallbackModelsUnionPayload> {
-  const maxCandidates = options.maxCandidates ?? DEFAULT_MAX_CANDIDATES;
-  const scrapedStats = await getArtificialAnalysisScrapedEvalsOnlyStats();
-  const modelsDevStats = await getModelsDevStats();
-  const scopedModelsDevModels = scopeToOpenRouterModels(modelsDevStats.models);
-
-  const rows = scrapedStats.data.map((row) => {
-    const rowRecord = asRecord(row);
-    const modelId =
-      typeof rowRecord.model_id === "string" ? rowRecord.model_id : null;
-    const slug = modelSlugFromModelId(modelId);
-    const evaluations = asRecord(rowRecord.evaluations);
-    const intelligence = asRecord(rowRecord.intelligence);
-    const logo = typeof rowRecord.logo === "string" ? rowRecord.logo : null;
-
-    const evalModel = {
-      slug: slug ?? undefined,
-      name: modelId ?? undefined,
-      release_date: "",
-    } as unknown as ArtificialAnalysisModel;
-    const candidates = slug
-      ? collectCandidatesForEvalModel(evalModel, scopedModelsDevModels).slice(
-          0,
-          maxCandidates,
-        )
-      : [];
-    const bestMatch = candidates[0] ?? null;
-    const matchedModelsDev = bestMatch
-      ? (scopedModelsDevModels.find(
-          (model) => model.model_id === bestMatch.model_id,
-        ) ?? null)
-      : null;
-    const matchedModelFields = asRecord(matchedModelsDev?.model);
-    const {
-      id: _matchedId,
-      name: _matchedName,
-      family: matchedFamily,
-      model_id: _matchedModelId,
-      slug: _matchedSlug,
-      ...matchedModelFieldsWithoutIdFamilyAndModelRefs
-    } = matchedModelFields;
-
-    return {
-      best_match: bestMatch,
-      candidates,
-      union: {
-        openrouter_id: matchedModelsDev?.model?.id ?? null,
-        name:
-          typeof matchedModelsDev?.model?.name === "string"
-            ? matchedModelsDev.model.name
-            : modelId,
-        aa_id: modelId,
-        aa_slug: slug,
-        family: matchedFamily,
-        logo,
-        ...matchedModelFieldsWithoutIdFamilyAndModelRefs,
-        evaluations,
-        intelligence,
-      } as Record<string, unknown>,
-    };
-  });
-
-  const voidStats = applyMaxMinHalfVoid(rows);
-  const unions = rows
-    .filter((row) => row.best_match != null)
-    .map((row) => row.union);
-
-  return {
-    scraped_fetched_at_epoch_seconds: scrapedStats.fetched_at_epoch_seconds,
-    models_dev_fetched_at_epoch_seconds:
-      modelsDevStats.fetched_at_epoch_seconds,
-    total_scraped_models: scrapedStats.data.length,
-    total_models_dev_models: scopedModelsDevModels.length,
-    void_mode: "maxmin_half",
-    void_threshold: voidStats.threshold,
-    voided_count: voidStats.voided,
-    total_union_models: unions.length,
-    models: unions,
   };
 }

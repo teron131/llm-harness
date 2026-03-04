@@ -1,3 +1,11 @@
+export type {
+  LlmMatchCandidate,
+  LlmMatchMappedModel,
+  LlmMatchModelMappingOptions,
+  LlmMatchModelMappingPayload,
+  LlmMatchResult,
+  LlmScraperFallbackMatchDiagnosticsPayload,
+} from "./data-sources/llm/matcher.js";
 export type { ArtificialAnalysisOptions } from "./data-sources/llm/artificial-analysis-api.js";
 export { getArtificialAnalysisStats } from "./data-sources/llm/artificial-analysis-api.js";
 export type {
@@ -35,18 +43,7 @@ export {
   getImageMatchModelMapping,
   getImageModelsUnion,
 } from "./data-sources/image/matcher.js";
-export type {
-  MatchCandidate,
-  MatchMappedModel,
-  MatchModelMappingOptions,
-  MatchModelMappingPayload,
-  MatchModelsUnionOptions,
-  MatchModelsUnionPayload,
-} from "./data-sources/llm/matcher.js";
-export {
-  getMatchModelMapping,
-  getMatchModelsUnion,
-} from "./data-sources/llm/matcher.js";
+export { getMatchModelMapping } from "./data-sources/llm/matcher.js";
 export type { ModelsDevOptions } from "./data-sources/llm/models-dev.js";
 export { getModelsDevStats } from "./data-sources/llm/models-dev.js";
 export type {

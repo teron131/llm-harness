@@ -1,13 +1,34 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import { getMatchModelsUnion } from "./data-sources/llm/matcher";
+import { getArtificialAnalysisStats } from "./data-sources/llm/artificial-analysis-api";
+import { getArtificialAnalysisScrapedEvalsOnlyStats } from "./data-sources/llm/artificial-analysis-scraper";
+import {
+  getMatchModelMapping,
+  getScraperFallbackMatchDiagnostics,
+} from "./data-sources/llm/matcher";
+import { getModelsDevStats } from "./data-sources/llm/models-dev";
 
 const DEFAULT_OUTPUT_PATH = resolve(".cache/model_stats.json");
 const CACHE_DIR = resolve(".cache");
 const CACHE_TTL_SECONDS = 60 * 60 * 24;
 
 type JsonObject = Record<string, unknown>;
+type ModelsDevModel = Awaited<
+  ReturnType<typeof getModelsDevStats>
+>["models"][number];
+type ArtificialAnalysisModel = Awaited<
+  ReturnType<typeof getArtificialAnalysisStats>
+>["models"][number];
+type ScrapedEvalModel = {
+  model_id?: unknown;
+  logo?: unknown;
+  evaluations?: unknown;
+  intelligence?: unknown;
+};
+
+const PRIMARY_PROVIDER_FILTER = "openrouter" as const;
+const FALLBACK_PROVIDER_FILTERS = new Set(["openai", "google", "anthropic"]);
 
 /**
  * Final selected model row exposed by the stats API.
@@ -49,6 +70,7 @@ export type ModelStatsSelectedPayload = {
  */
 export type ModelStatsSelectedOptions = {
   id?: string | null;
+  apiKey?: string;
 };
 
 function providerFromId(modelId: unknown): string | null {
@@ -62,10 +84,334 @@ function providerFromId(modelId: unknown): string | null {
   return modelId.slice(0, slashIndex);
 }
 
+function canonicalModelId(
+  modelId: unknown,
+  providerId: unknown,
+  fallbackModelId: unknown,
+): string | null {
+  if (typeof modelId === "string" && modelId.includes("/")) {
+    return modelId;
+  }
+  if (typeof providerId === "string" && typeof modelId === "string") {
+    return `${providerId}/${modelId}`;
+  }
+  if (typeof providerId === "string" && typeof fallbackModelId === "string") {
+    return `${providerId}/${fallbackModelId}`;
+  }
+  return typeof modelId === "string" ? modelId : null;
+}
+
+function providerFromModel(model: JsonObject): string | null {
+  const fromId = providerFromId(model.id);
+  if (fromId) {
+    return fromId;
+  }
+  return typeof model.provider_id === "string" ? model.provider_id : null;
+}
+
 function asRecord(value: unknown): JsonObject {
-  return value != null && typeof value === "object"
+  return value != null && typeof value === "object" && !Array.isArray(value)
     ? (value as JsonObject)
     : {};
+}
+
+function normalize(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[._:\s]+/g, "-")
+    .replace(/[^a-z0-9/-]+/g, "")
+    .replace(/-+/g, "-")
+    .replace(/^[-/]+|[-/]+$/g, "");
+}
+
+function creatorSlugFromApiModel(
+  model: ArtificialAnalysisModel,
+): string | null {
+  const creator = asRecord(model.model_creator);
+  if (typeof creator.slug === "string" && creator.slug.length > 0) {
+    return creator.slug;
+  }
+  if (typeof creator.name === "string" && creator.name.length > 0) {
+    return normalize(creator.name);
+  }
+  return null;
+}
+
+function artificialAnalysisModelId(
+  model: ArtificialAnalysisModel,
+): string | null {
+  const creatorSlug = creatorSlugFromApiModel(model);
+  const modelSlug = typeof model.slug === "string" ? model.slug : null;
+  if (!creatorSlug || !modelSlug) {
+    return null;
+  }
+  return `${creatorSlug}/${modelSlug}`;
+}
+
+function modelSlugFromModelId(modelId: unknown): string | null {
+  if (typeof modelId !== "string" || modelId.length === 0) {
+    return null;
+  }
+  const slug = modelId.split("/").at(-1);
+  return slug && slug.length > 0 ? slug : null;
+}
+
+function scopeToPreferredProviderModels(
+  modelsDevModels: ModelsDevModel[],
+): ModelsDevModel[] {
+  const preferredModels = modelsDevModels.filter(
+    (modelStatsModel) =>
+      modelStatsModel.provider_id === PRIMARY_PROVIDER_FILTER ||
+      FALLBACK_PROVIDER_FILTERS.has(modelStatsModel.provider_id),
+  );
+  const byModelId = new Map<string, ModelsDevModel>();
+  const withPriority = preferredModels.map((model) => ({
+    model,
+    priority: model.provider_id === PRIMARY_PROVIDER_FILTER ? 0 : 1,
+  }));
+  withPriority.sort((left, right) => left.priority - right.priority);
+  for (const { model } of withPriority) {
+    byModelId.set(model.model_id, byModelId.get(model.model_id) ?? model);
+  }
+  return [...byModelId.values()];
+}
+
+function buildModelsDevById(
+  modelsDevModels: ModelsDevModel[],
+): Map<string, ModelsDevModel> {
+  return new Map(modelsDevModels.map((model) => [model.model_id, model]));
+}
+
+function buildScrapedByModelId(
+  scrapedModels: unknown[],
+): Map<string, ScrapedEvalModel> {
+  const scrapedByModelId = new Map<string, ScrapedEvalModel>();
+  for (const model of scrapedModels) {
+    const typedModel = model as ScrapedEvalModel;
+    if (
+      typeof typedModel.model_id === "string" &&
+      typedModel.model_id.length > 0
+    ) {
+      scrapedByModelId.set(typedModel.model_id, typedModel);
+    }
+  }
+  return scrapedByModelId;
+}
+
+function buildUnionFromApiMatch(
+  evalModel: ArtificialAnalysisModel,
+  bestMatchModelId: string,
+  modelsDevById: Map<string, ModelsDevModel>,
+  scrapedByModelId: Map<string, ScrapedEvalModel>,
+): Record<string, unknown> {
+  const modelId = artificialAnalysisModelId(evalModel);
+  const scrapedModel = modelId ? scrapedByModelId.get(modelId) : undefined;
+  const apiEvaluations = asRecord(evalModel.evaluations);
+  const scrapedEvaluations = asRecord(scrapedModel?.evaluations);
+  const mergedEvaluations = {
+    ...apiEvaluations,
+    ...scrapedEvaluations,
+  };
+  const intelligence = asRecord(scrapedModel?.intelligence);
+  const logo =
+    typeof scrapedModel?.logo === "string" ? scrapedModel.logo : null;
+  const matchedModelsDev = modelsDevById.get(bestMatchModelId) ?? null;
+  const matchedModelFields = asRecord(matchedModelsDev?.model);
+  const canonicalId = canonicalModelId(
+    matchedModelsDev?.model?.id ?? bestMatchModelId,
+    matchedModelsDev?.provider_id,
+    matchedModelsDev?.model_id,
+  );
+  const {
+    id: _matchedId,
+    name: _matchedName,
+    family: matchedFamily,
+    model_id: _matchedModelId,
+    slug: _matchedSlug,
+    ...matchedModelFieldsWithoutIdFamilyAndModelRefs
+  } = matchedModelFields;
+  const evalModelFields = asRecord(evalModel);
+  const {
+    name: _evalName,
+    slug: _evalSlug,
+    evaluations: _evalEvaluations,
+    model_creator: _evalModelCreator,
+    ...evalModelFieldsWithoutIdentity
+  } = evalModelFields;
+
+  return {
+    id: canonicalId,
+    provider_id: matchedModelsDev?.provider_id ?? null,
+    ...matchedModelFieldsWithoutIdFamilyAndModelRefs,
+    ...evalModelFieldsWithoutIdentity,
+    openrouter_id: matchedModelsDev?.model?.id ?? null,
+    name:
+      typeof matchedModelsDev?.model?.name === "string"
+        ? matchedModelsDev.model.name
+        : typeof evalModel.name === "string"
+          ? evalModel.name
+          : null,
+    aa_id: modelId,
+    aa_slug: typeof evalModel.slug === "string" ? evalModel.slug : null,
+    family: matchedFamily,
+    logo,
+    evaluations: mergedEvaluations,
+    intelligence,
+  };
+}
+
+function buildUnionFromScrapedMatch(
+  scrapedRow: ScrapedEvalModel,
+  bestMatchModelId: string,
+  modelsDevById: Map<string, ModelsDevModel>,
+): Record<string, unknown> {
+  const modelId =
+    typeof scrapedRow.model_id === "string" ? scrapedRow.model_id : null;
+  const slug = modelSlugFromModelId(modelId);
+  const evaluations = asRecord(scrapedRow.evaluations);
+  const intelligence = asRecord(scrapedRow.intelligence);
+  const logo = typeof scrapedRow.logo === "string" ? scrapedRow.logo : null;
+  const matchedModelsDev = modelsDevById.get(bestMatchModelId) ?? null;
+  const matchedModelFields = asRecord(matchedModelsDev?.model);
+  const canonicalId = canonicalModelId(
+    matchedModelsDev?.model?.id ?? bestMatchModelId,
+    matchedModelsDev?.provider_id,
+    matchedModelsDev?.model_id,
+  );
+  const {
+    id: _matchedId,
+    name: _matchedName,
+    family: matchedFamily,
+    model_id: _matchedModelId,
+    slug: _matchedSlug,
+    ...matchedModelFieldsWithoutIdFamilyAndModelRefs
+  } = matchedModelFields;
+
+  return {
+    id: canonicalId,
+    provider_id: matchedModelsDev?.provider_id ?? null,
+    openrouter_id: matchedModelsDev?.model?.id ?? null,
+    name:
+      typeof matchedModelsDev?.model?.name === "string"
+        ? matchedModelsDev.model.name
+        : modelId,
+    aa_id: modelId,
+    aa_slug: slug,
+    family: matchedFamily,
+    logo,
+    ...matchedModelFieldsWithoutIdFamilyAndModelRefs,
+    evaluations,
+    intelligence,
+  };
+}
+
+async function buildUnionModelsFromPrimaryPathWithApiKey(
+  apiKey?: string,
+): Promise<Record<string, unknown>[]> {
+  const [
+    artificialAnalysisStats,
+    artificialAnalysisScrapedStats,
+    modelsDevStats,
+  ] = await Promise.all([
+    getArtificialAnalysisStats(apiKey ? { apiKey } : {}),
+    getArtificialAnalysisScrapedEvalsOnlyStats(),
+    getModelsDevStats(),
+  ]);
+
+  if (artificialAnalysisStats.models.length === 0) {
+    return [];
+  }
+
+  const scopedModelsDevModels = scopeToPreferredProviderModels(
+    modelsDevStats.models,
+  );
+  const matchMapping = await getMatchModelMapping({
+    artificialAnalysisModels: artificialAnalysisStats.models,
+    modelsDevModels: scopedModelsDevModels,
+  });
+  const modelsDevById = buildModelsDevById(scopedModelsDevModels);
+  const scrapedByModelId = buildScrapedByModelId(
+    artificialAnalysisScrapedStats.data,
+  );
+  const matchBySlug = new Map(
+    matchMapping.models.map((model) => [model.artificial_analysis_slug, model]),
+  );
+
+  return artificialAnalysisStats.models
+    .map((evalModel) => {
+      const slug = typeof evalModel.slug === "string" ? evalModel.slug : "";
+      const match = matchBySlug.get(slug);
+      const bestMatchModelId = match?.best_match?.model_id;
+      if (
+        typeof bestMatchModelId !== "string" ||
+        bestMatchModelId.length === 0
+      ) {
+        return null;
+      }
+      return buildUnionFromApiMatch(
+        evalModel,
+        bestMatchModelId,
+        modelsDevById,
+        scrapedByModelId,
+      );
+    })
+    .filter((row): row is Record<string, unknown> => row != null);
+}
+
+async function buildUnionModelsFromFallbackPath(): Promise<
+  Record<string, unknown>[]
+> {
+  const [scrapedStats, modelsDevStats] = await Promise.all([
+    getArtificialAnalysisScrapedEvalsOnlyStats(),
+    getModelsDevStats(),
+  ]);
+  const scopedModelsDevModels = scopeToPreferredProviderModels(
+    modelsDevStats.models,
+  );
+  const fallbackDiagnostics = await getScraperFallbackMatchDiagnostics({
+    scrapedRows: scrapedStats.data,
+    modelsDevModels: scopedModelsDevModels,
+  });
+  const modelsDevById = buildModelsDevById(scopedModelsDevModels);
+  const scrapedBySlug = new Map<string, ScrapedEvalModel>();
+  for (const row of scrapedStats.data) {
+    const typedRow = row as ScrapedEvalModel;
+    const slug = modelSlugFromModelId(typedRow.model_id);
+    if (slug) {
+      scrapedBySlug.set(slug, typedRow);
+    }
+  }
+
+  return fallbackDiagnostics.models
+    .map((model) => {
+      const bestMatchModelId = model.best_match?.model_id;
+      if (
+        typeof bestMatchModelId !== "string" ||
+        bestMatchModelId.length === 0
+      ) {
+        return null;
+      }
+      const scrapedRow = scrapedBySlug.get(model.artificial_analysis_slug);
+      if (!scrapedRow) {
+        return null;
+      }
+      return buildUnionFromScrapedMatch(
+        scrapedRow,
+        bestMatchModelId,
+        modelsDevById,
+      );
+    })
+    .filter((row): row is Record<string, unknown> => row != null);
+}
+
+async function buildUnionModelsWithApiKey(
+  apiKey?: string,
+): Promise<Record<string, unknown>[]> {
+  const primaryModels = await buildUnionModelsFromPrimaryPathWithApiKey(apiKey);
+  if (primaryModels.length > 0) {
+    return primaryModels;
+  }
+  return buildUnionModelsFromFallbackPath();
 }
 
 function buildLogo(model: JsonObject, provider: string | null): string {
@@ -147,7 +493,7 @@ async function loadModelStatsSelectedFromCache(
 
 function mapUnionModelToSelected(unionModel: unknown): ModelStatsSelectedModel {
   const model = asRecord(unionModel);
-  const provider = providerFromId(model.id);
+  const provider = providerFromModel(model);
   return {
     id: typeof model.id === "string" ? model.id : null,
     name: typeof model.name === "string" ? model.name : null,
@@ -170,7 +516,7 @@ function mapUnionModelToSelected(unionModel: unknown): ModelStatsSelectedModel {
 }
 
 /**
- * Return final model stats enriched from matcher union data.
+ * Return final model stats enriched from source data + matcher links.
  *
  * Design:
  * - list mode (`id == null`): cache-first (< 1 day), else recompute and save
@@ -189,8 +535,8 @@ export async function getModelStatsSelected(
       }
     }
 
-    const matchUnion = await getMatchModelsUnion();
-    const allModels = matchUnion.models.map(mapUnionModelToSelected);
+    const unionModels = await buildUnionModelsWithApiKey(options.apiKey);
+    const allModels = unionModels.map(mapUnionModelToSelected);
     const filteredModels = filterModelsById(allModels, options.id);
     const fetchedAt = nowEpochSeconds();
 
