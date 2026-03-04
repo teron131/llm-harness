@@ -1,7 +1,9 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import { getImageModelsUnion } from "./data-sources/image/matcher";
+import { getArtificialAnalysisImageStats } from "./data-sources/image/artificial-analysis";
+import { getArenaAiImageStats } from "./data-sources/image/arena-ai";
+import { getImageMatchModelMapping } from "./data-sources/image/matcher";
 
 const DEFAULT_OUTPUT_PATH = resolve(".cache/image_stats.json");
 const CACHE_DIR = resolve(".cache");
@@ -9,6 +11,12 @@ const CACHE_TTL_SECONDS = 60 * 60 * 24;
 
 type JsonObject = Record<string, unknown>;
 type NumberOrNull = number | null;
+type ArtificialAnalysisImageModel = Awaited<
+  ReturnType<typeof getArtificialAnalysisImageStats>
+>["data"][number];
+type ArenaAiImageModel = Awaited<
+  ReturnType<typeof getArenaAiImageStats>
+>["rows"][number];
 
 export type ImageStatsSelectedModel = {
   id: string | null;
@@ -155,6 +163,79 @@ function pickArenaScores(model: JsonObject): JsonObject | null {
   return Object.keys(weightedScores).length > 0 ? weightedScores : null;
 }
 
+function mergeImageRow(
+  mappedModel: Record<string, unknown>,
+  artificialAnalysisModelsBySlug: Map<string, ArtificialAnalysisImageModel>,
+  arenaModelsByName: Map<string, ArenaAiImageModel>,
+): Record<string, unknown> {
+  const artificialAnalysisSlug =
+    typeof mappedModel.artificial_analysis_slug === "string"
+      ? mappedModel.artificial_analysis_slug
+      : null;
+  const bestMatch = asRecord(mappedModel.best_match);
+  const arenaModelName =
+    typeof bestMatch.arena_model === "string" ? bestMatch.arena_model : null;
+  const artificialAnalysis =
+    artificialAnalysisSlug != null
+      ? (artificialAnalysisModelsBySlug.get(artificialAnalysisSlug) ?? null)
+      : null;
+  const arena =
+    arenaModelName != null
+      ? (arenaModelsByName.get(arenaModelName) ?? null)
+      : null;
+
+  return {
+    ...mappedModel,
+    artificial_analysis: artificialAnalysis,
+    arena_ai: arena,
+  };
+}
+
+async function buildImageUnionModels(): Promise<Record<string, unknown>[]> {
+  const [artificialAnalysisPayload, arenaPayload] = await Promise.all([
+    getArtificialAnalysisImageStats(),
+    getArenaAiImageStats(),
+  ]);
+  const artificialAnalysisModels = artificialAnalysisPayload.data ?? [];
+  const arenaModels = arenaPayload.rows ?? [];
+  const mapping = await getImageMatchModelMapping({
+    artificialAnalysisModels,
+    arenaModels,
+  });
+  const artificialAnalysisModelsBySlug = new Map(
+    artificialAnalysisModels
+      .filter((model) => typeof model.slug === "string")
+      .map((model) => [model.slug as string, model]),
+  );
+  const arenaModelsByName = new Map(
+    arenaModels.map((model) => [model.model, model]),
+  );
+  const mappedRows = mapping.models.map((model) =>
+    mergeImageRow(
+      model as unknown as Record<string, unknown>,
+      artificialAnalysisModelsBySlug,
+      arenaModelsByName,
+    ),
+  );
+  const matchedArenaNames = new Set(
+    mapping.models
+      .map((model) => model.best_match?.arena_model)
+      .filter((value): value is string => typeof value === "string"),
+  );
+  const unmatchedArenaRows = arenaModels
+    .filter((model) => !matchedArenaNames.has(model.model))
+    .map((model) => ({
+      artificial_analysis_slug: null,
+      artificial_analysis_name: null,
+      artificial_analysis_provider: null,
+      best_match: null,
+      artificial_analysis: null,
+      arena_ai: model,
+    }));
+
+  return [...mappedRows, ...unmatchedArenaRows];
+}
+
 function mapUnionModelToSelected(unionModel: unknown): ImageStatsSelectedModel {
   const model = asRecord(unionModel);
   const artificialAnalysis = asRecord(model.artificial_analysis);
@@ -290,8 +371,8 @@ export async function getImageStatsSelected(
       }
     }
 
-    const matchUnion = await getImageModelsUnion();
-    const allModels = matchUnion.models
+    const allUnionModels = await buildImageUnionModels();
+    const allModels = allUnionModels
       .map(mapUnionModelToSelected)
       .sort(
         (left, right) =>

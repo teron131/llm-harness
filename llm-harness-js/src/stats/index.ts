@@ -36,13 +36,8 @@ export type {
   ImageMatchMappedModel,
   ImageMatchModelMappingOptions,
   ImageMatchModelMappingPayload,
-  ImageModelsUnionOptions,
-  ImageModelsUnionPayload,
 } from "./data-sources/image/matcher.js";
-export {
-  getImageMatchModelMapping,
-  getImageModelsUnion,
-} from "./data-sources/image/matcher.js";
+export { getImageMatchModelMapping } from "./data-sources/image/matcher.js";
 export { getMatchModelMapping } from "./data-sources/llm/matcher.js";
 export type { ModelsDevOptions } from "./data-sources/llm/models-dev.js";
 export { getModelsDevStats } from "./data-sources/llm/models-dev.js";

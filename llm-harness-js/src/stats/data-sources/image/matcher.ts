@@ -109,23 +109,10 @@ export type ImageMatchModelMappingPayload = {
   models: ImageMatchMappedModel[];
 };
 
-export type ImageModelsUnionPayload = {
-  artificial_analysis_fetched_at_epoch_seconds: number | null;
-  arena_ai_fetched_at_epoch_seconds: number | null;
-  total_artificial_analysis_models: number;
-  total_arena_ai_models: number;
-  void_threshold: number | null;
-  voided_count: number;
-  total_union_models: number;
-  models: Record<string, unknown>[];
-};
-
 export type ImageMatchModelMappingOptions = {
   maxCandidates?: number;
-};
-
-export type ImageModelsUnionOptions = {
-  maxCandidates?: number;
+  artificialAnalysisModels?: ArtificialAnalysisImageModel[];
+  arenaModels?: ArenaAiImageModel[];
 };
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -681,8 +668,18 @@ export async function getImageMatchModelMapping(
 ): Promise<ImageMatchModelMappingPayload> {
   const maxCandidates = options.maxCandidates ?? DEFAULT_MAX_CANDIDATES;
   const [artificialAnalysisPayload, arenaPayload] = await Promise.all([
-    getArtificialAnalysisImageStats(),
-    getArenaAiImageStats(),
+    options.artificialAnalysisModels != null
+      ? Promise.resolve({
+          fetched_at_epoch_seconds: null,
+          data: options.artificialAnalysisModels,
+        })
+      : getArtificialAnalysisImageStats(),
+    options.arenaModels != null
+      ? Promise.resolve({
+          fetched_at_epoch_seconds: null,
+          rows: options.arenaModels,
+        })
+      : getArenaAiImageStats(),
   ]);
   const artificialAnalysisModels = artificialAnalysisPayload.data ?? [];
   const arenaModels = arenaPayload.rows ?? [];
@@ -701,89 +698,5 @@ export async function getImageMatchModelMapping(
     void_threshold: voidStats.threshold,
     voided_count: voidStats.voided,
     models,
-  };
-}
-
-function mergeRows(
-  mappedModel: ImageMatchMappedModel,
-  artificialAnalysisModelsBySlug: Map<string, ArtificialAnalysisImageModel>,
-  arenaModelsByName: Map<string, ArenaAiImageModel>,
-): Record<string, unknown> {
-  const artificialAnalysis =
-    mappedModel.artificial_analysis_slug != null
-      ? (artificialAnalysisModelsBySlug.get(
-          mappedModel.artificial_analysis_slug,
-        ) ?? null)
-      : null;
-  const arena =
-    mappedModel.best_match?.arena_model != null
-      ? (arenaModelsByName.get(mappedModel.best_match.arena_model) ?? null)
-      : null;
-
-  return {
-    artificial_analysis_slug: mappedModel.artificial_analysis_slug,
-    artificial_analysis_name: mappedModel.artificial_analysis_name,
-    artificial_analysis_provider: mappedModel.artificial_analysis_provider,
-    best_match: mappedModel.best_match,
-    artificial_analysis: artificialAnalysis,
-    arena_ai: arena,
-    union: {
-      ...(arena ?? {}),
-      ...(artificialAnalysis ?? {}),
-    },
-  };
-}
-
-export async function getImageModelsUnion(
-  options: ImageModelsUnionOptions = {},
-): Promise<ImageModelsUnionPayload> {
-  const mapping = await getImageMatchModelMapping(options);
-  const [artificialAnalysisPayload, arenaPayload] = await Promise.all([
-    getArtificialAnalysisImageStats(),
-    getArenaAiImageStats(),
-  ]);
-  const artificialAnalysisModels = artificialAnalysisPayload.data ?? [];
-  const arenaModels = arenaPayload.rows ?? [];
-  const artificialAnalysisModelsBySlug = new Map(
-    artificialAnalysisModels
-      .filter((model) => typeof model.slug === "string")
-      .map((model) => [model.slug as string, model]),
-  );
-  const arenaModelsByName = new Map(
-    arenaModels.map((model) => [model.model, model]),
-  );
-
-  const mappedRows = mapping.models.map((model) =>
-    mergeRows(model, artificialAnalysisModelsBySlug, arenaModelsByName),
-  );
-
-  const matchedArenaNames = new Set(
-    mapping.models
-      .map((model) => model.best_match?.arena_model)
-      .filter((value): value is string => Boolean(value)),
-  );
-  const unmatchedArenaRows = arenaModels
-    .filter((model) => !matchedArenaNames.has(model.model))
-    .map((model) => ({
-      artificial_analysis_slug: null,
-      artificial_analysis_name: null,
-      artificial_analysis_provider: null,
-      best_match: null,
-      artificial_analysis: null,
-      arena_ai: model,
-      union: { ...model },
-    }));
-
-  return {
-    artificial_analysis_fetched_at_epoch_seconds:
-      mapping.artificial_analysis_fetched_at_epoch_seconds,
-    arena_ai_fetched_at_epoch_seconds:
-      mapping.arena_ai_fetched_at_epoch_seconds,
-    total_artificial_analysis_models: mapping.total_artificial_analysis_models,
-    total_arena_ai_models: mapping.total_arena_ai_models,
-    void_threshold: mapping.void_threshold,
-    voided_count: mapping.voided_count,
-    total_union_models: mappedRows.length + unmatchedArenaRows.length,
-    models: [...mappedRows, ...unmatchedArenaRows],
   };
 }
