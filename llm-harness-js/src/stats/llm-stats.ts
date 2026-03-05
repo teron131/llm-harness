@@ -33,12 +33,6 @@ const AGENTIC_BENCHMARK_KEYS = [
   "ifbench",
   "terminalbench_hard",
 ] as const;
-const SCORE_WEIGHTS = {
-  intelligence: 0.4,
-  agentic: 0.3,
-  price: 0.15,
-  speed: 0.15,
-} as const;
 const DEFAULT_SPEED_OUTPUT_TOKEN_ANCHORS = [500, 2_000, 5_000, 10_000] as const;
 const SPEED_OUTPUT_TOKEN_RANGE_MIN = 200;
 const SPEED_OUTPUT_TOKEN_RANGE_MAX = 8_000;
@@ -213,36 +207,6 @@ function meanOfFinite(values: Array<number | null>): number | null {
   }
   const total = finiteValues.reduce((sum, value) => sum + value, 0);
   return total / finiteValues.length;
-}
-
-function reciprocalLog10(value: unknown, invert = false): number | null {
-  const numericValue = asFiniteNumber(value);
-  if (numericValue == null || numericValue <= 0) {
-    return null;
-  }
-  const logValue = Math.log10(numericValue);
-  return invert ? -logValue : logValue;
-}
-
-function weightedMean(
-  pairs: Array<{ value: number | null; weight: number }>,
-): number | null {
-  const validPairs = pairs.filter(
-    (pair) =>
-      pair.value != null &&
-      Number.isFinite(pair.value) &&
-      Number.isFinite(pair.weight) &&
-      pair.weight > 0,
-  );
-  if (validPairs.length === 0) {
-    return null;
-  }
-  const weightedSum = validPairs.reduce(
-    (sum, pair) => sum + (pair.value as number) * pair.weight,
-    0,
-  );
-  const weightSum = validPairs.reduce((sum, pair) => sum + pair.weight, 0);
-  return weightSum > 0 ? weightedSum / weightSum : null;
 }
 
 function buildEvaluations(model: JsonObject): unknown {
@@ -476,18 +440,22 @@ function buildScores(
   const agenticBenchmarkMean = meanOfFinite(
     AGENTIC_BENCHMARK_KEYS.map((key) => metricValue(model, key)),
   );
-  const intelligenceScore = meanOfFinite([
-    intelligenceIndex,
-    intelligenceBenchmarkMean,
-  ]);
-  const agenticScore = meanOfFinite([agenticIndex, agenticBenchmarkMean]);
+  const intelligenceScore =
+    intelligenceIndex != null && intelligenceBenchmarkMean != null
+      ? (intelligenceIndex + intelligenceBenchmarkMean) / 2
+      : null;
+  const agenticScore =
+    agenticIndex != null && agenticBenchmarkMean != null
+      ? (agenticIndex + agenticBenchmarkMean) / 2
+      : null;
   const blendedPrice = blendedPriceValue(model);
   const latencySeconds = asFiniteNumber(speed.latency_seconds_median);
   const throughputTokensPerSecond = asFiniteNumber(
     speed.throughput_tokens_per_second_median,
   );
   const e2eLatencySeconds = asFiniteNumber(speed.e2e_latency_seconds_median);
-  const priceScore = blendedPrice;
+  const priceScore =
+    blendedPrice != null && blendedPrice > 0 ? 1 / blendedPrice : null;
   const imaginedSpeedScore = meanOfFinite(
     speedOutputTokenAnchors.map((targetTokens) =>
       latencySeconds != null &&
@@ -520,8 +488,8 @@ function buildScores(
   return {
     intelligence_score: intelligenceScore,
     agentic_score: agenticScore,
-    price_score: priceScore,
     speed_score: speedScore,
+    price_score: priceScore,
   };
 }
 
@@ -557,29 +525,9 @@ function withComputedPercentiles(
       speedScore == null ? null : percentileRank(speedScores, speedScore);
     const pricePercentile =
       priceScore == null ? null : percentileRank(priceScores, priceScore);
-    const overallPercentile = weightedMean([
-      {
-        value: intelligencePercentile,
-        weight: SCORE_WEIGHTS.intelligence,
-      },
-      {
-        value: agenticPercentile,
-        weight: SCORE_WEIGHTS.agentic,
-      },
-      {
-        value: pricePercentile,
-        weight: SCORE_WEIGHTS.price,
-      },
-      {
-        value: speedPercentile,
-        weight: SCORE_WEIGHTS.speed,
-      },
-    ]);
-
     return {
       ...model,
       percentiles: {
-        overall_percentile: overallPercentile,
         intelligence_percentile: intelligencePercentile,
         agentic_percentile: agenticPercentile,
         speed_percentile: speedPercentile,
@@ -919,10 +867,8 @@ async function buildUnionModelsFromFallbackPath(): Promise<
 async function buildUnionModelsWithApiKey(
   apiKey?: string,
 ): Promise<Record<string, unknown>[]> {
-  const primaryModels = await buildUnionModelsFromPrimaryPathWithApiKey(apiKey);
-  if (primaryModels.length > 0) {
-    return primaryModels;
-  }
+  // Temporary override: disable AA API source and rely on scraper fallback only.
+  void apiKey;
   return buildUnionModelsFromFallbackPath();
 }
 
@@ -1032,8 +978,10 @@ function buildCost(model: JsonObject, openRouterPricing: JsonObject): unknown {
   return Object.keys(cleanedCost).length > 0 ? cleanedCost : null;
 }
 
-function overallPercentileValue(model: ModelStatsSelectedModel): number | null {
-  return asFiniteNumber(asRecord(model.percentiles).overall_percentile);
+function intelligencePercentileValue(
+  model: ModelStatsSelectedModel,
+): number | null {
+  return asFiniteNumber(asRecord(model.percentiles).intelligence_percentile);
 }
 
 async function writeJson(path: string, payload: unknown): Promise<void> {
@@ -1063,23 +1011,23 @@ function filterModelsById(
   return models.filter((model) => model.id === id);
 }
 
-function sortModelsByOverallPercentile(
+function sortModelsByIntelligencePercentile(
   models: ModelStatsSelectedModel[],
 ): ModelStatsSelectedModel[] {
   return [...models].sort((left, right) => {
-    const leftOverall = overallPercentileValue(left);
-    const rightOverall = overallPercentileValue(right);
-    if (leftOverall == null && rightOverall == null) {
+    const leftIntelligence = intelligencePercentileValue(left);
+    const rightIntelligence = intelligencePercentileValue(right);
+    if (leftIntelligence == null && rightIntelligence == null) {
       return (left.id ?? "").localeCompare(right.id ?? "");
     }
-    if (leftOverall == null) {
+    if (leftIntelligence == null) {
       return 1;
     }
-    if (rightOverall == null) {
+    if (rightIntelligence == null) {
       return -1;
     }
-    if (leftOverall !== rightOverall) {
-      return rightOverall - leftOverall;
+    if (leftIntelligence !== rightIntelligence) {
+      return rightIntelligence - leftIntelligence;
     }
     return (left.id ?? "").localeCompare(right.id ?? "");
   });
@@ -1090,9 +1038,14 @@ function hasIntelligenceCost(row: JsonObject): boolean {
   return asFiniteNumber(intelligenceIndexCost.total_cost) != null;
 }
 
-function hasOverallScore(row: JsonObject): boolean {
+function hasScoreSignal(row: JsonObject): boolean {
   const scores = asRecord(row.scores);
-  return asFiniteNumber(scores.overall_score) != null;
+  return (
+    asFiniteNumber(scores.intelligence_score) != null ||
+    asFiniteNumber(scores.agentic_score) != null ||
+    asFiniteNumber(scores.speed_score) != null ||
+    asFiniteNumber(scores.price_score) != null
+  );
 }
 
 function unionRowPriority(row: JsonObject): number {
@@ -1100,8 +1053,8 @@ function unionRowPriority(row: JsonObject): number {
   const openrouterBoost =
     providerId === PRIMARY_PROVIDER_FILTER ? 1_000_000 : 0;
   const intelligenceCostBoost = hasIntelligenceCost(row) ? 1_000 : 0;
-  const overallScoreBoost = hasOverallScore(row) ? 10 : 0;
-  return openrouterBoost + intelligenceCostBoost + overallScoreBoost;
+  const scoreSignalBoost = hasScoreSignal(row) ? 10 : 0;
+  return openrouterBoost + intelligenceCostBoost + scoreSignalBoost;
 }
 
 function dedupeUnionModelsPreferOpenrouter(
@@ -1443,7 +1396,7 @@ export async function getModelStatsSelected(
       ),
     );
     const modelsWithComputedPercentiles = withComputedPercentiles(allModels);
-    const sortedModels = sortModelsByOverallPercentile(
+    const sortedModels = sortModelsByIntelligencePercentile(
       modelsWithComputedPercentiles,
     );
     const prunedModels = pruneSparseFields(sortedModels);

@@ -363,19 +363,29 @@ export async function getOpenRouterScrapedStats(
         return emptyScrapedModel(modelId);
       }
 
-      const stats = await fetchPerformanceForPermaslug(
-        permaslug,
-        timeoutMs,
-        maxRetries,
-        retryBaseDelayMs,
-      );
+      try {
+        const stats = await fetchPerformanceForPermaslug(
+          permaslug,
+          timeoutMs,
+          maxRetries,
+          retryBaseDelayMs,
+        );
 
-      return {
-        id: modelId,
-        permaslug,
-        performance: summarizePerformance(stats.performance),
-        pricing: summarizePricing(stats.pricing),
-      } satisfies OpenRouterScrapedModel;
+        return {
+          id: modelId,
+          permaslug,
+          performance: summarizePerformance(stats.performance),
+          pricing: summarizePricing(stats.pricing),
+        } satisfies OpenRouterScrapedModel;
+      } catch {
+        // Keep batch resilient: one model failure should not null out the entire payload.
+        return {
+          id: modelId,
+          permaslug,
+          performance: summarizePerformance({}),
+          pricing: summarizePricing(null),
+        } satisfies OpenRouterScrapedModel;
+      }
     },
   );
 
