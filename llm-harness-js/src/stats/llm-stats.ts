@@ -27,6 +27,7 @@ const STABLE_TOP_LEVEL_KEYS = new Set<string>([
   "cost",
   "context_window",
   "speed",
+  "intelligence",
   "evaluations",
   "scores",
   "percentiles",
@@ -65,6 +66,7 @@ export type ModelStatsSelectedModel = {
   cost: unknown;
   context_window: unknown;
   speed: JsonObject;
+  intelligence: unknown;
   evaluations: unknown;
   scores: unknown;
   percentiles: unknown;
@@ -142,6 +144,11 @@ function asFiniteNumber(value: unknown): number | null {
 function buildEvaluations(model: JsonObject): unknown {
   const evaluations = asRecord(model.evaluations);
   return Object.keys(evaluations).length > 0 ? evaluations : null;
+}
+
+function buildIntelligence(model: JsonObject): unknown {
+  const intelligence = asRecord(model.intelligence);
+  return Object.keys(intelligence).length > 0 ? intelligence : null;
 }
 
 function buildScores(model: JsonObject): unknown {
@@ -688,6 +695,7 @@ function mapUnionModelToSelected(unionModel: unknown): ModelStatsSelectedModel {
     cost: model.cost ?? null,
     context_window: model.limit ?? null,
     speed: buildSpeed(model),
+    intelligence: buildIntelligence(model),
     evaluations: buildEvaluations(model),
     scores: buildScores(model),
     percentiles: model.percentiles ?? null,
