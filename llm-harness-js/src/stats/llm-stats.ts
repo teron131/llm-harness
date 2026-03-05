@@ -8,11 +8,13 @@ import {
   getScraperFallbackMatchDiagnostics,
 } from "./data-sources/llm/matcher";
 import { getModelsDevStats } from "./data-sources/llm/models-dev";
+import { getOpenRouterScrapedStats } from "./data-sources/llm/openrouter-scraper";
 import { percentileRank } from "./data-sources/utils";
 
 const DEFAULT_OUTPUT_PATH = resolve(".cache/model_stats.json");
 const CACHE_DIR = resolve(".cache");
 const CACHE_TTL_SECONDS = 60 * 60 * 24;
+const OPENROUTER_SPEED_CONCURRENCY = 8;
 const NULL_FIELD_PRUNE_THRESHOLD = 0.5;
 const NULL_FIELD_PRUNE_RECENT_LOOKBACK_DAYS = 90;
 const MIN_INTELLIGENCE_COST_TOKEN_THRESHOLD = 1_000_000;
@@ -37,7 +39,9 @@ const SCORE_WEIGHTS = {
   price: 0.15,
   speed: 0.15,
 } as const;
-const SPEED_TARGET_OUTPUT_TOKEN_VARIANTS = [500, 2_000, 5_000, 10_000] as const;
+const DEFAULT_SPEED_OUTPUT_TOKEN_ANCHORS = [500, 2_000, 5_000, 10_000] as const;
+const SPEED_OUTPUT_TOKEN_RANGE_MIN = 200;
+const SPEED_OUTPUT_TOKEN_RANGE_MAX = 8_000;
 const STABLE_TOP_LEVEL_KEYS = new Set<string>([
   "id",
   "name",
@@ -57,6 +61,12 @@ const STABLE_TOP_LEVEL_KEYS = new Set<string>([
   "scores",
   "percentiles",
 ]);
+const EMPTY_OPENROUTER_SPEED = {
+  throughput_tokens_per_second_median: null,
+  latency_seconds_median: null,
+  e2e_latency_seconds_median: null,
+} as const;
+const SPEED_ANCHOR_QUANTILES = [0.25, 0.5, 0.75] as const;
 
 type JsonObject = Record<string, unknown>;
 type ModelsDevModel = Awaited<
@@ -344,7 +354,97 @@ function blendedPriceValue(model: JsonObject): number | null {
   return 0.95 * baseProxy + 0.05 * over200kProxy;
 }
 
-function buildScores(model: JsonObject): unknown {
+function quantileFromSorted(values: number[], quantile: number): number | null {
+  if (values.length === 0) {
+    return null;
+  }
+  if (values.length === 1) {
+    return values[0] ?? null;
+  }
+  const clampedQuantile = Math.min(1, Math.max(0, quantile));
+  const index = (values.length - 1) * clampedQuantile;
+  const lowerIndex = Math.floor(index);
+  const upperIndex = Math.ceil(index);
+  if (lowerIndex === upperIndex) {
+    return values[lowerIndex] ?? null;
+  }
+  const lowerValue = values[lowerIndex];
+  const upperValue = values[upperIndex];
+  if (lowerValue == null || upperValue == null) {
+    return null;
+  }
+  const ratio = index - lowerIndex;
+  return lowerValue + (upperValue - lowerValue) * ratio;
+}
+
+function deriveSpeedOutputTokenAnchors(
+  openRouterSpeedById: Map<string, JsonObject>,
+): number[] {
+  const impliedTokenUsages = Array.from(openRouterSpeedById.values())
+    .map((speed) => {
+      const throughputTokensPerSecond = asFiniteNumber(
+        speed.throughput_tokens_per_second_median,
+      );
+      const latencySeconds = asFiniteNumber(speed.latency_seconds_median);
+      const e2eLatencySeconds = asFiniteNumber(
+        speed.e2e_latency_seconds_median,
+      );
+      if (
+        throughputTokensPerSecond == null ||
+        throughputTokensPerSecond <= 0 ||
+        latencySeconds == null ||
+        e2eLatencySeconds == null
+      ) {
+        return null;
+      }
+      const generationSeconds = e2eLatencySeconds - latencySeconds;
+      if (generationSeconds <= 0) {
+        return null;
+      }
+      return generationSeconds * throughputTokensPerSecond;
+    })
+    .filter((value): value is number => value != null && Number.isFinite(value))
+    .sort((left, right) => left - right);
+
+  if (impliedTokenUsages.length === 0) {
+    return [...DEFAULT_SPEED_OUTPUT_TOKEN_ANCHORS];
+  }
+
+  const q0 = impliedTokenUsages[0] ?? null;
+  const [q1, q2, q3] = SPEED_ANCHOR_QUANTILES.map((quantile) =>
+    quantileFromSorted(impliedTokenUsages, quantile),
+  );
+  const q4 = impliedTokenUsages[impliedTokenUsages.length - 1] ?? null;
+  const numericQuantileAnchors = [q0, q1, q2, q3, q4].filter(
+    (value): value is number => value != null && Number.isFinite(value),
+  );
+  if (numericQuantileAnchors.length !== 5) {
+    return [...DEFAULT_SPEED_OUTPUT_TOKEN_ANCHORS];
+  }
+
+  const sourceMin = numericQuantileAnchors[0] as number;
+  const sourceMax = numericQuantileAnchors[
+    numericQuantileAnchors.length - 1
+  ] as number;
+  if (!(sourceMax > sourceMin)) {
+    return [...DEFAULT_SPEED_OUTPUT_TOKEN_ANCHORS];
+  }
+
+  return numericQuantileAnchors.map((anchor) => {
+    const normalized = (anchor - sourceMin) / (sourceMax - sourceMin);
+    const mapped =
+      SPEED_OUTPUT_TOKEN_RANGE_MIN +
+      normalized *
+        (SPEED_OUTPUT_TOKEN_RANGE_MAX - SPEED_OUTPUT_TOKEN_RANGE_MIN);
+    return Math.round(mapped);
+  });
+}
+
+function buildScores(
+  model: JsonObject,
+  speed: JsonObject,
+  speedOutputTokenAnchors: number[],
+): unknown {
   const intelligenceIndex =
     metricValue(model, "intelligence_index") ??
     metricValue(model, "artificial_analysis_intelligence_index");
@@ -363,34 +463,33 @@ function buildScores(model: JsonObject): unknown {
   ]);
   const agenticScore = meanOfFinite([agenticIndex, agenticBenchmarkMean]);
   const blendedPrice = blendedPriceValue(model);
-  const ttfa = asFiniteNumber(model.median_time_to_first_answer_token);
-  const tps = asFiniteNumber(model.median_output_tokens_per_second);
+  const latencySeconds = asFiniteNumber(speed.latency_seconds_median);
+  const throughputTokensPerSecond = asFiniteNumber(
+    speed.throughput_tokens_per_second_median,
+  );
+  const e2eLatencySeconds = asFiniteNumber(speed.e2e_latency_seconds_median);
   const priceScore = blendedPrice;
-  const speedTimeMean = meanOfFinite(
-    SPEED_TARGET_OUTPUT_TOKEN_VARIANTS.map((targetTokens) =>
-      ttfa != null && tps != null && tps > 0 ? ttfa + targetTokens / tps : null,
+  const imaginedSpeedScore = meanOfFinite(
+    speedOutputTokenAnchors.map((targetTokens) =>
+      latencySeconds != null &&
+      throughputTokensPerSecond != null &&
+      throughputTokensPerSecond > 0
+        ? targetTokens /
+          (latencySeconds + targetTokens / throughputTokensPerSecond)
+        : null,
     ),
   );
-  const speedScore = speedTimeMean;
-  const overallScore = weightedMean([
-    {
-      value: intelligenceScore,
-      weight: SCORE_WEIGHTS.intelligence,
-    },
-    {
-      value: agenticScore,
-      weight: SCORE_WEIGHTS.agentic,
-    },
-    {
-      value: priceScore,
-      weight: SCORE_WEIGHTS.price,
-    },
-    {
-      value: speedScore,
-      weight: SCORE_WEIGHTS.speed,
-    },
-  ]);
-
+  const sortedAnchors = [...speedOutputTokenAnchors].sort(
+    (left, right) => left - right,
+  );
+  const representativeTargetTokens = quantileFromSorted(sortedAnchors, 0.5);
+  const observedE2eSpeedScore =
+    representativeTargetTokens != null &&
+    e2eLatencySeconds != null &&
+    e2eLatencySeconds > 0
+      ? representativeTargetTokens / e2eLatencySeconds
+      : null;
+  const speedScore = meanOfFinite([imaginedSpeedScore, observedE2eSpeedScore]);
   if (
     intelligenceScore == null &&
     agenticScore == null &&
@@ -400,7 +499,6 @@ function buildScores(model: JsonObject): unknown {
     return null;
   }
   return {
-    overall_score: overallScore,
     intelligence_score: intelligenceScore,
     agentic_score: agenticScore,
     price_score: priceScore,
@@ -411,9 +509,6 @@ function buildScores(model: JsonObject): unknown {
 function withComputedPercentiles(
   models: ModelStatsSelectedModel[],
 ): ModelStatsSelectedModel[] {
-  const overallScores = models.map((model) =>
-    asFiniteNumber(asRecord(model.scores).overall_score),
-  );
   const intelligenceScores = models.map((model) =>
     asFiniteNumber(asRecord(model.scores).intelligence_score),
   );
@@ -429,13 +524,10 @@ function withComputedPercentiles(
 
   return models.map((model) => {
     const scores = asRecord(model.scores);
-    const overallScore = asFiniteNumber(scores.overall_score);
     const intelligenceScore = asFiniteNumber(scores.intelligence_score);
     const agenticScore = asFiniteNumber(scores.agentic_score);
     const speedScore = asFiniteNumber(scores.speed_score);
     const priceScore = asFiniteNumber(scores.price_score);
-    const overallPercentile =
-      overallScore == null ? null : percentileRank(overallScores, overallScore);
     const intelligencePercentile =
       intelligenceScore == null
         ? null
@@ -446,6 +538,24 @@ function withComputedPercentiles(
       speedScore == null ? null : percentileRank(speedScores, speedScore);
     const pricePercentile =
       priceScore == null ? null : percentileRank(priceScores, priceScore);
+    const overallPercentile = weightedMean([
+      {
+        value: intelligencePercentile,
+        weight: SCORE_WEIGHTS.intelligence,
+      },
+      {
+        value: agenticPercentile,
+        weight: SCORE_WEIGHTS.agentic,
+      },
+      {
+        value: pricePercentile,
+        weight: SCORE_WEIGHTS.price,
+      },
+      {
+        value: speedPercentile,
+        weight: SCORE_WEIGHTS.speed,
+      },
+    ]);
 
     return {
       ...model,
@@ -806,10 +916,57 @@ function buildLogo(model: JsonObject, provider: string | null): string {
   return `https://models.dev/logos/${provider ?? "unknown"}.svg`;
 }
 
-function buildSpeed(model: JsonObject): JsonObject {
-  return Object.fromEntries(
-    Object.entries(model).filter(([key]) => key.startsWith("median_")),
-  );
+function normalizeOpenRouterSpeed(performance: unknown): JsonObject {
+  const parsed = asRecord(performance);
+  return {
+    throughput_tokens_per_second_median: asFiniteNumber(
+      parsed.throughput_tokens_per_second_median,
+    ),
+    latency_seconds_median: asFiniteNumber(parsed.latency_seconds_median),
+    e2e_latency_seconds_median: asFiniteNumber(
+      parsed.e2e_latency_seconds_median,
+    ),
+  };
+}
+
+async function buildOpenRouterSpeedById(
+  unionModels: Record<string, unknown>[],
+): Promise<Map<string, JsonObject>> {
+  const modelIds = unionModels
+    .map((row) => asRecord(row).id)
+    .filter((id): id is string => typeof id === "string" && id.length > 0);
+  if (modelIds.length === 0) {
+    return new Map();
+  }
+
+  try {
+    const payload = await getOpenRouterScrapedStats({
+      modelIds,
+      concurrency: OPENROUTER_SPEED_CONCURRENCY,
+    });
+    return new Map(
+      payload.models.map((model) => [
+        model.id,
+        normalizeOpenRouterSpeed(model.performance),
+      ]),
+    );
+  } catch {
+    return new Map();
+  }
+}
+
+function buildSpeed(
+  modelId: string | null,
+  openRouterSpeedById: Map<string, JsonObject>,
+): JsonObject {
+  if (!modelId) {
+    return { ...EMPTY_OPENROUTER_SPEED };
+  }
+  const speed = openRouterSpeedById.get(modelId);
+  if (!speed) {
+    return { ...EMPTY_OPENROUTER_SPEED };
+  }
+  return speed;
 }
 
 function buildCost(model: JsonObject): unknown {
@@ -1134,11 +1291,17 @@ async function loadModelStatsSelectedFromCache(
   }
 }
 
-function mapUnionModelToSelected(unionModel: unknown): ModelStatsSelectedModel {
+function mapUnionModelToSelected(
+  unionModel: unknown,
+  openRouterSpeedById: Map<string, JsonObject>,
+  speedOutputTokenAnchors: number[],
+): ModelStatsSelectedModel {
   const model = asRecord(unionModel);
   const provider = providerFromModel(model);
+  const modelId = typeof model.id === "string" ? model.id : null;
+  const speed = buildSpeed(modelId, openRouterSpeedById);
   return {
-    id: typeof model.id === "string" ? model.id : null,
+    id: modelId,
     name: typeof model.name === "string" ? model.name : null,
     provider,
     logo: buildLogo(model, provider),
@@ -1151,11 +1314,11 @@ function mapUnionModelToSelected(unionModel: unknown): ModelStatsSelectedModel {
       typeof model.open_weights === "boolean" ? model.open_weights : null,
     cost: buildCost(model),
     context_window: model.limit ?? null,
-    speed: buildSpeed(model),
+    speed,
     intelligence: buildIntelligence(model),
     intelligence_index_cost: buildIntelligenceIndexCost(model),
     evaluations: buildEvaluations(model),
-    scores: buildScores(model),
+    scores: buildScores(model, speed, speedOutputTokenAnchors),
     percentiles: null,
   };
 }
@@ -1184,7 +1347,18 @@ export async function getModelStatsSelected(
     const dedupedUnionModels = dedupeUnionModelsPreferOpenrouter(unionModels);
     const unionModelsWithCostBackfill =
       backfillFreeRouteCosts(dedupedUnionModels);
-    const allModels = unionModelsWithCostBackfill.map(mapUnionModelToSelected);
+    const openRouterSpeedById = await buildOpenRouterSpeedById(
+      unionModelsWithCostBackfill,
+    );
+    const speedOutputTokenAnchors =
+      deriveSpeedOutputTokenAnchors(openRouterSpeedById);
+    const allModels = unionModelsWithCostBackfill.map((model) =>
+      mapUnionModelToSelected(
+        model,
+        openRouterSpeedById,
+        speedOutputTokenAnchors,
+      ),
+    );
     const modelsWithComputedPercentiles = withComputedPercentiles(allModels);
     const prunedModels = pruneSparseFields(modelsWithComputedPercentiles);
     const filteredModels = filterModelsById(prunedModels, options.id);
