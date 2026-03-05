@@ -12,7 +12,25 @@ import { getModelsDevStats } from "./data-sources/llm/models-dev";
 const DEFAULT_OUTPUT_PATH = resolve(".cache/model_stats.json");
 const CACHE_DIR = resolve(".cache");
 const CACHE_TTL_SECONDS = 60 * 60 * 24;
-const NULL_FIELD_PRUNE_THRESHOLD = 0.25;
+const NULL_FIELD_PRUNE_THRESHOLD = 0.5;
+const NULL_FIELD_PRUNE_RECENT_LOOKBACK_DAYS = 90;
+const STABLE_TOP_LEVEL_KEYS = new Set<string>([
+  "id",
+  "name",
+  "provider",
+  "logo",
+  "attachment",
+  "reasoning",
+  "release_date",
+  "modalities",
+  "open_weights",
+  "cost",
+  "context_window",
+  "speed",
+  "evaluations",
+  "scores",
+  "percentiles",
+]);
 
 type JsonObject = Record<string, unknown>;
 type ModelsDevModel = Awaited<
@@ -488,6 +506,58 @@ function isPlainObject(value: unknown): value is JsonObject {
   return value != null && typeof value === "object" && !Array.isArray(value);
 }
 
+function isWithinRecentLookback(
+  releaseDate: string | null,
+  lookbackDays: number,
+): boolean {
+  if (typeof releaseDate !== "string" || releaseDate.length === 0) {
+    return false;
+  }
+  const releaseTimestampMs = Date.parse(releaseDate);
+  if (!Number.isFinite(releaseTimestampMs)) {
+    return false;
+  }
+  const cutoffMs = Date.now() - lookbackDays * 24 * 60 * 60 * 1000;
+  return releaseTimestampMs >= cutoffMs;
+}
+
+function selectPruneSampleModels(
+  models: ModelStatsSelectedModel[],
+): ModelStatsSelectedModel[] {
+  const recentModels = models.filter((model) =>
+    isWithinRecentLookback(
+      model.release_date,
+      NULL_FIELD_PRUNE_RECENT_LOOKBACK_DAYS,
+    ),
+  );
+  return recentModels.length > 0 ? recentModels : models;
+}
+
+function countNullishTopLevelKey(
+  models: ModelStatsSelectedModel[],
+  key: string,
+): number {
+  return models.reduce((count, model) => {
+    const modelRecord = asRecord(model);
+    return modelRecord[key] == null ? count + 1 : count;
+  }, 0);
+}
+
+function countNullishNestedKey(
+  models: ModelStatsSelectedModel[],
+  parentKey: string,
+  nestedKey: string,
+): number {
+  return models.reduce((count, model) => {
+    const modelRecord = asRecord(model);
+    const parentValue = modelRecord[parentKey];
+    if (!isPlainObject(parentValue) || parentValue[nestedKey] == null) {
+      return count + 1;
+    }
+    return count;
+  }, 0);
+}
+
 function pruneSparseFields(
   models: ModelStatsSelectedModel[],
   nullThreshold: number = NULL_FIELD_PRUNE_THRESHOLD,
@@ -496,7 +566,8 @@ function pruneSparseFields(
     return models;
   }
 
-  const total = models.length;
+  const sampleModels = selectPruneSampleModels(models);
+  const sampleTotal = sampleModels.length;
   const topLevelKeys = new Set<string>();
   const nestedKeysByParent = new Map<string, Set<string>>();
 
@@ -515,35 +586,12 @@ function pruneSparseFields(
   }
 
   const topLevelKeysToPrune = new Set<string>();
-  const stableTopLevelKeys = new Set<string>([
-    "id",
-    "name",
-    "provider",
-    "logo",
-    "attachment",
-    "reasoning",
-    "release_date",
-    "modalities",
-    "open_weights",
-    "cost",
-    "context_window",
-    "speed",
-    "evaluations",
-    "scores",
-    "percentiles",
-  ]);
   for (const key of topLevelKeys) {
-    if (stableTopLevelKeys.has(key)) {
+    if (STABLE_TOP_LEVEL_KEYS.has(key)) {
       continue;
     }
-    let nullCount = 0;
-    for (const model of models) {
-      const modelRecord = model as JsonObject;
-      if (modelRecord[key] == null) {
-        nullCount += 1;
-      }
-    }
-    if (nullCount / total > nullThreshold) {
+    const nullCount = countNullishTopLevelKey(sampleModels, key);
+    if (nullCount / sampleTotal > nullThreshold) {
       topLevelKeysToPrune.add(key);
     }
   }
@@ -552,15 +600,12 @@ function pruneSparseFields(
   for (const [parentKey, nestedKeys] of nestedKeysByParent) {
     const keysToPrune = new Set<string>();
     for (const nestedKey of nestedKeys) {
-      let nullCount = 0;
-      for (const model of models) {
-        const modelRecord = model as JsonObject;
-        const parentValue = modelRecord[parentKey];
-        if (!isPlainObject(parentValue) || parentValue[nestedKey] == null) {
-          nullCount += 1;
-        }
-      }
-      if (nullCount / total > nullThreshold) {
+      const nullCount = countNullishNestedKey(
+        sampleModels,
+        parentKey,
+        nestedKey,
+      );
+      if (nullCount / sampleTotal > nullThreshold) {
         keysToPrune.add(nestedKey);
       }
     }
