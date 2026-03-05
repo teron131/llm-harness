@@ -15,6 +15,15 @@ const CACHE_DIR = resolve(".cache");
 const CACHE_TTL_SECONDS = 60 * 60 * 24;
 const NULL_FIELD_PRUNE_THRESHOLD = 0.5;
 const NULL_FIELD_PRUNE_RECENT_LOOKBACK_DAYS = 90;
+const MIN_INTELLIGENCE_COST_TOKEN_THRESHOLD = 1_000_000;
+const INTELLIGENCE_COST_TOTAL_COST_KEY = "intelligence_index_cost_total_cost";
+const INTELLIGENCE_COST_TOTAL_TOKENS_KEY =
+  "intelligence_index_cost_total_tokens";
+const INTELLIGENCE_COST_KEYS = [
+  INTELLIGENCE_COST_TOTAL_COST_KEY,
+  INTELLIGENCE_COST_TOTAL_TOKENS_KEY,
+] as const;
+const LETTER_SUFFIX_REGEX = /^[a-z-]+$/;
 const INTELLIGENCE_BENCHMARK_KEYS = [
   "omniscience_accuracy",
   "hle",
@@ -150,8 +159,28 @@ function asRecord(value: unknown): JsonObject {
 }
 
 function asFiniteNumber(value: unknown): number | null {
+  if (value == null) {
+    return null;
+  }
+  if (typeof value === "string" && value.trim().length === 0) {
+    return null;
+  }
   const numericValue = Number(value);
   return Number.isFinite(numericValue) ? numericValue : null;
+}
+
+function normalizeProviderModelId(id: string): string {
+  const slashIndex = id.indexOf("/");
+  if (slashIndex <= 0) {
+    return id.toLowerCase().replace(/\./g, "-").replace(/-+/g, "-");
+  }
+  const provider = id.slice(0, slashIndex).toLowerCase();
+  const model = id
+    .slice(slashIndex + 1)
+    .toLowerCase()
+    .replace(/\./g, "-")
+    .replace(/-+/g, "-");
+  return `${provider}/${model}`;
 }
 
 function meanOfFinite(values: Array<number | null>): number | null {
@@ -163,6 +192,32 @@ function meanOfFinite(values: Array<number | null>): number | null {
   }
   const total = finiteValues.reduce((sum, value) => sum + value, 0);
   return total / finiteValues.length;
+}
+
+function normalizeIntelligenceCostFields(intelligence: JsonObject): JsonObject {
+  const totalTokens = asFiniteNumber(
+    intelligence[INTELLIGENCE_COST_TOTAL_TOKENS_KEY],
+  );
+  const totalCost = asFiniteNumber(
+    intelligence[INTELLIGENCE_COST_TOTAL_COST_KEY],
+  );
+  if (
+    totalTokens == null ||
+    totalTokens < MIN_INTELLIGENCE_COST_TOKEN_THRESHOLD ||
+    totalCost == null ||
+    totalCost <= 0
+  ) {
+    return {
+      ...intelligence,
+      [INTELLIGENCE_COST_TOTAL_TOKENS_KEY]: null,
+      [INTELLIGENCE_COST_TOTAL_COST_KEY]: null,
+    };
+  }
+  return {
+    ...intelligence,
+    [INTELLIGENCE_COST_TOTAL_TOKENS_KEY]: totalTokens,
+    [INTELLIGENCE_COST_TOTAL_COST_KEY]: totalCost,
+  };
 }
 
 function buildEvaluations(model: JsonObject): unknown {
@@ -179,7 +234,10 @@ function buildIntelligence(model: JsonObject): unknown {
     intelligence.omniscience_nonhallucination_rate = nonhallucinationRate;
     delete intelligence.omniscience_hallucination_rate;
   }
-  return Object.keys(intelligence).length > 0 ? intelligence : null;
+  const normalizedIntelligence = normalizeIntelligenceCostFields(intelligence);
+  return Object.keys(normalizedIntelligence).length > 0
+    ? normalizedIntelligence
+    : null;
 }
 
 function metricValue(model: JsonObject, key: string): number | null {
@@ -618,6 +676,140 @@ function filterModelsById(
   return models.filter((model) => model.id === id);
 }
 
+function hasIntelligenceCost(row: JsonObject): boolean {
+  const intelligence = asRecord(row.intelligence);
+  return asFiniteNumber(intelligence[INTELLIGENCE_COST_TOTAL_COST_KEY]) != null;
+}
+
+function hasOverallScore(row: JsonObject): boolean {
+  const scores = asRecord(row.scores);
+  return asFiniteNumber(scores.overall_score) != null;
+}
+
+function unionRowPriority(row: JsonObject): number {
+  const providerId = row.provider_id;
+  const openrouterBoost =
+    providerId === PRIMARY_PROVIDER_FILTER ? 1_000_000 : 0;
+  const intelligenceCostBoost = hasIntelligenceCost(row) ? 1_000 : 0;
+  const overallScoreBoost = hasOverallScore(row) ? 10 : 0;
+  return openrouterBoost + intelligenceCostBoost + overallScoreBoost;
+}
+
+function dedupeUnionModelsPreferOpenrouter(
+  unionModels: Record<string, unknown>[],
+): Record<string, unknown>[] {
+  const groupedByNormalizedId = new Map<string, JsonObject[]>();
+  const passthrough: Record<string, unknown>[] = [];
+
+  for (const row of unionModels) {
+    const typedRow = asRecord(row);
+    const id = typeof typedRow.id === "string" ? typedRow.id : null;
+    if (!id) {
+      passthrough.push(row);
+      continue;
+    }
+    const key = normalizeProviderModelId(id);
+    const group = groupedByNormalizedId.get(key) ?? [];
+    group.push(typedRow);
+    groupedByNormalizedId.set(key, group);
+  }
+
+  const dedupedRows: JsonObject[] = [];
+  for (const group of groupedByNormalizedId.values()) {
+    const winner = [...group].sort(
+      (left, right) => unionRowPriority(right) - unionRowPriority(left),
+    )[0] as JsonObject;
+    const winnerIntelligence = asRecord(winner.intelligence);
+    const mergedIntelligence: JsonObject = { ...winnerIntelligence };
+    for (const key of INTELLIGENCE_COST_KEYS) {
+      if (asFiniteNumber(mergedIntelligence[key]) != null) {
+        continue;
+      }
+      for (const candidate of group) {
+        const candidateIntelligence = asRecord(candidate.intelligence);
+        if (asFiniteNumber(candidateIntelligence[key]) != null) {
+          mergedIntelligence[key] = candidateIntelligence[key];
+          break;
+        }
+      }
+    }
+    dedupedRows.push({
+      ...winner,
+      intelligence: mergedIntelligence,
+    });
+  }
+
+  return [...passthrough, ...dedupedRows];
+}
+
+async function backfillIntelligenceCostFromScraped(
+  models: ModelStatsSelectedModel[],
+): Promise<ModelStatsSelectedModel[]> {
+  const scrapedStats = await getArtificialAnalysisScrapedEvalsOnlyStats();
+  const scrapedById = new Map<string, JsonObject>();
+  for (const row of scrapedStats.data) {
+    const rowRecord = asRecord(row);
+    const modelId = rowRecord.model_id;
+    if (typeof modelId !== "string" || modelId.length === 0) {
+      continue;
+    }
+    scrapedById.set(normalizeProviderModelId(modelId), rowRecord);
+  }
+
+  const pickBackfillValue = (
+    baseFamilyId: string,
+    key: (typeof INTELLIGENCE_COST_KEYS)[number],
+  ): number | null => {
+    const direct = scrapedById.get(baseFamilyId);
+    const directValue = asFiniteNumber(asRecord(direct?.intelligence)[key]);
+    if (directValue != null) {
+      return directValue;
+    }
+    let fallbackValue: number | null = null;
+    for (const [scrapedId, row] of scrapedById) {
+      if (!scrapedId.startsWith(`${baseFamilyId}-`)) {
+        continue;
+      }
+      const suffix = scrapedId.slice(baseFamilyId.length + 1);
+      if (!LETTER_SUFFIX_REGEX.test(suffix)) {
+        continue;
+      }
+      const candidateValue = asFiniteNumber(asRecord(row.intelligence)[key]);
+      if (candidateValue != null) {
+        fallbackValue = candidateValue;
+        break;
+      }
+    }
+    return fallbackValue;
+  };
+
+  return models.map((model) => {
+    if (typeof model.id !== "string" || model.id.length === 0) {
+      return model;
+    }
+    const baseFamilyId = normalizeProviderModelId(model.id);
+    const intelligence = asRecord(model.intelligence);
+    const hasRawCost = intelligence[INTELLIGENCE_COST_TOTAL_COST_KEY] != null;
+    const hasRawTokens =
+      intelligence[INTELLIGENCE_COST_TOTAL_TOKENS_KEY] != null;
+    const cost = hasRawCost
+      ? asFiniteNumber(intelligence[INTELLIGENCE_COST_TOTAL_COST_KEY])
+      : pickBackfillValue(baseFamilyId, INTELLIGENCE_COST_TOTAL_COST_KEY);
+    const tokens = hasRawTokens
+      ? asFiniteNumber(intelligence[INTELLIGENCE_COST_TOTAL_TOKENS_KEY])
+      : pickBackfillValue(baseFamilyId, INTELLIGENCE_COST_TOTAL_TOKENS_KEY);
+    const normalizedIntelligence = normalizeIntelligenceCostFields({
+      ...intelligence,
+      [INTELLIGENCE_COST_TOTAL_COST_KEY]: cost,
+      [INTELLIGENCE_COST_TOTAL_TOKENS_KEY]: tokens,
+    });
+    return {
+      ...model,
+      intelligence: normalizedIntelligence,
+    };
+  });
+}
+
 function isPlainObject(value: unknown): value is JsonObject {
   return value != null && typeof value === "object" && !Array.isArray(value);
 }
@@ -832,8 +1024,13 @@ export async function getModelStatsSelected(
     }
 
     const unionModels = await buildUnionModelsWithApiKey(options.apiKey);
-    const allModels = unionModels.map(mapUnionModelToSelected);
-    const modelsWithAgenticPercentiles = withAgenticPercentiles(allModels);
+    const dedupedUnionModels = dedupeUnionModelsPreferOpenrouter(unionModels);
+    const allModels = dedupedUnionModels.map(mapUnionModelToSelected);
+    const modelsWithCostBackfill =
+      await backfillIntelligenceCostFromScraped(allModels);
+    const modelsWithAgenticPercentiles = withAgenticPercentiles(
+      modelsWithCostBackfill,
+    );
     const prunedModels = pruneSparseFields(modelsWithAgenticPercentiles);
     const filteredModels = filterModelsById(prunedModels, options.id);
     const fetchedAt = nowEpochSeconds();

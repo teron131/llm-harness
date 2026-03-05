@@ -5,6 +5,7 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const ROW_DETECTION_KEY = "intelligence_index";
 const SPARSE_COLUMN_NULL_RATIO = 0.5;
 const MODEL_SEARCH_BACKTRACK_CHARS = 20_000;
+const MIN_INTELLIGENCE_COST_TOKEN_THRESHOLD = 1_000_000;
 const NEXT_FLIGHT_CHUNK_REGEX =
   /self\.__next_f\.push\(\[1,\"([\s\S]*?)\"\]\)<\/script>/g;
 
@@ -101,6 +102,24 @@ function pickEvaluations(row: JsonObject): JsonObject {
 }
 
 function pickIntelligence(row: JsonObject): JsonObject {
+  const intelligenceTokenCounts = asRecord(row.intelligence_index_token_counts);
+  const inputTokens =
+    typeof row.input_tokens === "number"
+      ? row.input_tokens
+      : typeof intelligenceTokenCounts.input_tokens === "number"
+        ? intelligenceTokenCounts.input_tokens
+        : typeof row.total_input_tokens_api === "number"
+          ? row.total_input_tokens_api
+          : null;
+  const outputTokens =
+    typeof row.output_tokens === "number"
+      ? row.output_tokens
+      : typeof intelligenceTokenCounts.output_tokens === "number"
+        ? intelligenceTokenCounts.output_tokens
+        : typeof row.total_answer_tokens_api === "number"
+          ? row.total_answer_tokens_api
+          : null;
+
   const intelligence: JsonObject = {
     intelligence_index:
       typeof row.intelligence_index === "number"
@@ -115,7 +134,18 @@ function pickIntelligence(row: JsonObject): JsonObject {
     omniscience_accuracy: null,
     omniscience_nonhallucination_rate: null,
     intelligence_index_cost_total_cost: null,
+    intelligence_index_cost_total_tokens: null,
   };
+  const totalTokens =
+    (inputTokens ?? 0) + (outputTokens ?? 0) > 0
+      ? (inputTokens ?? 0) + (outputTokens ?? 0)
+      : null;
+  if (
+    typeof totalTokens === "number" &&
+    totalTokens >= MIN_INTELLIGENCE_COST_TOKEN_THRESHOLD
+  ) {
+    intelligence.intelligence_index_cost_total_tokens = totalTokens;
+  }
   const omniscienceBreakdown = asRecord(row.omniscience_breakdown);
   const omniscienceTotal = asRecord(omniscienceBreakdown.total);
   if (typeof omniscienceTotal.accuracy === "number") {
@@ -126,7 +156,10 @@ function pickIntelligence(row: JsonObject): JsonObject {
       omniscienceTotal.hallucination_rate;
   }
   const intelligenceIndexCost = asRecord(row.intelligence_index_cost);
-  if (typeof intelligenceIndexCost.total_cost === "number") {
+  if (
+    intelligence.intelligence_index_cost_total_tokens != null &&
+    typeof intelligenceIndexCost.total_cost === "number"
+  ) {
     intelligence.intelligence_index_cost_total_cost =
       intelligenceIndexCost.total_cost;
   }
