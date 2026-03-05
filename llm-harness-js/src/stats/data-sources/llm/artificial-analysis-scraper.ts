@@ -37,6 +37,7 @@ export const ARTIFICIAL_ANALYSIS_EVALS_ONLY_COLUMNS = [
   "model_id",
   "logo",
   "intelligence",
+  "intelligence_index_cost",
   "evaluations",
 ] as const;
 
@@ -104,21 +105,36 @@ function pickEvaluations(row: JsonObject): JsonObject {
 function pickIntelligence(row: JsonObject): JsonObject {
   const intelligenceTokenCounts = asRecord(row.intelligence_index_token_counts);
   const inputTokens =
-    typeof row.input_tokens === "number"
-      ? row.input_tokens
-      : typeof intelligenceTokenCounts.input_tokens === "number"
-        ? intelligenceTokenCounts.input_tokens
-        : typeof row.total_input_tokens_api === "number"
-          ? row.total_input_tokens_api
+    typeof intelligenceTokenCounts.input_tokens === "number"
+      ? intelligenceTokenCounts.input_tokens
+      : typeof row.total_input_tokens_api === "number"
+        ? row.total_input_tokens_api
+        : typeof row.input_tokens === "number"
+          ? row.input_tokens
           : null;
+  const tokenCountOutputTokens =
+    typeof intelligenceTokenCounts.output_tokens === "number"
+      ? intelligenceTokenCounts.output_tokens
+      : null;
+  const tokenCountAnswerTokens =
+    typeof intelligenceTokenCounts.answer_tokens === "number"
+      ? intelligenceTokenCounts.answer_tokens
+      : null;
+  const tokenCountReasoningTokens =
+    typeof intelligenceTokenCounts.reasoning_tokens === "number"
+      ? intelligenceTokenCounts.reasoning_tokens
+      : null;
+  const tokenCountOutputFromParts =
+    (tokenCountAnswerTokens ?? 0) + (tokenCountReasoningTokens ?? 0) > 0
+      ? (tokenCountAnswerTokens ?? 0) + (tokenCountReasoningTokens ?? 0)
+      : null;
   const outputTokens =
-    typeof row.output_tokens === "number"
-      ? row.output_tokens
-      : typeof intelligenceTokenCounts.output_tokens === "number"
-        ? intelligenceTokenCounts.output_tokens
-        : typeof row.total_answer_tokens_api === "number"
-          ? row.total_answer_tokens_api
-          : null;
+    tokenCountOutputTokens ??
+    tokenCountOutputFromParts ??
+    (typeof row.total_answer_tokens_api === "number"
+      ? row.total_answer_tokens_api
+      : null) ??
+    (typeof row.output_tokens === "number" ? row.output_tokens : null);
 
   const intelligence: JsonObject = {
     intelligence_index:
@@ -133,19 +149,7 @@ function pickIntelligence(row: JsonObject): JsonObject {
       typeof row.omniscience === "number" ? row.omniscience : null,
     omniscience_accuracy: null,
     omniscience_nonhallucination_rate: null,
-    intelligence_index_cost_total_cost: null,
-    intelligence_index_cost_total_tokens: null,
   };
-  const totalTokens =
-    (inputTokens ?? 0) + (outputTokens ?? 0) > 0
-      ? (inputTokens ?? 0) + (outputTokens ?? 0)
-      : null;
-  if (
-    typeof totalTokens === "number" &&
-    totalTokens >= MIN_INTELLIGENCE_COST_TOKEN_THRESHOLD
-  ) {
-    intelligence.intelligence_index_cost_total_tokens = totalTokens;
-  }
   const omniscienceBreakdown = asRecord(row.omniscience_breakdown);
   const omniscienceTotal = asRecord(omniscienceBreakdown.total);
   if (typeof omniscienceTotal.accuracy === "number") {
@@ -155,15 +159,71 @@ function pickIntelligence(row: JsonObject): JsonObject {
     intelligence.omniscience_nonhallucination_rate =
       omniscienceTotal.hallucination_rate;
   }
-  const intelligenceIndexCost = asRecord(row.intelligence_index_cost);
-  if (
-    intelligence.intelligence_index_cost_total_tokens != null &&
-    typeof intelligenceIndexCost.total_cost === "number"
-  ) {
-    intelligence.intelligence_index_cost_total_cost =
-      intelligenceIndexCost.total_cost;
-  }
   return intelligence;
+}
+
+function pickIntelligenceIndexCost(row: JsonObject): JsonObject {
+  const intelligenceTokenCounts = asRecord(row.intelligence_index_token_counts);
+  const intelligenceIndexCost = asRecord(row.intelligence_index_cost);
+  const inputTokens =
+    typeof intelligenceTokenCounts.input_tokens === "number"
+      ? intelligenceTokenCounts.input_tokens
+      : typeof row.total_input_tokens_api === "number"
+        ? row.total_input_tokens_api
+        : typeof row.input_tokens === "number"
+          ? row.input_tokens
+          : null;
+  const outputTokens =
+    typeof intelligenceTokenCounts.output_tokens === "number"
+      ? intelligenceTokenCounts.output_tokens
+      : null;
+  const answerTokens =
+    typeof intelligenceTokenCounts.answer_tokens === "number"
+      ? intelligenceTokenCounts.answer_tokens
+      : null;
+  const reasoningTokens =
+    typeof intelligenceTokenCounts.reasoning_tokens === "number"
+      ? intelligenceTokenCounts.reasoning_tokens
+      : null;
+  const outputFromParts =
+    (answerTokens ?? 0) + (reasoningTokens ?? 0) > 0
+      ? (answerTokens ?? 0) + (reasoningTokens ?? 0)
+      : null;
+  const totalTokens =
+    outputTokens ??
+    outputFromParts ??
+    (typeof row.total_answer_tokens_api === "number"
+      ? row.total_answer_tokens_api
+      : null) ??
+    (typeof row.output_tokens === "number" ? row.output_tokens : null);
+
+  return {
+    input_cost:
+      typeof intelligenceIndexCost.input_cost === "number"
+        ? intelligenceIndexCost.input_cost
+        : null,
+    reasoning_cost:
+      typeof intelligenceIndexCost.reasoning_cost === "number"
+        ? intelligenceIndexCost.reasoning_cost
+        : null,
+    output_cost:
+      typeof intelligenceIndexCost.output_cost === "number"
+        ? intelligenceIndexCost.output_cost
+        : null,
+    total_cost:
+      typeof intelligenceIndexCost.total_cost === "number"
+        ? intelligenceIndexCost.total_cost
+        : null,
+    input_tokens: inputTokens,
+    reasoning_tokens: reasoningTokens,
+    answer_tokens: answerTokens,
+    output_tokens: outputTokens,
+    total_tokens:
+      typeof totalTokens === "number" &&
+      totalTokens >= MIN_INTELLIGENCE_COST_TOKEN_THRESHOLD
+        ? totalTokens
+        : null,
+  };
 }
 
 function normalizeUndefinedToNull(value: unknown): unknown {
@@ -458,9 +518,9 @@ function getSelectedColumnValue(
         row.intelligence_index_token_counts,
       );
       return (
-        row.input_tokens ??
         intelligenceTokenCounts.input_tokens ??
         row.total_input_tokens_api ??
+        row.input_tokens ??
         null
       );
     }
@@ -468,10 +528,23 @@ function getSelectedColumnValue(
       const intelligenceTokenCounts = asRecord(
         row.intelligence_index_token_counts,
       );
+      const answerTokens =
+        typeof intelligenceTokenCounts.answer_tokens === "number"
+          ? intelligenceTokenCounts.answer_tokens
+          : null;
+      const reasoningTokens =
+        typeof intelligenceTokenCounts.reasoning_tokens === "number"
+          ? intelligenceTokenCounts.reasoning_tokens
+          : null;
+      const outputFromParts =
+        (answerTokens ?? 0) + (reasoningTokens ?? 0) > 0
+          ? (answerTokens ?? 0) + (reasoningTokens ?? 0)
+          : null;
       return (
-        row.output_tokens ??
         intelligenceTokenCounts.output_tokens ??
+        outputFromParts ??
         row.total_answer_tokens_api ??
+        row.output_tokens ??
         null
       );
     }
@@ -491,6 +564,8 @@ function getSelectedColumnValue(
       return pickEvaluations(row);
     case "intelligence":
       return pickIntelligence(row);
+    case "intelligence_index_cost":
+      return pickIntelligenceIndexCost(row);
     default:
       return NO_COLUMN_VALUE;
   }

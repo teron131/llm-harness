@@ -19,11 +19,6 @@ const MIN_INTELLIGENCE_COST_TOKEN_THRESHOLD = 1_000_000;
 const INTELLIGENCE_COST_TOTAL_COST_KEY = "intelligence_index_cost_total_cost";
 const INTELLIGENCE_COST_TOTAL_TOKENS_KEY =
   "intelligence_index_cost_total_tokens";
-const INTELLIGENCE_COST_KEYS = [
-  INTELLIGENCE_COST_TOTAL_COST_KEY,
-  INTELLIGENCE_COST_TOTAL_TOKENS_KEY,
-] as const;
-const LETTER_SUFFIX_REGEX = /^[a-z-]+$/;
 const INTELLIGENCE_BENCHMARK_KEYS = [
   "omniscience_accuracy",
   "hle",
@@ -36,6 +31,12 @@ const AGENTIC_BENCHMARK_KEYS = [
   "ifbench",
   "terminalbench_hard",
 ] as const;
+const SCORE_WEIGHTS = {
+  intelligence: 0.4,
+  agentic: 0.3,
+  price: 0.15,
+  speed: 0.15,
+} as const;
 const STABLE_TOP_LEVEL_KEYS = new Set<string>([
   "id",
   "name",
@@ -50,6 +51,7 @@ const STABLE_TOP_LEVEL_KEYS = new Set<string>([
   "context_window",
   "speed",
   "intelligence",
+  "intelligence_index_cost",
   "evaluations",
   "scores",
   "percentiles",
@@ -67,6 +69,7 @@ type ScrapedEvalModel = {
   logo?: unknown;
   evaluations?: unknown;
   intelligence?: unknown;
+  intelligence_index_cost?: unknown;
 };
 
 const PRIMARY_PROVIDER_FILTER = "openrouter" as const;
@@ -89,6 +92,7 @@ export type ModelStatsSelectedModel = {
   context_window: unknown;
   speed: JsonObject;
   intelligence: unknown;
+  intelligence_index_cost: unknown;
   evaluations: unknown;
   scores: unknown;
   percentiles: unknown;
@@ -194,30 +198,34 @@ function meanOfFinite(values: Array<number | null>): number | null {
   return total / finiteValues.length;
 }
 
-function normalizeIntelligenceCostFields(intelligence: JsonObject): JsonObject {
-  const totalTokens = asFiniteNumber(
-    intelligence[INTELLIGENCE_COST_TOTAL_TOKENS_KEY],
-  );
-  const totalCost = asFiniteNumber(
-    intelligence[INTELLIGENCE_COST_TOTAL_COST_KEY],
-  );
-  if (
-    totalTokens == null ||
-    totalTokens < MIN_INTELLIGENCE_COST_TOKEN_THRESHOLD ||
-    totalCost == null ||
-    totalCost <= 0
-  ) {
-    return {
-      ...intelligence,
-      [INTELLIGENCE_COST_TOTAL_TOKENS_KEY]: null,
-      [INTELLIGENCE_COST_TOTAL_COST_KEY]: null,
-    };
+function reciprocalLog10(value: unknown, invert = false): number | null {
+  const numericValue = asFiniteNumber(value);
+  if (numericValue == null || numericValue <= 0) {
+    return null;
   }
-  return {
-    ...intelligence,
-    [INTELLIGENCE_COST_TOTAL_TOKENS_KEY]: totalTokens,
-    [INTELLIGENCE_COST_TOTAL_COST_KEY]: totalCost,
-  };
+  const logValue = Math.log10(numericValue);
+  return invert ? -logValue : logValue;
+}
+
+function weightedMean(
+  pairs: Array<{ value: number | null; weight: number }>,
+): number | null {
+  const validPairs = pairs.filter(
+    (pair) =>
+      pair.value != null &&
+      Number.isFinite(pair.value) &&
+      Number.isFinite(pair.weight) &&
+      pair.weight > 0,
+  );
+  if (validPairs.length === 0) {
+    return null;
+  }
+  const weightedSum = validPairs.reduce(
+    (sum, pair) => sum + (pair.value as number) * pair.weight,
+    0,
+  );
+  const weightSum = validPairs.reduce((sum, pair) => sum + pair.weight, 0);
+  return weightSum > 0 ? weightedSum / weightSum : null;
 }
 
 function buildEvaluations(model: JsonObject): unknown {
@@ -234,10 +242,33 @@ function buildIntelligence(model: JsonObject): unknown {
     intelligence.omniscience_nonhallucination_rate = nonhallucinationRate;
     delete intelligence.omniscience_hallucination_rate;
   }
-  const normalizedIntelligence = normalizeIntelligenceCostFields(intelligence);
-  return Object.keys(normalizedIntelligence).length > 0
-    ? normalizedIntelligence
-    : null;
+  delete intelligence[INTELLIGENCE_COST_TOTAL_COST_KEY];
+  delete intelligence[INTELLIGENCE_COST_TOTAL_TOKENS_KEY];
+  return Object.keys(intelligence).length > 0 ? intelligence : null;
+}
+
+function buildIntelligenceIndexCost(model: JsonObject): unknown {
+  const fromRow = asRecord(model.intelligence_index_cost);
+  const fromIntelligence = asRecord(model.intelligence);
+  const totalCost =
+    asFiniteNumber(fromRow.total_cost) ??
+    asFiniteNumber(fromIntelligence[INTELLIGENCE_COST_TOTAL_COST_KEY]);
+  const totalTokens =
+    asFiniteNumber(fromRow.total_tokens) ??
+    asFiniteNumber(fromIntelligence[INTELLIGENCE_COST_TOTAL_TOKENS_KEY]);
+  const normalized = {
+    ...fromRow,
+    total_cost: totalCost,
+    total_tokens:
+      totalTokens != null &&
+      totalTokens >= MIN_INTELLIGENCE_COST_TOKEN_THRESHOLD
+        ? totalTokens
+        : null,
+  } as JsonObject;
+  const cleaned = Object.fromEntries(
+    Object.entries(normalized).filter(([, value]) => value != null),
+  );
+  return Object.keys(cleaned).length > 0 ? cleaned : null;
 }
 
 function metricValue(model: JsonObject, key: string): number | null {
@@ -262,8 +293,57 @@ function metricValue(model: JsonObject, key: string): number | null {
   );
 }
 
+function blendedPriceValue(model: JsonObject): number | null {
+  const cost = asRecord(model.cost);
+  const inputCost = asFiniteNumber(cost.input);
+  const outputCost = asFiniteNumber(cost.output);
+  const cacheReadCost = asFiniteNumber(cost.cache_read);
+  const cacheWriteCost = asFiniteNumber(cost.cache_write);
+  if (
+    inputCost == null ||
+    outputCost == null ||
+    inputCost <= 0 ||
+    outputCost <= 0
+  ) {
+    return null;
+  }
+  const cacheWeightedInput = cacheReadCost != null ? cacheReadCost : inputCost;
+  const cacheWeightedOutput =
+    cacheWriteCost != null
+      ? 0.1 * cacheWriteCost + 0.9 * outputCost
+      : outputCost;
+  const baseProxy =
+    0.9 * (0.75 * cacheWeightedInput + 0.25 * inputCost) +
+    0.1 * cacheWeightedOutput;
+
+  const over200kCost = asRecord(cost.context_over_200k);
+  const over200kInput = asFiniteNumber(over200kCost.input);
+  const over200kOutput = asFiniteNumber(over200kCost.output);
+  const over200kCacheRead = asFiniteNumber(over200kCost.cache_read);
+  const over200kCacheWrite = asFiniteNumber(over200kCost.cache_write);
+  if (
+    over200kInput == null ||
+    over200kOutput == null ||
+    over200kInput <= 0 ||
+    over200kOutput <= 0
+  ) {
+    return baseProxy;
+  }
+
+  const over200kInputWeighted =
+    over200kCacheRead != null ? over200kCacheRead : over200kInput;
+  const over200kOutputWeighted =
+    over200kCacheWrite != null
+      ? 0.1 * over200kCacheWrite + 0.9 * over200kOutput
+      : over200kOutput;
+  const over200kProxy =
+    0.9 * (0.75 * over200kInputWeighted + 0.25 * over200kInput) +
+    0.1 * over200kOutputWeighted;
+
+  return 0.95 * baseProxy + 0.05 * over200kProxy;
+}
+
 function buildScores(model: JsonObject): unknown {
-  const baseScores = asRecord(model.scores);
   const intelligenceIndex =
     metricValue(model, "intelligence_index") ??
     metricValue(model, "artificial_analysis_intelligence_index");
@@ -281,55 +361,97 @@ function buildScores(model: JsonObject): unknown {
     intelligenceBenchmarkMean,
   ]);
   const agenticScore = meanOfFinite([agenticIndex, agenticBenchmarkMean]);
+  const blendedPrice = blendedPriceValue(model);
+  const ttfa = asFiniteNumber(model.median_time_to_first_answer_token);
+  const tps = asFiniteNumber(model.median_output_tokens_per_second);
+  const priceScore = blendedPrice;
+  const speedScore = meanOfFinite([
+    reciprocalLog10(ttfa, true),
+    reciprocalLog10(tps),
+  ]);
+  const overallScore = weightedMean([
+    {
+      value: intelligenceScore,
+      weight: SCORE_WEIGHTS.intelligence,
+    },
+    {
+      value: agenticScore,
+      weight: SCORE_WEIGHTS.agentic,
+    },
+    {
+      value: priceScore,
+      weight: SCORE_WEIGHTS.price,
+    },
+    {
+      value: speedScore,
+      weight: SCORE_WEIGHTS.speed,
+    },
+  ]);
+
   if (
     intelligenceScore == null &&
     agenticScore == null &&
-    asFiniteNumber(baseScores.overall_score) == null &&
-    asFiniteNumber(baseScores.price_score) == null &&
-    asFiniteNumber(baseScores.speed_score) == null
+    priceScore == null &&
+    speedScore == null
   ) {
     return null;
   }
   return {
-    overall_score: asFiniteNumber(baseScores.overall_score),
+    overall_score: overallScore,
     intelligence_score: intelligenceScore,
     agentic_score: agenticScore,
-    price_score: asFiniteNumber(baseScores.price_score),
-    speed_score: asFiniteNumber(baseScores.speed_score),
+    price_score: priceScore,
+    speed_score: speedScore,
   };
 }
 
-function withAgenticPercentiles(
+function withComputedPercentiles(
   models: ModelStatsSelectedModel[],
 ): ModelStatsSelectedModel[] {
+  const overallScores = models.map((model) =>
+    asFiniteNumber(asRecord(model.scores).overall_score),
+  );
+  const intelligenceScores = models.map((model) =>
+    asFiniteNumber(asRecord(model.scores).intelligence_score),
+  );
   const agenticScores = models.map((model) =>
     asFiniteNumber(asRecord(model.scores).agentic_score),
+  );
+  const speedScores = models.map((model) =>
+    asFiniteNumber(asRecord(model.scores).speed_score),
+  );
+  const priceScores = models.map((model) =>
+    asFiniteNumber(asRecord(model.scores).price_score),
   );
 
   return models.map((model) => {
     const scores = asRecord(model.scores);
-    const percentiles = asRecord(model.percentiles);
+    const overallScore = asFiniteNumber(scores.overall_score);
+    const intelligenceScore = asFiniteNumber(scores.intelligence_score);
     const agenticScore = asFiniteNumber(scores.agentic_score);
+    const speedScore = asFiniteNumber(scores.speed_score);
+    const priceScore = asFiniteNumber(scores.price_score);
+    const overallPercentile =
+      overallScore == null ? null : percentileRank(overallScores, overallScore);
+    const intelligencePercentile =
+      intelligenceScore == null
+        ? null
+        : percentileRank(intelligenceScores, intelligenceScore);
     const agenticPercentile =
       agenticScore == null ? null : percentileRank(agenticScores, agenticScore);
-    const {
-      overall_percentile: _overallPercentile,
-      intelligence_percentile: _intelligencePercentile,
-      agentic_percentile: _agenticPercentile,
-      speed_percentile: _speedPercentile,
-      price_percentile: _pricePercentile,
-      ...remainingPercentiles
-    } = percentiles;
+    const speedPercentile =
+      speedScore == null ? null : percentileRank(speedScores, speedScore);
+    const pricePercentile =
+      priceScore == null ? null : percentileRank(priceScores, priceScore);
 
     return {
       ...model,
       percentiles: {
-        overall_percentile: percentiles.overall_percentile ?? null,
-        intelligence_percentile: percentiles.intelligence_percentile ?? null,
+        overall_percentile: overallPercentile,
+        intelligence_percentile: intelligencePercentile,
         agentic_percentile: agenticPercentile,
-        speed_percentile: percentiles.speed_percentile ?? null,
-        price_percentile: percentiles.price_percentile ?? null,
-        ...remainingPercentiles,
+        speed_percentile: speedPercentile,
+        price_percentile: pricePercentile,
       },
     };
   });
@@ -374,6 +496,30 @@ function modelSlugFromModelId(modelId: unknown): string | null {
   }
   const slug = modelId.split("/").at(-1);
   return slug && slug.length > 0 ? slug : null;
+}
+
+const MODEL_VARIANT_TOKENS = [
+  "flash-lite",
+  "flash",
+  "pro",
+  "nano",
+  "mini",
+  "lite",
+] as const;
+
+function hasToken(id: string, token: (typeof MODEL_VARIANT_TOKENS)[number]) {
+  return id.includes(token);
+}
+
+function hasVariantConflict(
+  artificialAnalysisSlug: string,
+  matchedModelId: string,
+): boolean {
+  const aa = normalizeProviderModelId(artificialAnalysisSlug);
+  const matched = normalizeProviderModelId(matchedModelId);
+  return MODEL_VARIANT_TOKENS.some(
+    (token) => hasToken(aa, token) !== hasToken(matched, token),
+  );
 }
 
 function scopeToPreferredProviderModels(
@@ -433,6 +579,7 @@ function buildUnionFromApiMatch(
     ...scrapedEvaluations,
   };
   const intelligence = asRecord(scrapedModel?.intelligence);
+  const intelligenceIndexCost = asRecord(scrapedModel?.intelligence_index_cost);
   const logo =
     typeof scrapedModel?.logo === "string" ? scrapedModel.logo : null;
   const matchedModelsDev = modelsDevById.get(bestMatchModelId) ?? null;
@@ -456,6 +603,8 @@ function buildUnionFromApiMatch(
     slug: _evalSlug,
     evaluations: _evalEvaluations,
     model_creator: _evalModelCreator,
+    scores: _evalScores,
+    percentiles: _evalPercentiles,
     ...evalModelFieldsWithoutIdentity
   } = evalModelFields;
 
@@ -477,6 +626,7 @@ function buildUnionFromApiMatch(
     logo,
     evaluations: mergedEvaluations,
     intelligence,
+    intelligence_index_cost: intelligenceIndexCost,
   };
 }
 
@@ -490,6 +640,7 @@ function buildUnionFromScrapedMatch(
   const slug = modelSlugFromModelId(modelId);
   const evaluations = asRecord(scrapedRow.evaluations);
   const intelligence = asRecord(scrapedRow.intelligence);
+  const intelligenceIndexCost = asRecord(scrapedRow.intelligence_index_cost);
   const logo = typeof scrapedRow.logo === "string" ? scrapedRow.logo : null;
   const matchedModelsDev = modelsDevById.get(bestMatchModelId) ?? null;
   const matchedModelFields = asRecord(matchedModelsDev?.model);
@@ -522,6 +673,7 @@ function buildUnionFromScrapedMatch(
     ...matchedModelFieldsWithoutIdFamilyAndModelRefs,
     evaluations,
     intelligence,
+    intelligence_index_cost: intelligenceIndexCost,
   };
 }
 
@@ -568,6 +720,9 @@ async function buildUnionModelsFromPrimaryPathWithApiKey(
       ) {
         return null;
       }
+      if (hasVariantConflict(slug, bestMatchModelId)) {
+        return null;
+      }
       return buildUnionFromApiMatch(
         evalModel,
         bestMatchModelId,
@@ -611,6 +766,11 @@ async function buildUnionModelsFromFallbackPath(): Promise<
       ) {
         return null;
       }
+      if (
+        hasVariantConflict(model.artificial_analysis_slug, bestMatchModelId)
+      ) {
+        return null;
+      }
       const scrapedRow = scrapedBySlug.get(model.artificial_analysis_slug);
       if (!scrapedRow) {
         return null;
@@ -649,6 +809,18 @@ function buildSpeed(model: JsonObject): JsonObject {
   );
 }
 
+function buildCost(model: JsonObject): unknown {
+  const baseCost = asRecord(model.cost);
+  const cleanedCost: JsonObject = Object.fromEntries(
+    Object.entries(baseCost).filter(([, value]) => value != null),
+  );
+  const blendedPrice = blendedPriceValue(model);
+  if (blendedPrice != null) {
+    cleanedCost.blended_price = blendedPrice;
+  }
+  return Object.keys(cleanedCost).length > 0 ? cleanedCost : null;
+}
+
 async function writeJson(path: string, payload: unknown): Promise<void> {
   await mkdir(CACHE_DIR, { recursive: true });
   await writeFile(path, `${JSON.stringify(payload, null, 2)}\n`, "utf-8");
@@ -677,8 +849,8 @@ function filterModelsById(
 }
 
 function hasIntelligenceCost(row: JsonObject): boolean {
-  const intelligence = asRecord(row.intelligence);
-  return asFiniteNumber(intelligence[INTELLIGENCE_COST_TOTAL_COST_KEY]) != null;
+  const intelligenceIndexCost = asRecord(row.intelligence_index_cost);
+  return asFiniteNumber(intelligenceIndexCost.total_cost) != null;
 }
 
 function hasOverallScore(row: JsonObject): boolean {
@@ -719,93 +891,71 @@ function dedupeUnionModelsPreferOpenrouter(
     const winner = [...group].sort(
       (left, right) => unionRowPriority(right) - unionRowPriority(left),
     )[0] as JsonObject;
-    const winnerIntelligence = asRecord(winner.intelligence);
-    const mergedIntelligence: JsonObject = { ...winnerIntelligence };
-    for (const key of INTELLIGENCE_COST_KEYS) {
-      if (asFiniteNumber(mergedIntelligence[key]) != null) {
-        continue;
-      }
-      for (const candidate of group) {
-        const candidateIntelligence = asRecord(candidate.intelligence);
-        if (asFiniteNumber(candidateIntelligence[key]) != null) {
-          mergedIntelligence[key] = candidateIntelligence[key];
-          break;
+    const mergedIntelligenceIndexCost: JsonObject = {
+      ...asRecord(winner.intelligence_index_cost),
+    };
+    for (const candidate of group) {
+      const candidateCost = asRecord(candidate.intelligence_index_cost);
+      for (const [key, value] of Object.entries(candidateCost)) {
+        if (mergedIntelligenceIndexCost[key] == null && value != null) {
+          mergedIntelligenceIndexCost[key] = value;
         }
       }
     }
     dedupedRows.push({
       ...winner,
-      intelligence: mergedIntelligence,
+      intelligence_index_cost: mergedIntelligenceIndexCost,
     });
   }
 
   return [...passthrough, ...dedupedRows];
 }
 
-async function backfillIntelligenceCostFromScraped(
-  models: ModelStatsSelectedModel[],
-): Promise<ModelStatsSelectedModel[]> {
-  const scrapedStats = await getArtificialAnalysisScrapedEvalsOnlyStats();
-  const scrapedById = new Map<string, JsonObject>();
-  for (const row of scrapedStats.data) {
+function nonFreeModelId(modelId: string): string | null {
+  return modelId.endsWith(":free") ? modelId.slice(0, -":free".length) : null;
+}
+
+function hasPositiveCostFields(cost: JsonObject): boolean {
+  const input = asFiniteNumber(cost.input);
+  const output = asFiniteNumber(cost.output);
+  return input != null && input > 0 && output != null && output > 0;
+}
+
+function backfillFreeRouteCosts(
+  unionModels: Record<string, unknown>[],
+): Record<string, unknown>[] {
+  const nonFreeCostById = new Map<string, JsonObject>();
+  for (const row of unionModels) {
     const rowRecord = asRecord(row);
-    const modelId = rowRecord.model_id;
-    if (typeof modelId !== "string" || modelId.length === 0) {
+    const id = typeof rowRecord.id === "string" ? rowRecord.id : null;
+    if (!id || id.endsWith(":free")) {
       continue;
     }
-    scrapedById.set(normalizeProviderModelId(modelId), rowRecord);
+    const cost = asRecord(rowRecord.cost);
+    if (hasPositiveCostFields(cost)) {
+      nonFreeCostById.set(id, cost);
+    }
   }
 
-  const pickBackfillValue = (
-    baseFamilyId: string,
-    key: (typeof INTELLIGENCE_COST_KEYS)[number],
-  ): number | null => {
-    const direct = scrapedById.get(baseFamilyId);
-    const directValue = asFiniteNumber(asRecord(direct?.intelligence)[key]);
-    if (directValue != null) {
-      return directValue;
+  return unionModels.map((row) => {
+    const rowRecord = asRecord(row);
+    const id = typeof rowRecord.id === "string" ? rowRecord.id : null;
+    if (!id) {
+      return row;
     }
-    let fallbackValue: number | null = null;
-    for (const [scrapedId, row] of scrapedById) {
-      if (!scrapedId.startsWith(`${baseFamilyId}-`)) {
-        continue;
-      }
-      const suffix = scrapedId.slice(baseFamilyId.length + 1);
-      if (!LETTER_SUFFIX_REGEX.test(suffix)) {
-        continue;
-      }
-      const candidateValue = asFiniteNumber(asRecord(row.intelligence)[key]);
-      if (candidateValue != null) {
-        fallbackValue = candidateValue;
-        break;
-      }
+    const baseId = nonFreeModelId(id);
+    if (!baseId) {
+      return row;
     }
-    return fallbackValue;
-  };
-
-  return models.map((model) => {
-    if (typeof model.id !== "string" || model.id.length === 0) {
-      return model;
+    const baseCost = nonFreeCostById.get(baseId);
+    if (!baseCost) {
+      return row;
     }
-    const baseFamilyId = normalizeProviderModelId(model.id);
-    const intelligence = asRecord(model.intelligence);
-    const hasRawCost = intelligence[INTELLIGENCE_COST_TOTAL_COST_KEY] != null;
-    const hasRawTokens =
-      intelligence[INTELLIGENCE_COST_TOTAL_TOKENS_KEY] != null;
-    const cost = hasRawCost
-      ? asFiniteNumber(intelligence[INTELLIGENCE_COST_TOTAL_COST_KEY])
-      : pickBackfillValue(baseFamilyId, INTELLIGENCE_COST_TOTAL_COST_KEY);
-    const tokens = hasRawTokens
-      ? asFiniteNumber(intelligence[INTELLIGENCE_COST_TOTAL_TOKENS_KEY])
-      : pickBackfillValue(baseFamilyId, INTELLIGENCE_COST_TOTAL_TOKENS_KEY);
-    const normalizedIntelligence = normalizeIntelligenceCostFields({
-      ...intelligence,
-      [INTELLIGENCE_COST_TOTAL_COST_KEY]: cost,
-      [INTELLIGENCE_COST_TOTAL_TOKENS_KEY]: tokens,
-    });
     return {
-      ...model,
-      intelligence: normalizedIntelligence,
+      ...rowRecord,
+      cost: {
+        ...baseCost,
+      },
     };
   });
 }
@@ -906,6 +1056,9 @@ function pruneSparseFields(
 
   const nestedKeysToPruneByParent = new Map<string, Set<string>>();
   for (const [parentKey, nestedKeys] of nestedKeysByParent) {
+    if (parentKey !== "evaluations") {
+      continue;
+    }
     const keysToPrune = new Set<string>();
     for (const nestedKey of nestedKeys) {
       const nullCount = countNullishNestedKey(
@@ -993,13 +1146,14 @@ function mapUnionModelToSelected(unionModel: unknown): ModelStatsSelectedModel {
     modalities: model.modalities ?? null,
     open_weights:
       typeof model.open_weights === "boolean" ? model.open_weights : null,
-    cost: model.cost ?? null,
+    cost: buildCost(model),
     context_window: model.limit ?? null,
     speed: buildSpeed(model),
     intelligence: buildIntelligence(model),
+    intelligence_index_cost: buildIntelligenceIndexCost(model),
     evaluations: buildEvaluations(model),
     scores: buildScores(model),
-    percentiles: model.percentiles ?? null,
+    percentiles: null,
   };
 }
 
@@ -1025,13 +1179,11 @@ export async function getModelStatsSelected(
 
     const unionModels = await buildUnionModelsWithApiKey(options.apiKey);
     const dedupedUnionModels = dedupeUnionModelsPreferOpenrouter(unionModels);
-    const allModels = dedupedUnionModels.map(mapUnionModelToSelected);
-    const modelsWithCostBackfill =
-      await backfillIntelligenceCostFromScraped(allModels);
-    const modelsWithAgenticPercentiles = withAgenticPercentiles(
-      modelsWithCostBackfill,
-    );
-    const prunedModels = pruneSparseFields(modelsWithAgenticPercentiles);
+    const unionModelsWithCostBackfill =
+      backfillFreeRouteCosts(dedupedUnionModels);
+    const allModels = unionModelsWithCostBackfill.map(mapUnionModelToSelected);
+    const modelsWithComputedPercentiles = withComputedPercentiles(allModels);
+    const prunedModels = pruneSparseFields(modelsWithComputedPercentiles);
     const filteredModels = filterModelsById(prunedModels, options.id);
     const fetchedAt = nowEpochSeconds();
 
