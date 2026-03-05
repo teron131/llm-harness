@@ -8,12 +8,25 @@ import {
   getScraperFallbackMatchDiagnostics,
 } from "./data-sources/llm/matcher";
 import { getModelsDevStats } from "./data-sources/llm/models-dev";
+import { percentileRank } from "./data-sources/utils";
 
 const DEFAULT_OUTPUT_PATH = resolve(".cache/model_stats.json");
 const CACHE_DIR = resolve(".cache");
 const CACHE_TTL_SECONDS = 60 * 60 * 24;
 const NULL_FIELD_PRUNE_THRESHOLD = 0.5;
 const NULL_FIELD_PRUNE_RECENT_LOOKBACK_DAYS = 90;
+const INTELLIGENCE_BENCHMARK_KEYS = [
+  "omniscience_accuracy",
+  "hle",
+  "lcr",
+  "scicode",
+] as const;
+const AGENTIC_BENCHMARK_KEYS = [
+  "omniscience_nonhallucination_rate",
+  "gdpval_normalized",
+  "ifbench",
+  "terminalbench_hard",
+] as const;
 const STABLE_TOP_LEVEL_KEYS = new Set<string>([
   "id",
   "name",
@@ -141,6 +154,17 @@ function asFiniteNumber(value: unknown): number | null {
   return Number.isFinite(numericValue) ? numericValue : null;
 }
 
+function meanOfFinite(values: Array<number | null>): number | null {
+  const finiteValues = values.filter(
+    (value): value is number => value != null && Number.isFinite(value),
+  );
+  if (finiteValues.length === 0) {
+    return null;
+  }
+  const total = finiteValues.reduce((sum, value) => sum + value, 0);
+  return total / finiteValues.length;
+}
+
 function buildEvaluations(model: JsonObject): unknown {
   const evaluations = asRecord(model.evaluations);
   return Object.keys(evaluations).length > 0 ? evaluations : null;
@@ -148,24 +172,109 @@ function buildEvaluations(model: JsonObject): unknown {
 
 function buildIntelligence(model: JsonObject): unknown {
   const intelligence = asRecord(model.intelligence);
+  const nonhallucinationRate = asFiniteNumber(
+    intelligence.omniscience_hallucination_rate,
+  );
+  if (nonhallucinationRate != null) {
+    intelligence.omniscience_nonhallucination_rate = nonhallucinationRate;
+    delete intelligence.omniscience_hallucination_rate;
+  }
   return Object.keys(intelligence).length > 0 ? intelligence : null;
+}
+
+function metricValue(model: JsonObject, key: string): number | null {
+  const intelligence = asRecord(model.intelligence);
+  const evaluations = asRecord(model.evaluations);
+  if (key === "omniscience_nonhallucination_rate") {
+    const nonhallucinationRate = asFiniteNumber(
+      intelligence.omniscience_nonhallucination_rate,
+    );
+    if (nonhallucinationRate != null) {
+      return nonhallucinationRate;
+    }
+    const nonhallucinationRateFromLegacyKey = asFiniteNumber(
+      intelligence.omniscience_hallucination_rate,
+    );
+    return nonhallucinationRateFromLegacyKey;
+  }
+  return (
+    asFiniteNumber(intelligence[key]) ??
+    asFiniteNumber(evaluations[key]) ??
+    null
+  );
 }
 
 function buildScores(model: JsonObject): unknown {
   const baseScores = asRecord(model.scores);
-  const intelligence = asRecord(model.intelligence);
-  const evaluations = asRecord(model.evaluations);
-  const agenticScore =
-    asFiniteNumber(intelligence.agentic_index) ??
-    asFiniteNumber(evaluations.agentic_index) ??
-    asFiniteNumber(evaluations.artificial_analysis_agentic_index);
-  if (agenticScore == null) {
-    return model.scores ?? null;
+  const intelligenceIndex =
+    metricValue(model, "intelligence_index") ??
+    metricValue(model, "artificial_analysis_intelligence_index");
+  const agenticIndex =
+    metricValue(model, "agentic_index") ??
+    metricValue(model, "artificial_analysis_agentic_index");
+  const intelligenceBenchmarkMean = meanOfFinite(
+    INTELLIGENCE_BENCHMARK_KEYS.map((key) => metricValue(model, key)),
+  );
+  const agenticBenchmarkMean = meanOfFinite(
+    AGENTIC_BENCHMARK_KEYS.map((key) => metricValue(model, key)),
+  );
+  const intelligenceScore = meanOfFinite([
+    intelligenceIndex,
+    intelligenceBenchmarkMean,
+  ]);
+  const agenticScore = meanOfFinite([agenticIndex, agenticBenchmarkMean]);
+  if (
+    intelligenceScore == null &&
+    agenticScore == null &&
+    asFiniteNumber(baseScores.overall_score) == null &&
+    asFiniteNumber(baseScores.price_score) == null &&
+    asFiniteNumber(baseScores.speed_score) == null
+  ) {
+    return null;
   }
   return {
-    ...baseScores,
+    overall_score: asFiniteNumber(baseScores.overall_score),
+    intelligence_score: intelligenceScore,
     agentic_score: agenticScore,
+    price_score: asFiniteNumber(baseScores.price_score),
+    speed_score: asFiniteNumber(baseScores.speed_score),
   };
+}
+
+function withAgenticPercentiles(
+  models: ModelStatsSelectedModel[],
+): ModelStatsSelectedModel[] {
+  const agenticScores = models.map((model) =>
+    asFiniteNumber(asRecord(model.scores).agentic_score),
+  );
+
+  return models.map((model) => {
+    const scores = asRecord(model.scores);
+    const percentiles = asRecord(model.percentiles);
+    const agenticScore = asFiniteNumber(scores.agentic_score);
+    const agenticPercentile =
+      agenticScore == null ? null : percentileRank(agenticScores, agenticScore);
+    const {
+      overall_percentile: _overallPercentile,
+      intelligence_percentile: _intelligencePercentile,
+      agentic_percentile: _agenticPercentile,
+      speed_percentile: _speedPercentile,
+      price_percentile: _pricePercentile,
+      ...remainingPercentiles
+    } = percentiles;
+
+    return {
+      ...model,
+      percentiles: {
+        overall_percentile: percentiles.overall_percentile ?? null,
+        intelligence_percentile: percentiles.intelligence_percentile ?? null,
+        agentic_percentile: agenticPercentile,
+        speed_percentile: percentiles.speed_percentile ?? null,
+        price_percentile: percentiles.price_percentile ?? null,
+        ...remainingPercentiles,
+      },
+    };
+  });
 }
 
 function normalize(value: string): string {
@@ -724,7 +833,8 @@ export async function getModelStatsSelected(
 
     const unionModels = await buildUnionModelsWithApiKey(options.apiKey);
     const allModels = unionModels.map(mapUnionModelToSelected);
-    const prunedModels = pruneSparseFields(allModels);
+    const modelsWithAgenticPercentiles = withAgenticPercentiles(allModels);
+    const prunedModels = pruneSparseFields(modelsWithAgenticPercentiles);
     const filteredModels = filterModelsById(prunedModels, options.id);
     const fetchedAt = nowEpochSeconds();
 

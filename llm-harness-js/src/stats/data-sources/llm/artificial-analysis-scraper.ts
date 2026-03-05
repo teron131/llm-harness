@@ -113,7 +113,7 @@ function pickIntelligence(row: JsonObject): JsonObject {
     omniscience_index:
       typeof row.omniscience === "number" ? row.omniscience : null,
     omniscience_accuracy: null,
-    omniscience_hallucination_rate: null,
+    omniscience_nonhallucination_rate: null,
     intelligence_index_cost_total_cost: null,
   };
   const omniscienceBreakdown = asRecord(row.omniscience_breakdown);
@@ -122,7 +122,7 @@ function pickIntelligence(row: JsonObject): JsonObject {
     intelligence.omniscience_accuracy = omniscienceTotal.accuracy;
   }
   if (typeof omniscienceTotal.hallucination_rate === "number") {
-    intelligence.omniscience_hallucination_rate =
+    intelligence.omniscience_nonhallucination_rate =
       omniscienceTotal.hallucination_rate;
   }
   const intelligenceIndexCost = asRecord(row.intelligence_index_cost);
