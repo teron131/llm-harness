@@ -1,4 +1,5 @@
 import { fetchWithTimeout, nowEpochSeconds } from "../../utils.js";
+import { asRecord, type JsonObject } from "../shared.js";
 
 const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/frontend/models";
 const OPENROUTER_THROUGHPUT_URL =
@@ -14,8 +15,6 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_CONCURRENCY = 8;
 const DEFAULT_MAX_RETRIES = 3;
 const DEFAULT_RETRY_BASE_DELAY_MS = 300;
-
-type JsonObject = Record<string, unknown>;
 
 type OpenRouterFrontendModel = {
   slug?: string | null;
@@ -99,12 +98,6 @@ function sanitizeModelId(modelId: string): string {
       // Normalize OpenRouter route suffixes (e.g. :free, :exacto) to base model id.
       .replace(/:[a-z0-9._-]+$/i, "")
   );
-}
-
-function asRecord(value: unknown): JsonObject {
-  return value != null && typeof value === "object" && !Array.isArray(value)
-    ? (value as JsonObject)
-    : {};
 }
 
 function asFiniteNumber(value: unknown): number | null {
@@ -370,6 +363,20 @@ function buildSlugFallbackCandidates(
   return [normalized, ...scoredCandidates];
 }
 
+function resolvePermaslugCandidates(
+  modelId: string,
+  availableSlugs: string[],
+  permaslugBySlug: Map<string, string>,
+): string[] {
+  const slugCandidates = buildSlugFallbackCandidates(modelId, availableSlugs);
+  return slugCandidates
+    .map((slugCandidate) => permaslugBySlug.get(slugCandidate) ?? null)
+    .filter(
+      (permaslug): permaslug is string =>
+        typeof permaslug === "string" && permaslug.length > 0,
+    );
+}
+
 async function fetchPerformanceForPermaslug(
   permaslug: string,
   timeoutMs: number,
@@ -427,12 +434,11 @@ async function fetchBestAvailableModelStats(
   maxRetries: number,
   retryBaseDelayMs: number,
 ): Promise<OpenRouterScrapedModel> {
-  const slugCandidates = buildSlugFallbackCandidates(modelId, availableSlugs);
-  const permaslugCandidates = slugCandidates
-    .map((slug) => permaslugBySlug.get(slug) ?? null)
-    .filter(
-      (slug): slug is string => typeof slug === "string" && slug.length > 0,
-    );
+  const permaslugCandidates = resolvePermaslugCandidates(
+    modelId,
+    availableSlugs,
+    permaslugBySlug,
+  );
 
   if (permaslugCandidates.length === 0) {
     return emptyScrapedModel(modelId);

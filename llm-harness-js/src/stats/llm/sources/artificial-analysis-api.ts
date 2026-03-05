@@ -314,7 +314,7 @@ export async function getArtificialAnalysisStats(
     const apiKey = options.apiKey ?? process.env.ARTIFICIALANALYSIS_API_KEY;
     const sourcePayload = await fetchModels(apiKey);
 
-    const cutoffDate = new Date(
+    const cutoffIsoDate = new Date(
       Date.now() - LOOKBACK_DAYS * 24 * 60 * 60 * 1000,
     )
       .toISOString()
@@ -323,7 +323,7 @@ export async function getArtificialAnalysisStats(
     return {
       fetched_at_epoch_seconds: sourcePayload.fetched_at_epoch_seconds,
       status_code: sourcePayload.status_code,
-      models: rankAndEnrichModels(sourcePayload.models, cutoffDate),
+      models: rankAndEnrichModels(sourcePayload.models, cutoffIsoDate),
     };
   } catch {
     return {

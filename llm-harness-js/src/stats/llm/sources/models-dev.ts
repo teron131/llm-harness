@@ -91,7 +91,7 @@ function isRecentDate(
   return isoDate >= cutoffIsoDate;
 }
 
-function asFinite(value: unknown): NumberOrNull {
+function asFiniteNumber(value: unknown): NumberOrNull {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : null;
 }
@@ -141,9 +141,9 @@ function rankRecentModels(
     .filter((row) => isRecentDate(row.model.release_date, cutoffIsoDate))
     .sort((left, right) => {
       const leftOutputCost =
-        asFinite(left.model.cost?.output) ?? Number.POSITIVE_INFINITY;
+        asFiniteNumber(left.model.cost?.output) ?? Number.POSITIVE_INFINITY;
       const rightOutputCost =
-        asFinite(right.model.cost?.output) ?? Number.POSITIVE_INFINITY;
+        asFiniteNumber(right.model.cost?.output) ?? Number.POSITIVE_INFINITY;
       if (leftOutputCost !== rightOutputCost) {
         return leftOutputCost - rightOutputCost;
       }

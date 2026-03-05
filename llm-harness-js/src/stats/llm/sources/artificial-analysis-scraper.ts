@@ -1,4 +1,5 @@
 import { fetchWithTimeout, nowEpochSeconds } from "../../utils.js";
+import { asRecord, type JsonObject } from "../shared.js";
 
 const DEFAULT_SCRAPE_URL = "https://artificialanalysis.ai/leaderboards/models";
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -8,8 +9,6 @@ const MODEL_SEARCH_BACKTRACK_CHARS = 20_000;
 const MIN_INTELLIGENCE_COST_TOKEN_THRESHOLD = 1_000_000;
 const NEXT_FLIGHT_CHUNK_REGEX =
   /self\.__next_f\.push\(\[1,\"([\s\S]*?)\"\]\)<\/script>/g;
-
-type JsonObject = Record<string, unknown>;
 
 export type ArtificialAnalysisScraperOptions = {
   url?: string;
@@ -40,12 +39,6 @@ export const ARTIFICIAL_ANALYSIS_EVALS_ONLY_COLUMNS = [
   "intelligence_index_cost",
   "evaluations",
 ] as const;
-
-function asRecord(value: unknown): JsonObject {
-  return value != null && typeof value === "object" && !Array.isArray(value)
-    ? (value as JsonObject)
-    : {};
-}
 
 function decodeFlightChunk(raw: string): string {
   try {
