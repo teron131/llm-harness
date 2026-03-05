@@ -66,7 +66,13 @@ const EMPTY_OPENROUTER_SPEED = {
   latency_seconds_median: null,
   e2e_latency_seconds_median: null,
 } as const;
+const EMPTY_OPENROUTER_PRICING = {
+  weighted_input: null,
+  weighted_output: null,
+} as const;
 const SPEED_ANCHOR_QUANTILES = [0.25, 0.5, 0.75] as const;
+const WEIGHTED_PRICE_INPUT_RATIO = 0.75;
+const WEIGHTED_PRICE_OUTPUT_RATIO = 0.25;
 
 type JsonObject = Record<string, unknown>;
 type ModelsDevModel = Awaited<
@@ -308,6 +314,8 @@ function blendedPriceValue(model: JsonObject): number | null {
   const cost = asRecord(model.cost);
   const inputCost = asFiniteNumber(cost.input);
   const outputCost = asFiniteNumber(cost.output);
+  const weightedInputCost = asFiniteNumber(cost.weighted_input);
+  const weightedOutputCost = asFiniteNumber(cost.weighted_output);
   const cacheReadCost = asFiniteNumber(cost.cache_read);
   const cacheWriteCost = asFiniteNumber(cost.cache_write);
   if (
@@ -318,6 +326,17 @@ function blendedPriceValue(model: JsonObject): number | null {
   ) {
     return null;
   }
+  if (weightedInputCost != null || weightedOutputCost != null) {
+    const effectiveInputCost =
+      weightedInputCost != null ? weightedInputCost : inputCost;
+    const effectiveOutputCost =
+      weightedOutputCost != null ? weightedOutputCost : outputCost;
+    return (
+      WEIGHTED_PRICE_INPUT_RATIO * effectiveInputCost +
+      WEIGHTED_PRICE_OUTPUT_RATIO * effectiveOutputCost
+    );
+  }
+
   const cacheWeightedInput = cacheReadCost != null ? cacheReadCost : inputCost;
   const cacheWeightedOutput =
     cacheWriteCost != null
@@ -929,14 +948,28 @@ function normalizeOpenRouterSpeed(performance: unknown): JsonObject {
   };
 }
 
-async function buildOpenRouterSpeedById(
+function normalizeOpenRouterPricing(pricing: unknown): JsonObject {
+  const parsed = asRecord(pricing);
+  return {
+    weighted_input: asFiniteNumber(parsed.weighted_input_price_per_1m),
+    weighted_output: asFiniteNumber(parsed.weighted_output_price_per_1m),
+  };
+}
+
+async function buildOpenRouterDataById(
   unionModels: Record<string, unknown>[],
-): Promise<Map<string, JsonObject>> {
+): Promise<{
+  speedById: Map<string, JsonObject>;
+  pricingById: Map<string, JsonObject>;
+}> {
   const modelIds = unionModels
     .map((row) => asRecord(row).id)
     .filter((id): id is string => typeof id === "string" && id.length > 0);
   if (modelIds.length === 0) {
-    return new Map();
+    return {
+      speedById: new Map(),
+      pricingById: new Map(),
+    };
   }
 
   try {
@@ -944,14 +977,24 @@ async function buildOpenRouterSpeedById(
       modelIds,
       concurrency: OPENROUTER_SPEED_CONCURRENCY,
     });
-    return new Map(
+    const speedById = new Map(
       payload.models.map((model) => [
         model.id,
         normalizeOpenRouterSpeed(model.performance),
       ]),
     );
+    const pricingById = new Map(
+      payload.models.map((model) => [
+        model.id,
+        normalizeOpenRouterPricing(model.pricing),
+      ]),
+    );
+    return { speedById, pricingById };
   } catch {
-    return new Map();
+    return {
+      speedById: new Map(),
+      pricingById: new Map(),
+    };
   }
 }
 
@@ -969,16 +1012,28 @@ function buildSpeed(
   return speed;
 }
 
-function buildCost(model: JsonObject): unknown {
+function buildCost(model: JsonObject, openRouterPricing: JsonObject): unknown {
   const baseCost = asRecord(model.cost);
   const cleanedCost: JsonObject = Object.fromEntries(
     Object.entries(baseCost).filter(([, value]) => value != null),
   );
+  const weightedInput = asFiniteNumber(openRouterPricing.weighted_input);
+  const weightedOutput = asFiniteNumber(openRouterPricing.weighted_output);
+  if (weightedInput != null) {
+    cleanedCost.weighted_input = weightedInput;
+  }
+  if (weightedOutput != null) {
+    cleanedCost.weighted_output = weightedOutput;
+  }
   const blendedPrice = blendedPriceValue(model);
   if (blendedPrice != null) {
     cleanedCost.blended_price = blendedPrice;
   }
   return Object.keys(cleanedCost).length > 0 ? cleanedCost : null;
+}
+
+function overallPercentileValue(model: ModelStatsSelectedModel): number | null {
+  return asFiniteNumber(asRecord(model.percentiles).overall_percentile);
 }
 
 async function writeJson(path: string, payload: unknown): Promise<void> {
@@ -1006,6 +1061,28 @@ function filterModelsById(
     return models;
   }
   return models.filter((model) => model.id === id);
+}
+
+function sortModelsByOverallPercentile(
+  models: ModelStatsSelectedModel[],
+): ModelStatsSelectedModel[] {
+  return [...models].sort((left, right) => {
+    const leftOverall = overallPercentileValue(left);
+    const rightOverall = overallPercentileValue(right);
+    if (leftOverall == null && rightOverall == null) {
+      return (left.id ?? "").localeCompare(right.id ?? "");
+    }
+    if (leftOverall == null) {
+      return 1;
+    }
+    if (rightOverall == null) {
+      return -1;
+    }
+    if (leftOverall !== rightOverall) {
+      return rightOverall - leftOverall;
+    }
+    return (left.id ?? "").localeCompare(right.id ?? "");
+  });
 }
 
 function hasIntelligenceCost(row: JsonObject): boolean {
@@ -1294,12 +1371,16 @@ async function loadModelStatsSelectedFromCache(
 function mapUnionModelToSelected(
   unionModel: unknown,
   openRouterSpeedById: Map<string, JsonObject>,
+  openRouterPricingById: Map<string, JsonObject>,
   speedOutputTokenAnchors: number[],
 ): ModelStatsSelectedModel {
   const model = asRecord(unionModel);
   const provider = providerFromModel(model);
   const modelId = typeof model.id === "string" ? model.id : null;
   const speed = buildSpeed(modelId, openRouterSpeedById);
+  const pricing =
+    (modelId != null ? openRouterPricingById.get(modelId) : null) ??
+    EMPTY_OPENROUTER_PRICING;
   return {
     id: modelId,
     name: typeof model.name === "string" ? model.name : null,
@@ -1312,7 +1393,7 @@ function mapUnionModelToSelected(
     modalities: model.modalities ?? null,
     open_weights:
       typeof model.open_weights === "boolean" ? model.open_weights : null,
-    cost: buildCost(model),
+    cost: buildCost(model, pricing),
     context_window: model.limit ?? null,
     speed,
     intelligence: buildIntelligence(model),
@@ -1347,20 +1428,25 @@ export async function getModelStatsSelected(
     const dedupedUnionModels = dedupeUnionModelsPreferOpenrouter(unionModels);
     const unionModelsWithCostBackfill =
       backfillFreeRouteCosts(dedupedUnionModels);
-    const openRouterSpeedById = await buildOpenRouterSpeedById(
-      unionModelsWithCostBackfill,
-    );
+    const {
+      speedById: openRouterSpeedById,
+      pricingById: openRouterPricingById,
+    } = await buildOpenRouterDataById(unionModelsWithCostBackfill);
     const speedOutputTokenAnchors =
       deriveSpeedOutputTokenAnchors(openRouterSpeedById);
     const allModels = unionModelsWithCostBackfill.map((model) =>
       mapUnionModelToSelected(
         model,
         openRouterSpeedById,
+        openRouterPricingById,
         speedOutputTokenAnchors,
       ),
     );
     const modelsWithComputedPercentiles = withComputedPercentiles(allModels);
-    const prunedModels = pruneSparseFields(modelsWithComputedPercentiles);
+    const sortedModels = sortModelsByOverallPercentile(
+      modelsWithComputedPercentiles,
+    );
+    const prunedModels = pruneSparseFields(sortedModels);
     const filteredModels = filterModelsById(prunedModels, options.id);
     const fetchedAt = nowEpochSeconds();
 

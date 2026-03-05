@@ -7,6 +7,8 @@ const OPENROUTER_LATENCY_URL =
   "https://openrouter.ai/api/frontend/stats/latency-comparison";
 const OPENROUTER_E2E_LATENCY_URL =
   "https://openrouter.ai/api/frontend/stats/latency-e2e-comparison";
+const OPENROUTER_EFFECTIVE_PRICING_URL =
+  "https://openrouter.ai/api/frontend/stats/effective-pricing";
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_CONCURRENCY = 8;
@@ -35,6 +37,13 @@ type OpenRouterModelStats = {
   latency_e2e?: OpenRouterStatsResponse | null;
 };
 
+type OpenRouterEffectivePricingResponse = {
+  data?: {
+    weightedInputPrice?: number | null;
+    weightedOutputPrice?: number | null;
+  };
+};
+
 /**
  * Options for scraping OpenRouter performance stats for a selected model list.
  */
@@ -52,10 +61,16 @@ export type OpenRouterPerformanceSummary = {
   e2e_latency_seconds_median: number | null;
 };
 
+export type OpenRouterPricingSummary = {
+  weighted_input_price_per_1m: number | null;
+  weighted_output_price_per_1m: number | null;
+};
+
 export type OpenRouterScrapedModel = {
   id: string;
   permaslug: string | null;
   performance: OpenRouterPerformanceSummary;
+  pricing: OpenRouterPricingSummary;
 };
 
 export type OpenRouterScrapedPayload = {
@@ -87,6 +102,11 @@ function asRecord(value: unknown): JsonObject {
   return value != null && typeof value === "object" && !Array.isArray(value)
     ? (value as JsonObject)
     : {};
+}
+
+function asFiniteNumber(value: unknown): number | null {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : null;
 }
 
 function finiteNumbers(values: unknown[]): number[] {
@@ -158,6 +178,25 @@ function summarizePerformance(
     throughput_tokens_per_second_median: median(throughputValues),
     latency_seconds_median: median(latencyValues),
     e2e_latency_seconds_median: median(e2eLatencyValues),
+  };
+}
+
+function summarizePricing(
+  response: OpenRouterEffectivePricingResponse | null,
+): OpenRouterPricingSummary {
+  const data = asRecord(response?.data);
+  return {
+    weighted_input_price_per_1m: asFiniteNumber(data.weightedInputPrice),
+    weighted_output_price_per_1m: asFiniteNumber(data.weightedOutputPrice),
+  };
+}
+
+function emptyScrapedModel(modelId: string): OpenRouterScrapedModel {
+  return {
+    id: modelId,
+    permaslug: null,
+    performance: summarizePerformance({}),
+    pricing: summarizePricing(null),
   };
 }
 
@@ -248,33 +287,47 @@ async function fetchPerformanceForPermaslug(
   timeoutMs: number,
   maxRetries: number,
   retryBaseDelayMs: number,
-): Promise<OpenRouterModelStats> {
+): Promise<{
+  performance: OpenRouterModelStats;
+  pricing: OpenRouterEffectivePricingResponse;
+}> {
   const query = new URLSearchParams({ permaslug });
-  const [throughput, latency, latencyE2e] = await Promise.all([
-    fetchJsonWithRetry<OpenRouterStatsResponse>(
-      `${OPENROUTER_THROUGHPUT_URL}?${query.toString()}`,
-      timeoutMs,
-      maxRetries,
-      retryBaseDelayMs,
-    ),
-    fetchJsonWithRetry<OpenRouterStatsResponse>(
-      `${OPENROUTER_LATENCY_URL}?${query.toString()}`,
-      timeoutMs,
-      maxRetries,
-      retryBaseDelayMs,
-    ),
-    fetchJsonWithRetry<OpenRouterStatsResponse>(
-      `${OPENROUTER_E2E_LATENCY_URL}?${query.toString()}`,
-      timeoutMs,
-      maxRetries,
-      retryBaseDelayMs,
-    ),
-  ]);
+  const [throughput, latency, latencyE2e, effectivePricing] = await Promise.all(
+    [
+      fetchJsonWithRetry<OpenRouterStatsResponse>(
+        `${OPENROUTER_THROUGHPUT_URL}?${query.toString()}`,
+        timeoutMs,
+        maxRetries,
+        retryBaseDelayMs,
+      ),
+      fetchJsonWithRetry<OpenRouterStatsResponse>(
+        `${OPENROUTER_LATENCY_URL}?${query.toString()}`,
+        timeoutMs,
+        maxRetries,
+        retryBaseDelayMs,
+      ),
+      fetchJsonWithRetry<OpenRouterStatsResponse>(
+        `${OPENROUTER_E2E_LATENCY_URL}?${query.toString()}`,
+        timeoutMs,
+        maxRetries,
+        retryBaseDelayMs,
+      ),
+      fetchJsonWithRetry<OpenRouterEffectivePricingResponse>(
+        `${OPENROUTER_EFFECTIVE_PRICING_URL}?${query.toString()}`,
+        timeoutMs,
+        maxRetries,
+        retryBaseDelayMs,
+      ),
+    ],
+  );
 
   return {
-    throughput,
-    latency,
-    latency_e2e: latencyE2e,
+    performance: {
+      throughput,
+      latency,
+      latency_e2e: latencyE2e,
+    },
+    pricing: effectivePricing,
   };
 }
 
@@ -307,11 +360,7 @@ export async function getOpenRouterScrapedStats(
     async (modelId) => {
       const permaslug = permaslugBySlug.get(sanitizeModelId(modelId)) ?? null;
       if (!permaslug) {
-        return {
-          id: modelId,
-          permaslug: null,
-          performance: summarizePerformance({}),
-        } satisfies OpenRouterScrapedModel;
+        return emptyScrapedModel(modelId);
       }
 
       const stats = await fetchPerformanceForPermaslug(
@@ -324,7 +373,8 @@ export async function getOpenRouterScrapedStats(
       return {
         id: modelId,
         permaslug,
-        performance: summarizePerformance(stats),
+        performance: summarizePerformance(stats.performance),
+        pricing: summarizePricing(stats.pricing),
       } satisfies OpenRouterScrapedModel;
     },
   );
@@ -365,11 +415,7 @@ export async function getOpenRouterModelStats(
 
   const firstModel = payload.models[0];
   if (!firstModel) {
-    return {
-      id: modelId,
-      permaslug: null,
-      performance: summarizePerformance({}),
-    };
+    return emptyScrapedModel(modelId);
   }
   return firstModel;
 }
