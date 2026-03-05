@@ -12,6 +12,7 @@ import { getModelsDevStats } from "./data-sources/llm/models-dev";
 const DEFAULT_OUTPUT_PATH = resolve(".cache/model_stats.json");
 const CACHE_DIR = resolve(".cache");
 const CACHE_TTL_SECONDS = 60 * 60 * 24;
+const NULL_FIELD_PRUNE_THRESHOLD = 0.25;
 
 type JsonObject = Record<string, unknown>;
 type ModelsDevModel = Awaited<
@@ -483,6 +484,112 @@ function filterModelsById(
   return models.filter((model) => model.id === id);
 }
 
+function isPlainObject(value: unknown): value is JsonObject {
+  return value != null && typeof value === "object" && !Array.isArray(value);
+}
+
+function pruneSparseFields(
+  models: ModelStatsSelectedModel[],
+  nullThreshold: number = NULL_FIELD_PRUNE_THRESHOLD,
+): ModelStatsSelectedModel[] {
+  if (models.length === 0) {
+    return models;
+  }
+
+  const total = models.length;
+  const topLevelKeys = new Set<string>();
+  const nestedKeysByParent = new Map<string, Set<string>>();
+
+  for (const model of models) {
+    for (const [key, value] of Object.entries(model)) {
+      topLevelKeys.add(key);
+      if (!isPlainObject(value)) {
+        continue;
+      }
+      const nestedKeys = nestedKeysByParent.get(key) ?? new Set<string>();
+      for (const nestedKey of Object.keys(value)) {
+        nestedKeys.add(nestedKey);
+      }
+      nestedKeysByParent.set(key, nestedKeys);
+    }
+  }
+
+  const topLevelKeysToPrune = new Set<string>();
+  const stableTopLevelKeys = new Set<string>([
+    "id",
+    "name",
+    "provider",
+    "logo",
+    "attachment",
+    "reasoning",
+    "release_date",
+    "modalities",
+    "open_weights",
+    "cost",
+    "context_window",
+    "speed",
+    "evaluations",
+    "scores",
+    "percentiles",
+  ]);
+  for (const key of topLevelKeys) {
+    if (stableTopLevelKeys.has(key)) {
+      continue;
+    }
+    let nullCount = 0;
+    for (const model of models) {
+      const modelRecord = model as JsonObject;
+      if (modelRecord[key] == null) {
+        nullCount += 1;
+      }
+    }
+    if (nullCount / total > nullThreshold) {
+      topLevelKeysToPrune.add(key);
+    }
+  }
+
+  const nestedKeysToPruneByParent = new Map<string, Set<string>>();
+  for (const [parentKey, nestedKeys] of nestedKeysByParent) {
+    const keysToPrune = new Set<string>();
+    for (const nestedKey of nestedKeys) {
+      let nullCount = 0;
+      for (const model of models) {
+        const modelRecord = model as JsonObject;
+        const parentValue = modelRecord[parentKey];
+        if (!isPlainObject(parentValue) || parentValue[nestedKey] == null) {
+          nullCount += 1;
+        }
+      }
+      if (nullCount / total > nullThreshold) {
+        keysToPrune.add(nestedKey);
+      }
+    }
+    if (keysToPrune.size > 0) {
+      nestedKeysToPruneByParent.set(parentKey, keysToPrune);
+    }
+  }
+
+  const prunedModels = models.map((model) => {
+    const nextModel: JsonObject = { ...model };
+    for (const key of topLevelKeysToPrune) {
+      delete nextModel[key];
+    }
+    for (const [parentKey, nestedKeysToPrune] of nestedKeysToPruneByParent) {
+      const parentValue = nextModel[parentKey];
+      if (!isPlainObject(parentValue)) {
+        continue;
+      }
+      const nextParentValue: JsonObject = { ...parentValue };
+      for (const nestedKey of nestedKeysToPrune) {
+        delete nextParentValue[nestedKey];
+      }
+      nextModel[parentKey] = nextParentValue;
+    }
+    return nextModel;
+  });
+  return prunedModels as ModelStatsSelectedModel[];
+}
+
 /**
  * Persist the final model stats payload to disk.
  *
@@ -564,7 +671,8 @@ export async function getModelStatsSelected(
 
     const unionModels = await buildUnionModelsWithApiKey(options.apiKey);
     const allModels = unionModels.map(mapUnionModelToSelected);
-    const filteredModels = filterModelsById(allModels, options.id);
+    const prunedModels = pruneSparseFields(allModels);
+    const filteredModels = filterModelsById(prunedModels, options.id);
     const fetchedAt = nowEpochSeconds();
 
     if (options.id != null) {

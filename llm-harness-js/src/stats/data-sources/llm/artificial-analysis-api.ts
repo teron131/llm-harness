@@ -175,23 +175,6 @@ function removeIds<T>(value: T): T {
   return value;
 }
 
-function removeNullMathIndexFromEvaluations(model: BaseModel): BaseModel {
-  const evaluations = model.evaluations;
-  if (
-    evaluations == null ||
-    typeof evaluations !== "object" ||
-    evaluations.artificial_analysis_math_index !== null
-  ) {
-    return model;
-  }
-  const { artificial_analysis_math_index: _ignored, ...remainingEvaluations } =
-    evaluations;
-  return {
-    ...model,
-    evaluations: remainingEvaluations,
-  };
-}
-
 function computeScores(filteredModels: BaseModel[]): ScoredModel[] {
   return filteredModels.map((model) => {
     const intelligence = Number(
@@ -314,9 +297,7 @@ async function fetchModels(apiKey: string | undefined): Promise<SourcePayload> {
   const sourcePayload: SourcePayload = {
     fetched_at_epoch_seconds: nowEpochSeconds(),
     status_code: response.status,
-    models: payload.data.map((model) =>
-      removeNullMathIndexFromEvaluations(removeIds(model)),
-    ),
+    models: payload.data.map((model) => removeIds(model)),
   };
   return sourcePayload;
 }
