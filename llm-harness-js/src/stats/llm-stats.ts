@@ -37,6 +37,7 @@ const SCORE_WEIGHTS = {
   price: 0.15,
   speed: 0.15,
 } as const;
+const SPEED_TARGET_OUTPUT_TOKEN_VARIANTS = [500, 2_000, 5_000, 10_000] as const;
 const STABLE_TOP_LEVEL_KEYS = new Set<string>([
   "id",
   "name",
@@ -365,10 +366,12 @@ function buildScores(model: JsonObject): unknown {
   const ttfa = asFiniteNumber(model.median_time_to_first_answer_token);
   const tps = asFiniteNumber(model.median_output_tokens_per_second);
   const priceScore = blendedPrice;
-  const speedScore = meanOfFinite([
-    reciprocalLog10(ttfa, true),
-    reciprocalLog10(tps),
-  ]);
+  const speedTimeMean = meanOfFinite(
+    SPEED_TARGET_OUTPUT_TOKEN_VARIANTS.map((targetTokens) =>
+      ttfa != null && tps != null && tps > 0 ? ttfa + targetTokens / tps : null,
+    ),
+  );
+  const speedScore = speedTimeMean;
   const overallScore = weightedMean([
     {
       value: intelligenceScore,
