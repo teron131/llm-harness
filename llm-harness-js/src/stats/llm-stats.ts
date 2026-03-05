@@ -945,17 +945,26 @@ async function buildOpenRouterDataById(
 }
 
 function buildSpeed(
+  model: JsonObject,
   modelId: string | null,
   openRouterSpeedById: Map<string, JsonObject>,
 ): JsonObject {
-  if (!modelId) {
-    return { ...EMPTY_OPENROUTER_SPEED };
-  }
-  const speed = openRouterSpeedById.get(modelId);
-  if (!speed) {
-    return { ...EMPTY_OPENROUTER_SPEED };
-  }
-  return speed;
+  const openRouterSpeed = modelId ? openRouterSpeedById.get(modelId) : null;
+  const throughput =
+    asFiniteNumber(openRouterSpeed?.throughput_tokens_per_second_median) ??
+    asFiniteNumber(model.median_output_tokens_per_second);
+  const latency =
+    asFiniteNumber(openRouterSpeed?.latency_seconds_median) ??
+    asFiniteNumber(model.median_time_to_first_token_seconds);
+  const e2eLatency =
+    asFiniteNumber(openRouterSpeed?.e2e_latency_seconds_median) ??
+    asFiniteNumber(model.median_time_to_first_answer_token) ??
+    latency;
+  return {
+    throughput_tokens_per_second_median: throughput,
+    latency_seconds_median: latency,
+    e2e_latency_seconds_median: e2eLatency,
+  };
 }
 
 function buildCost(model: JsonObject, openRouterPricing: JsonObject): unknown {
@@ -1330,7 +1339,7 @@ function mapUnionModelToSelected(
   const model = asRecord(unionModel);
   const provider = providerFromModel(model);
   const modelId = typeof model.id === "string" ? model.id : null;
-  const speed = buildSpeed(modelId, openRouterSpeedById);
+  const speed = buildSpeed(model, modelId, openRouterSpeedById);
   const pricing =
     (modelId != null ? openRouterPricingById.get(modelId) : null) ??
     EMPTY_OPENROUTER_PRICING;

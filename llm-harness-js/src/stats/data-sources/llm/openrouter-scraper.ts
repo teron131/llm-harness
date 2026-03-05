@@ -92,10 +92,13 @@ function sleep(ms: number): Promise<void> {
 }
 
 function sanitizeModelId(modelId: string): string {
-  return modelId
-    .trim()
-    .toLowerCase()
-    .replace(/:free$/, "");
+  return (
+    modelId
+      .trim()
+      .toLowerCase()
+      // Normalize OpenRouter route suffixes (e.g. :free, :exacto) to base model id.
+      .replace(/:[a-z0-9._-]+$/i, "")
+  );
 }
 
 function asRecord(value: unknown): JsonObject {
@@ -282,6 +285,91 @@ function buildPermaslugLookup(
   return permaslugBySlug;
 }
 
+function hasMeaningfulPerformance(
+  performance: OpenRouterPerformanceSummary,
+): boolean {
+  return (
+    performance.throughput_tokens_per_second_median != null ||
+    performance.latency_seconds_median != null ||
+    performance.e2e_latency_seconds_median != null
+  );
+}
+
+function hasMeaningfulPricing(pricing: OpenRouterPricingSummary): boolean {
+  const weightedInput = pricing.weighted_input_price_per_1m;
+  const weightedOutput = pricing.weighted_output_price_per_1m;
+  const hasInput = weightedInput != null && weightedInput > 0;
+  const hasOutput = weightedOutput != null && weightedOutput > 0;
+  return hasInput || hasOutput;
+}
+
+function splitSlugTokens(value: string): string[] {
+  return value
+    .toLowerCase()
+    .split(/[-._/]+/)
+    .filter(Boolean);
+}
+
+function tokenOverlapScore(
+  targetTokens: string[],
+  candidateTokens: string[],
+): number {
+  if (targetTokens.length === 0) {
+    return 0;
+  }
+  const targetSet = new Set(targetTokens);
+  const candidateSet = new Set(candidateTokens);
+  const overlapCount = [...targetSet].filter((token) =>
+    candidateSet.has(token),
+  ).length;
+  return overlapCount / targetSet.size;
+}
+
+function buildSlugFallbackCandidates(
+  modelId: string,
+  availableSlugs: string[],
+): string[] {
+  const normalized = sanitizeModelId(modelId);
+  const [provider, modelName = ""] = normalized.split("/", 2);
+  if (!provider || !modelName) {
+    return [normalized];
+  }
+
+  const targetTokens = splitSlugTokens(modelName);
+  const corePrefix = targetTokens.slice(0, 2).join("-");
+  const scoredCandidates = availableSlugs
+    .filter((slug) => slug.startsWith(`${provider}/`) && slug !== normalized)
+    .map((slug) => {
+      const candidateModel = slug.slice(provider.length + 1);
+      const candidateTokens = splitSlugTokens(candidateModel);
+      const overlapScore = tokenOverlapScore(targetTokens, candidateTokens);
+      const prefixScore =
+        corePrefix.length > 0 && candidateModel.startsWith(corePrefix)
+          ? 0.2
+          : 0;
+      const score = overlapScore + prefixScore;
+      return {
+        slug,
+        score,
+        lengthDelta: Math.abs(candidateModel.length - modelName.length),
+      };
+    })
+    .filter((candidate) => candidate.score >= 0.6)
+    .sort((left, right) => {
+      if (left.score !== right.score) {
+        return right.score - left.score;
+      }
+      if (left.lengthDelta !== right.lengthDelta) {
+        return left.lengthDelta - right.lengthDelta;
+      }
+      return left.slug.localeCompare(right.slug);
+    })
+    .slice(0, 8)
+    .map((candidate) => candidate.slug);
+
+  return [normalized, ...scoredCandidates];
+}
+
 async function fetchPerformanceForPermaslug(
   permaslug: string,
   timeoutMs: number,
@@ -331,6 +419,57 @@ async function fetchPerformanceForPermaslug(
   };
 }
 
+async function fetchBestAvailableModelStats(
+  modelId: string,
+  availableSlugs: string[],
+  permaslugBySlug: Map<string, string>,
+  timeoutMs: number,
+  maxRetries: number,
+  retryBaseDelayMs: number,
+): Promise<OpenRouterScrapedModel> {
+  const slugCandidates = buildSlugFallbackCandidates(modelId, availableSlugs);
+  const permaslugCandidates = slugCandidates
+    .map((slug) => permaslugBySlug.get(slug) ?? null)
+    .filter(
+      (slug): slug is string => typeof slug === "string" && slug.length > 0,
+    );
+
+  if (permaslugCandidates.length === 0) {
+    return emptyScrapedModel(modelId);
+  }
+
+  let firstResolved: OpenRouterScrapedModel | null = null;
+  for (const permaslug of permaslugCandidates) {
+    try {
+      const stats = await fetchPerformanceForPermaslug(
+        permaslug,
+        timeoutMs,
+        maxRetries,
+        retryBaseDelayMs,
+      );
+      const performance = summarizePerformance(stats.performance);
+      const pricing = summarizePricing(stats.pricing);
+      const resolvedModel: OpenRouterScrapedModel = {
+        id: modelId,
+        permaslug,
+        performance,
+        pricing,
+      };
+      firstResolved ??= resolvedModel;
+      if (
+        hasMeaningfulPerformance(performance) ||
+        hasMeaningfulPricing(pricing)
+      ) {
+        return resolvedModel;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  return firstResolved ?? emptyScrapedModel(modelId);
+}
+
 /**
  * Scrape OpenRouter performance stats for a finalized set of model IDs.
  *
@@ -353,39 +492,21 @@ export async function getOpenRouterScrapedStats(
     data?: OpenRouterFrontendModel[];
   }>(OPENROUTER_MODELS_URL, timeoutMs, maxRetries, retryBaseDelayMs);
   const permaslugBySlug = buildPermaslugLookup(modelDirectory.data ?? []);
+  const availableSlugs = [...permaslugBySlug.keys()];
 
   const models = await mapWithConcurrency(
     uniqueModelIds,
     concurrency,
     async (modelId) => {
-      const permaslug = permaslugBySlug.get(sanitizeModelId(modelId)) ?? null;
-      if (!permaslug) {
-        return emptyScrapedModel(modelId);
-      }
-
-      try {
-        const stats = await fetchPerformanceForPermaslug(
-          permaslug,
-          timeoutMs,
-          maxRetries,
-          retryBaseDelayMs,
-        );
-
-        return {
-          id: modelId,
-          permaslug,
-          performance: summarizePerformance(stats.performance),
-          pricing: summarizePricing(stats.pricing),
-        } satisfies OpenRouterScrapedModel;
-      } catch {
-        // Keep batch resilient: one model failure should not null out the entire payload.
-        return {
-          id: modelId,
-          permaslug,
-          performance: summarizePerformance({}),
-          pricing: summarizePricing(null),
-        } satisfies OpenRouterScrapedModel;
-      }
+      // Keep batch resilient and try close sibling slugs when a route is stale.
+      return fetchBestAvailableModelStats(
+        modelId,
+        availableSlugs,
+        permaslugBySlug,
+        timeoutMs,
+        maxRetries,
+        retryBaseDelayMs,
+      );
     },
   );
 
