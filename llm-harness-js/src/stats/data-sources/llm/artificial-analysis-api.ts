@@ -119,7 +119,7 @@ function isPositiveFinite(value: unknown): boolean {
   return Number.isFinite(numericValue) && numericValue > 0;
 }
 
-function signedLog(value: unknown, invert = false): NumberOrNull {
+function reciprocalLog(value: unknown, invert = false): NumberOrNull {
   if (!isPositiveFinite(value)) {
     return null;
   }
@@ -189,9 +189,9 @@ function computeScores(filteredModels: BaseModel[]): ScoredModel[] {
       Number.isFinite(intelligence) && Number.isFinite(coding)
         ? Number(add(multiply(2, intelligence), coding))
         : null;
-    const priceRaw = signedLog(blendedPrice, true);
-    const ttfaRaw = signedLog(ttfa, true);
-    const tpsRaw = signedLog(tps);
+    const priceRaw = reciprocalLog(blendedPrice, true);
+    const ttfaRaw = reciprocalLog(ttfa, true);
+    const tpsRaw = reciprocalLog(tps);
     const intelligenceScore = intelligenceRaw;
     const benchmarkBiasScore = meanOfFinite(
       BENCHMARK_KEYS.map((key) => {
