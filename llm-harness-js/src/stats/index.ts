@@ -42,6 +42,17 @@ export { getMatchModelMapping } from "./data-sources/llm/matcher.js";
 export type { ModelsDevOptions } from "./data-sources/llm/models-dev.js";
 export { getModelsDevStats } from "./data-sources/llm/models-dev.js";
 export type {
+  OpenRouterPerformanceSummary,
+  OpenRouterSingleModelOptions,
+  OpenRouterScrapedModel,
+  OpenRouterScrapedPayload,
+  OpenRouterScraperOptions,
+} from "./data-sources/llm/openrouter-scraper.js";
+export {
+  getOpenRouterModelStats,
+  getOpenRouterScrapedStats,
+} from "./data-sources/llm/openrouter-scraper.js";
+export type {
   ImageStatsSelectedModel,
   ImageStatsSelectedOptions,
   ImageStatsSelectedPayload,
