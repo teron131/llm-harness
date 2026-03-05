@@ -124,7 +124,7 @@ function reciprocalLog(value: unknown, invert = false): NumberOrNull {
     return null;
   }
   const numericValue = Number(value);
-  return invert ? -Math.log(numericValue) : Math.log(numericValue);
+  return invert ? -Math.log10(numericValue) : Math.log10(numericValue);
 }
 
 function weightedMean(
