@@ -1,9 +1,9 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import { getArtificialAnalysisImageStats } from "./data-sources/image/artificial-analysis";
-import { getArenaAiImageStats } from "./data-sources/image/arena-ai";
-import { getImageMatchModelMapping } from "./data-sources/image/matcher";
+import { getArtificialAnalysisImageStats } from "./artificial-analysis";
+import { getArenaAiImageStats } from "./arena-ai";
+import { getImageMatchModelMapping } from "./matcher";
 
 const DEFAULT_OUTPUT_PATH = resolve(".cache/image_stats.json");
 const CACHE_DIR = resolve(".cache");

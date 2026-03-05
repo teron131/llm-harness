@@ -1,4 +1,4 @@
-import { fetchWithTimeout, nowEpochSeconds } from "../utils.js";
+import { fetchWithTimeout, nowEpochSeconds } from "../../utils.js";
 
 const MODELS_DEV_URL = "https://models.dev/api.json";
 const LOOKBACK_DAYS = 365;

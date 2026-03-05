@@ -1,15 +1,15 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import { getArtificialAnalysisStats } from "./data-sources/llm/artificial-analysis-api";
-import { getArtificialAnalysisScrapedEvalsOnlyStats } from "./data-sources/llm/artificial-analysis-scraper";
+import { getArtificialAnalysisStats } from "./sources/artificial-analysis-api";
+import { getArtificialAnalysisScrapedEvalsOnlyStats } from "./sources/artificial-analysis-scraper";
 import {
   getMatchModelMapping,
   getScraperFallbackMatchDiagnostics,
-} from "./data-sources/llm/matcher";
-import { getModelsDevStats } from "./data-sources/llm/models-dev";
-import { getOpenRouterScrapedStats } from "./data-sources/llm/openrouter-scraper";
-import { percentileRank } from "./data-sources/utils";
+} from "./matcher";
+import { getModelsDevStats } from "./sources/models-dev";
+import { getOpenRouterScrapedStats } from "./sources/openrouter-scraper";
+import { percentileRank } from "../utils";
 
 const DEFAULT_OUTPUT_PATH = resolve(".cache/model_stats.json");
 const CACHE_DIR = resolve(".cache");

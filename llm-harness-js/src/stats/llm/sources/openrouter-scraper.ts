@@ -1,4 +1,4 @@
-import { fetchWithTimeout, nowEpochSeconds } from "../utils.js";
+import { fetchWithTimeout, nowEpochSeconds } from "../../utils.js";
 
 const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/frontend/models";
 const OPENROUTER_THROUGHPUT_URL =

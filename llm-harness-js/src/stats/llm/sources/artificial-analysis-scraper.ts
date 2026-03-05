@@ -1,4 +1,4 @@
-import { fetchWithTimeout, nowEpochSeconds } from "../utils.js";
+import { fetchWithTimeout, nowEpochSeconds } from "../../utils.js";
 
 const DEFAULT_SCRAPE_URL = "https://artificialanalysis.ai/leaderboards/models";
 const DEFAULT_TIMEOUT_MS = 30_000;

@@ -1,6 +1,6 @@
-import { getArtificialAnalysisStats } from "./artificial-analysis-api";
-import { getArtificialAnalysisScrapedEvalsOnlyStats } from "./artificial-analysis-scraper";
-import { getModelsDevStats } from "./models-dev";
+import { getArtificialAnalysisStats } from "./sources/artificial-analysis-api";
+import { getArtificialAnalysisScrapedEvalsOnlyStats } from "./sources/artificial-analysis-scraper";
+import { getModelsDevStats } from "./sources/models-dev";
 
 type ModelsDevModel = Awaited<
   ReturnType<typeof getModelsDevStats>
