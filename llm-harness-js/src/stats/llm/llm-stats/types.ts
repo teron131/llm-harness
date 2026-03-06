@@ -59,15 +59,15 @@ export type ModelStatsSelectedOptions = {
   apiKey?: string;
 };
 
-export type SelectedSourceData = {
+export type SourceData = {
   scrapedRows: unknown[];
-  scopedModelsDevModels: ModelsDevModel[];
+  preferredModelsDevModels: ModelsDevModel[];
   modelsDevById: Map<string, ModelsDevModel>;
   scrapedBySlug: Map<string, ScrapedEvalModel>;
 };
 
-export type EnrichedUnionRows = {
-  unionRows: Record<string, unknown>[];
+export type EnrichedRows = {
+  rows: Record<string, unknown>[];
   openRouterSpeedById: Map<string, JsonObject>;
   openRouterPricingById: Map<string, JsonObject>;
   speedOutputTokenAnchors: number[];

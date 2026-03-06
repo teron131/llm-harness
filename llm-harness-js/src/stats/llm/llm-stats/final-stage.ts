@@ -13,10 +13,7 @@ import {
   buildIntelligenceIndexCost,
   buildScores,
 } from "./scoring.js";
-import {
-  type EnrichedUnionRows,
-  type ModelStatsSelectedModel,
-} from "./types.js";
+import { type EnrichedRows, type ModelStatsSelectedModel } from "./types.js";
 
 const EMPTY_OPENROUTER_PRICING = {
   weighted_input: null,
@@ -132,10 +129,10 @@ function projectFinalModel(
 }
 
 export function buildFinalModels(
-  enrichedRows: EnrichedUnionRows,
+  enrichedRows: EnrichedRows,
   id: string | null | undefined,
 ): ModelStatsSelectedModel[] {
-  const models = enrichedRows.unionRows.map((row) =>
+  const models = enrichedRows.rows.map((row) =>
     projectFinalModel(
       row,
       enrichedRows.openRouterSpeedById,

@@ -9,7 +9,7 @@ import {
 import {
   type ModelsDevModel,
   type ScrapedEvalModel,
-  type SelectedSourceData,
+  type SourceData,
 } from "./types.js";
 
 const MODEL_VARIANT_TOKENS = [
@@ -103,11 +103,11 @@ function buildMatchedRowFromScrapedModel(
 }
 
 export async function buildMatchedRows(
-  sourceData: SelectedSourceData,
+  sourceData: SourceData,
 ): Promise<Record<string, unknown>[]> {
   const fallbackDiagnostics = await getScraperFallbackMatchDiagnostics({
     scrapedRows: sourceData.scrapedRows,
-    modelsDevModels: sourceData.scopedModelsDevModels,
+    modelsDevModels: sourceData.preferredModelsDevModels,
   });
 
   return fallbackDiagnostics.models

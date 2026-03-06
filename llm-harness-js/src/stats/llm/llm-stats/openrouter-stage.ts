@@ -6,7 +6,7 @@ import {
   dedupeRowsPreferOpenRouter,
 } from "./cleanup.js";
 import { deriveSpeedOutputTokenAnchors } from "./scoring.js";
-import { type EnrichedUnionRows } from "./types.js";
+import { type EnrichedRows } from "./types.js";
 
 const OPENROUTER_SPEED_CONCURRENCY = 8;
 
@@ -75,7 +75,7 @@ async function buildOpenRouterDataById(
 
 export async function enrichRows(
   matchedRows: Record<string, unknown>[],
-): Promise<EnrichedUnionRows> {
+): Promise<EnrichedRows> {
   const dedupedRows = dedupeRowsPreferOpenRouter(matchedRows);
   const rows = backfillFreeModelCosts(dedupedRows);
   const { speedById: openRouterSpeedById, pricingById: openRouterPricingById } =
@@ -83,7 +83,7 @@ export async function enrichRows(
   const speedOutputTokenAnchors =
     deriveSpeedOutputTokenAnchors(openRouterSpeedById);
   return {
-    unionRows: rows,
+    rows,
     openRouterSpeedById,
     openRouterPricingById,
     speedOutputTokenAnchors,

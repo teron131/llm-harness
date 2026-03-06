@@ -9,7 +9,7 @@ import {
 import {
   type ModelsDevModel,
   type ScrapedEvalModel,
-  type SelectedSourceData,
+  type SourceData,
 } from "./types.js";
 
 function dedupePreferredProviderModels(
@@ -60,7 +60,7 @@ function buildScrapedBySlug(
   return scrapedBySlug;
 }
 
-export async function fetchSourceData(): Promise<SelectedSourceData> {
+export async function fetchSourceData(): Promise<SourceData> {
   const [artificialAnalysisScrapedStats, modelsDevStats] = await Promise.all([
     getArtificialAnalysisScrapedEvalsOnlyStats(),
     getModelsDevStats(),
@@ -70,7 +70,7 @@ export async function fetchSourceData(): Promise<SelectedSourceData> {
   );
   return {
     scrapedRows: artificialAnalysisScrapedStats.data,
-    scopedModelsDevModels: preferredModelsDevModels,
+    preferredModelsDevModels,
     modelsDevById: buildModelsDevById(preferredModelsDevModels),
     scrapedBySlug: buildScrapedBySlug(artificialAnalysisScrapedStats.data),
   };
