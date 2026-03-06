@@ -15,7 +15,7 @@ const AGENTIC_BENCHMARK_KEYS = [
   "ifbench",
   "terminalbench_hard",
 ] as const;
-const DEFAULT_SPEED_OUTPUT_TOKEN_ANCHORS = [500, 2_000, 5_000, 10_000] as const;
+const DEFAULT_SPEED_OUTPUT_TOKEN_ANCHORS = [200, 500, 1_000, 2_000, 8_000] as const;
 const SPEED_OUTPUT_TOKEN_RANGE_MIN = 200;
 const SPEED_OUTPUT_TOKEN_RANGE_MAX = 8_000;
 const SPEED_ANCHOR_QUANTILES = [0.25, 0.5, 0.75] as const;
@@ -88,8 +88,10 @@ export function blendedPriceValue(costLike: unknown): number | null {
       ? 0.1 * cacheWriteCost + 0.9 * outputCost
       : outputCost;
   const baseProxy =
-    0.9 * (0.75 * cacheWeightedInput + 0.25 * inputCost) +
-    0.1 * cacheWeightedOutput;
+    WEIGHTED_PRICE_INPUT_RATIO *
+      (WEIGHTED_PRICE_INPUT_RATIO * cacheWeightedInput +
+        WEIGHTED_PRICE_OUTPUT_RATIO * inputCost) +
+    WEIGHTED_PRICE_OUTPUT_RATIO * cacheWeightedOutput;
 
   const over200kCost = asRecord(cost.context_over_200k);
   const over200kInput = asFiniteNumber(over200kCost.input);
@@ -112,8 +114,10 @@ export function blendedPriceValue(costLike: unknown): number | null {
       ? 0.1 * over200kCacheWrite + 0.9 * over200kOutput
       : over200kOutput;
   const over200kProxy =
-    0.9 * (0.75 * over200kInputWeighted + 0.25 * over200kInput) +
-    0.1 * over200kOutputWeighted;
+    WEIGHTED_PRICE_INPUT_RATIO *
+      (WEIGHTED_PRICE_INPUT_RATIO * over200kInputWeighted +
+        WEIGHTED_PRICE_OUTPUT_RATIO * over200kInput) +
+    WEIGHTED_PRICE_OUTPUT_RATIO * over200kOutputWeighted;
 
   return 0.95 * baseProxy + 0.05 * over200kProxy;
 }
