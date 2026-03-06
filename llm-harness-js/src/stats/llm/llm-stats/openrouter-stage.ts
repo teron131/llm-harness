@@ -9,9 +9,11 @@ import {
 } from "../shared.js";
 
 import { deriveSpeedOutputTokenAnchors } from "./scoring.js";
-import { type EnrichedRows } from "./types.js";
-
-const OPENROUTER_SPEED_CONCURRENCY = 8;
+import {
+  type EnrichedRows,
+  type OpenRouterConfig,
+  type ScoringConfig,
+} from "./types.js";
 
 function normalizeOpenRouterSpeed(performance: unknown): JsonObject {
   const parsed = asRecord(performance);
@@ -152,6 +154,7 @@ function backfillFreeModelCosts(
 
 async function buildOpenRouterDataById(
   rows: Record<string, unknown>[],
+  speedConcurrency: number,
 ): Promise<{
   speedById: Map<string, JsonObject>;
   pricingById: Map<string, JsonObject>;
@@ -169,7 +172,7 @@ async function buildOpenRouterDataById(
   try {
     const payload = await getOpenRouterScrapedStats({
       modelIds,
-      concurrency: OPENROUTER_SPEED_CONCURRENCY,
+      concurrency: speedConcurrency,
     });
     const speedById = new Map(
       payload.models.map((model) => [
@@ -195,13 +198,17 @@ async function buildOpenRouterDataById(
 /** Fetch OpenRouter enrichments for the matched rows and return the late-bound speed/pricing maps. */
 export async function enrichRows(
   matchedRows: Record<string, unknown>[],
+  openrouterConfig: OpenRouterConfig,
+  scoringConfig: ScoringConfig,
 ): Promise<EnrichedRows> {
   const dedupedRows = dedupeRowsPreferOpenRouter(matchedRows);
   const rows = backfillFreeModelCosts(dedupedRows);
   const { speedById: openRouterSpeedById, pricingById: openRouterPricingById } =
-    await buildOpenRouterDataById(rows);
-  const speedOutputTokenAnchors =
-    deriveSpeedOutputTokenAnchors(openRouterSpeedById);
+    await buildOpenRouterDataById(rows, openrouterConfig.speedConcurrency);
+  const speedOutputTokenAnchors = deriveSpeedOutputTokenAnchors(
+    openRouterSpeedById,
+    scoringConfig,
+  );
   return {
     rows,
     openRouterSpeedById,

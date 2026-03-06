@@ -2,28 +2,7 @@
 import { percentileRank } from "../../utils.js";
 import { asFiniteNumber, asRecord, type JsonObject } from "../shared.js";
 
-import { type ModelStatsSelectedModel } from "./types.js";
-
-const INTELLIGENCE_BENCHMARK_KEYS = [
-  "omniscience_accuracy",
-  "hle",
-  "lcr",
-  "scicode",
-] as const;
-const AGENTIC_BENCHMARK_KEYS = [
-  "omniscience_nonhallucination_rate",
-  "gdpval_normalized",
-  "ifbench",
-  "terminalbench_hard",
-] as const;
-const DEFAULT_SPEED_OUTPUT_TOKEN_ANCHORS = [
-  200, 500, 1_000, 2_000, 8_000,
-] as const;
-const SPEED_OUTPUT_TOKEN_RANGE_MIN = 200;
-const SPEED_OUTPUT_TOKEN_RANGE_MAX = 8_000;
-const SPEED_ANCHOR_QUANTILES = [0.25, 0.5, 0.75] as const;
-const WEIGHTED_PRICE_INPUT_RATIO = 0.75;
-const WEIGHTED_PRICE_OUTPUT_RATIO = 0.25;
+import { type ModelStatsSelectedModel, type ScoringConfig } from "./types.js";
 
 function meanOfFinite(values: Array<number | null>): number | null {
   const finiteValues = values.filter(
@@ -59,7 +38,10 @@ function metricValue(model: JsonObject, key: string): number | null {
 }
 
 /** Estimate a blended price from raw pricing fields, preferring weighted OpenRouter pricing when available. */
-export function blendedPriceValue(costLike: unknown): number | null {
+export function blendedPriceValue(
+  costLike: unknown,
+  scoringConfig: ScoringConfig,
+): number | null {
   const cost = asRecord(costLike);
   const inputCost = asFiniteNumber(cost.input);
   const outputCost = asFiniteNumber(cost.output);
@@ -81,8 +63,8 @@ export function blendedPriceValue(costLike: unknown): number | null {
     const effectiveOutputCost =
       weightedOutputCost != null ? weightedOutputCost : outputCost;
     return (
-      WEIGHTED_PRICE_INPUT_RATIO * effectiveInputCost +
-      WEIGHTED_PRICE_OUTPUT_RATIO * effectiveOutputCost
+      scoringConfig.weightedPriceInputRatio * effectiveInputCost +
+      scoringConfig.weightedPriceOutputRatio * effectiveOutputCost
     );
   }
 
@@ -92,10 +74,10 @@ export function blendedPriceValue(costLike: unknown): number | null {
       ? 0.1 * cacheWriteCost + 0.9 * outputCost
       : outputCost;
   const baseProxy =
-    WEIGHTED_PRICE_INPUT_RATIO *
-      (WEIGHTED_PRICE_INPUT_RATIO * cacheWeightedInput +
-        WEIGHTED_PRICE_OUTPUT_RATIO * inputCost) +
-    WEIGHTED_PRICE_OUTPUT_RATIO * cacheWeightedOutput;
+    scoringConfig.weightedPriceInputRatio *
+      (scoringConfig.weightedPriceInputRatio * cacheWeightedInput +
+        scoringConfig.weightedPriceOutputRatio * inputCost) +
+    scoringConfig.weightedPriceOutputRatio * cacheWeightedOutput;
 
   const over200kCost = asRecord(cost.context_over_200k);
   const over200kInput = asFiniteNumber(over200kCost.input);
@@ -118,10 +100,10 @@ export function blendedPriceValue(costLike: unknown): number | null {
       ? 0.1 * over200kCacheWrite + 0.9 * over200kOutput
       : over200kOutput;
   const over200kProxy =
-    WEIGHTED_PRICE_INPUT_RATIO *
-      (WEIGHTED_PRICE_INPUT_RATIO * over200kInputWeighted +
-        WEIGHTED_PRICE_OUTPUT_RATIO * over200kInput) +
-    WEIGHTED_PRICE_OUTPUT_RATIO * over200kOutputWeighted;
+    scoringConfig.weightedPriceInputRatio *
+      (scoringConfig.weightedPriceInputRatio * over200kInputWeighted +
+        scoringConfig.weightedPriceOutputRatio * over200kInput) +
+    scoringConfig.weightedPriceOutputRatio * over200kOutputWeighted;
 
   return 0.95 * baseProxy + 0.05 * over200kProxy;
 }
@@ -152,6 +134,7 @@ function quantileFromSorted(values: number[], quantile: number): number | null {
 /** Derive representative output-token anchors from OpenRouter latency/throughput observations. */
 export function deriveSpeedOutputTokenAnchors(
   openRouterSpeedById: Map<string, JsonObject>,
+  scoringConfig: ScoringConfig,
 ): number[] {
   const impliedTokenUsages = Array.from(openRouterSpeedById.values())
     .map((speed) => {
@@ -180,11 +163,11 @@ export function deriveSpeedOutputTokenAnchors(
     .sort((left, right) => left - right);
 
   if (impliedTokenUsages.length === 0) {
-    return [...DEFAULT_SPEED_OUTPUT_TOKEN_ANCHORS];
+    return [...scoringConfig.defaultSpeedOutputTokenAnchors];
   }
 
   const q0 = impliedTokenUsages[0] ?? null;
-  const [q1, q2, q3] = SPEED_ANCHOR_QUANTILES.map((quantile) =>
+  const [q1, q2, q3] = scoringConfig.speedAnchorQuantiles.map((quantile) =>
     quantileFromSorted(impliedTokenUsages, quantile),
   );
   const q4 = impliedTokenUsages[impliedTokenUsages.length - 1] ?? null;
@@ -192,7 +175,7 @@ export function deriveSpeedOutputTokenAnchors(
     (value): value is number => value != null && Number.isFinite(value),
   );
   if (numericQuantileAnchors.length !== 5) {
-    return [...DEFAULT_SPEED_OUTPUT_TOKEN_ANCHORS];
+    return [...scoringConfig.defaultSpeedOutputTokenAnchors];
   }
 
   const sourceMin = numericQuantileAnchors[0] as number;
@@ -200,15 +183,16 @@ export function deriveSpeedOutputTokenAnchors(
     numericQuantileAnchors.length - 1
   ] as number;
   if (!(sourceMax > sourceMin)) {
-    return [...DEFAULT_SPEED_OUTPUT_TOKEN_ANCHORS];
+    return [...scoringConfig.defaultSpeedOutputTokenAnchors];
   }
 
   return numericQuantileAnchors.map((anchor) => {
     const normalized = (anchor - sourceMin) / (sourceMax - sourceMin);
     const mapped =
-      SPEED_OUTPUT_TOKEN_RANGE_MIN +
+      scoringConfig.speedOutputTokenRangeMin +
       normalized *
-        (SPEED_OUTPUT_TOKEN_RANGE_MAX - SPEED_OUTPUT_TOKEN_RANGE_MIN);
+        (scoringConfig.speedOutputTokenRangeMax -
+          scoringConfig.speedOutputTokenRangeMin);
     return Math.round(mapped);
   });
 }
@@ -219,6 +203,7 @@ export function buildScores(
   cost: unknown,
   speed: JsonObject,
   speedOutputTokenAnchors: number[],
+  scoringConfig: ScoringConfig,
 ): unknown {
   const intelligenceIndex =
     metricValue(model, "intelligence_index") ??
@@ -227,10 +212,12 @@ export function buildScores(
     metricValue(model, "agentic_index") ??
     metricValue(model, "artificial_analysis_agentic_index");
   const intelligenceBenchmarkMean = meanOfFinite(
-    INTELLIGENCE_BENCHMARK_KEYS.map((key) => metricValue(model, key)),
+    scoringConfig.intelligenceBenchmarkKeys.map((key) =>
+      metricValue(model, key),
+    ),
   );
   const agenticBenchmarkMean = meanOfFinite(
-    AGENTIC_BENCHMARK_KEYS.map((key) => metricValue(model, key)),
+    scoringConfig.agenticBenchmarkKeys.map((key) => metricValue(model, key)),
   );
   const intelligenceScore =
     intelligenceIndex != null && intelligenceBenchmarkMean != null
@@ -240,7 +227,7 @@ export function buildScores(
     agenticIndex != null && agenticBenchmarkMean != null
       ? (agenticIndex + agenticBenchmarkMean * 100) / 2
       : null;
-  const blendedPrice = blendedPriceValue(cost);
+  const blendedPrice = blendedPriceValue(cost, scoringConfig);
   const latencySeconds = asFiniteNumber(speed.latency_seconds_median);
   const throughputTokensPerSecond = asFiniteNumber(
     speed.throughput_tokens_per_second_median,

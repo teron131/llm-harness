@@ -51,6 +51,54 @@ export type ModelStatsSelectedOptions = {
   id?: string | null;
 };
 
+/** Matcher config controls how strict the scraper-to-models.dev ID matching stays around known model variant tokens. */
+export type MatcherConfig = {
+  /** Tokens that should match on both sides so `flash`, `pro`, `mini`, and similar variants do not collapse into the wrong canonical model. */
+  variantTokens: readonly string[];
+};
+
+/** OpenRouter config controls the late enrichment fetches that fill speed and weighted pricing data after matching. */
+export type OpenRouterConfig = {
+  /** Maximum concurrent OpenRouter detail requests when scraping per-model speed and pricing data. */
+  speedConcurrency: number;
+};
+
+/** Final-stage config controls how aggressively sparse fields are pruned from the public payload. */
+export type FinalStageConfig = {
+  /** Maximum null share allowed before a top-level or nested field is dropped from the final output sample. */
+  nullFieldPruneThreshold: number;
+  /** Recent-release window used to build the prune sample so newly added fields are judged against current models first. */
+  nullFieldPruneRecentLookbackDays: number;
+};
+
+/** Scoring config collects the benchmark groups and heuristic weights used to derive raw and normalized score fields. */
+export type ScoringConfig = {
+  /** Benchmark keys averaged into the intelligence benchmark mean before it is blended with the intelligence index. */
+  intelligenceBenchmarkKeys: readonly string[];
+  /** Benchmark keys averaged into the agentic benchmark mean before it is blended with the agentic index. */
+  agenticBenchmarkKeys: readonly string[];
+  /** Fallback output-token anchors used when OpenRouter speed data is missing or too sparse to derive representative anchors. */
+  defaultSpeedOutputTokenAnchors: readonly number[];
+  /** Lower bound for remapping observed token anchors into a stable speed-scoring range. */
+  speedOutputTokenRangeMin: number;
+  /** Upper bound for remapping observed token anchors into a stable speed-scoring range. */
+  speedOutputTokenRangeMax: number;
+  /** Quantiles used alongside min and max to derive five representative speed anchors from OpenRouter observations. */
+  speedAnchorQuantiles: readonly number[];
+  /** Input-side weight for blended pricing so cached or weighted input costs can dominate the final price heuristic. */
+  weightedPriceInputRatio: number;
+  /** Output-side weight for blended pricing so output cost still contributes to the final price heuristic. */
+  weightedPriceOutputRatio: number;
+};
+
+/** Full stage config bundles the main tuning knobs that shape matching, enrichment, pruning, and scoring behavior. */
+export type LlmStatsStageConfig = {
+  matcher: MatcherConfig;
+  openrouter: OpenRouterConfig;
+  final: FinalStageConfig;
+  scoring: ScoringConfig;
+};
+
 export type SourceData = {
   scrapedRows: unknown[];
   preferredModelsDevModels: ModelsDevModel[];

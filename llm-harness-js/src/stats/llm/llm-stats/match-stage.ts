@@ -9,21 +9,13 @@ import {
 
 import {
   type ArtificialAnalysisModel,
+  type MatcherConfig,
   type ModelsDevModel,
   type ScrapedEvalModel,
   type SourceData,
 } from "./types.js";
 
-const MODEL_VARIANT_TOKENS = [
-  "flash-lite",
-  "flash",
-  "pro",
-  "nano",
-  "mini",
-  "lite",
-] as const;
-
-function hasToken(id: string, token: (typeof MODEL_VARIANT_TOKENS)[number]) {
+function hasToken(id: string, token: string) {
   return id.includes(token);
 }
 
@@ -47,10 +39,11 @@ function canonicalModelId(
 function hasVariantConflict(
   artificialAnalysisSlug: string,
   matchedModelId: string,
+  matcherConfig: MatcherConfig,
 ): boolean {
   const aa = normalizeProviderModelId(artificialAnalysisSlug);
   const matched = normalizeProviderModelId(matchedModelId);
-  return MODEL_VARIANT_TOKENS.some(
+  return matcherConfig.variantTokens.some(
     (token) => hasToken(aa, token) !== hasToken(matched, token),
   );
 }
@@ -121,6 +114,7 @@ function buildMatchedRowFromScrapedModel(
 /** Build matched intermediate rows by running scraper fallback diagnostics and rejecting obvious variant mismatches. */
 export async function buildMatchedRows(
   sourceData: SourceData,
+  matcherConfig: MatcherConfig,
 ): Promise<Record<string, unknown>[]> {
   const fallbackDiagnostics = await getScraperFallbackMatchDiagnostics({
     scrapedRows: sourceData.scrapedRows,
@@ -137,6 +131,7 @@ export async function buildMatchedRows(
         hasVariantConflict(
           matchedModel.artificial_analysis_slug,
           matchedModelId,
+          matcherConfig,
         )
       ) {
         return null;

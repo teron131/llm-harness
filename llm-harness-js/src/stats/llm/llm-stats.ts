@@ -10,16 +10,52 @@ import { enrichRows } from "./llm-stats/openrouter-stage.js";
 import { buildMatchedRows } from "./llm-stats/match-stage.js";
 import { fetchSourceData } from "./llm-stats/source-stage.js";
 import {
+  type LlmStatsStageConfig,
   type ModelStatsSelectedModel,
   type ModelStatsSelectedOptions,
   type ModelStatsSelectedPayload,
 } from "./llm-stats/types.js";
 
 export type {
+  LlmStatsStageConfig,
   ModelStatsSelectedModel,
   ModelStatsSelectedOptions,
   ModelStatsSelectedPayload,
 };
+
+/** Centralized stage config for the LLM stats pipeline so matching, enrichment, pruning, and scoring tune from one place. */
+export const LLM_STATS_STAGE_CONFIG = {
+  matcher: {
+    variantTokens: ["flash-lite", "flash", "pro", "nano", "mini", "lite"],
+  },
+  openrouter: {
+    speedConcurrency: 8,
+  },
+  final: {
+    nullFieldPruneThreshold: 0.5,
+    nullFieldPruneRecentLookbackDays: 90,
+  },
+  scoring: {
+    intelligenceBenchmarkKeys: [
+      "omniscience_accuracy",
+      "hle",
+      "lcr",
+      "scicode",
+    ],
+    agenticBenchmarkKeys: [
+      "omniscience_nonhallucination_rate",
+      "gdpval_normalized",
+      "ifbench",
+      "terminalbench_hard",
+    ],
+    defaultSpeedOutputTokenAnchors: [200, 500, 1_000, 2_000, 8_000],
+    speedOutputTokenRangeMin: 200,
+    speedOutputTokenRangeMax: 8_000,
+    speedAnchorQuantiles: [0.25, 0.5, 0.75],
+    weightedPriceInputRatio: 0.75,
+    weightedPriceOutputRatio: 0.25,
+  },
+} satisfies LlmStatsStageConfig;
 
 /** Persist the final model stats payload to disk while keeping write failures non-fatal. */
 export async function saveModelStatsSelected(
@@ -43,9 +79,21 @@ export async function getModelStatsSelected(
     }
 
     const sourceData = await fetchSourceData();
-    const matchedRows = await buildMatchedRows(sourceData);
-    const enrichedRows = await enrichRows(matchedRows);
-    const models = buildFinalModels(enrichedRows, options.id);
+    const matchedRows = await buildMatchedRows(
+      sourceData,
+      LLM_STATS_STAGE_CONFIG.matcher,
+    );
+    const enrichedRows = await enrichRows(
+      matchedRows,
+      LLM_STATS_STAGE_CONFIG.openrouter,
+      LLM_STATS_STAGE_CONFIG.scoring,
+    );
+    const models = buildFinalModels(
+      enrichedRows,
+      options.id,
+      LLM_STATS_STAGE_CONFIG.final,
+      LLM_STATS_STAGE_CONFIG.scoring,
+    );
     const fetchedAt = currentEpochSeconds();
 
     if (options.id != null) {

@@ -6,7 +6,12 @@ import {
   blendedPriceValue,
   buildScores,
 } from "./scoring.js";
-import { type EnrichedRows, type ModelStatsSelectedModel } from "./types.js";
+import {
+  type EnrichedRows,
+  type FinalStageConfig,
+  type ModelStatsSelectedModel,
+  type ScoringConfig,
+} from "./types.js";
 
 const EMPTY_OPENROUTER_PRICING = {
   weighted_input: null,
@@ -16,8 +21,6 @@ const MIN_INTELLIGENCE_COST_TOKEN_THRESHOLD = 1_000_000;
 const INTELLIGENCE_COST_TOTAL_COST_KEY = "intelligence_index_cost_total_cost";
 const INTELLIGENCE_COST_TOTAL_TOKENS_KEY =
   "intelligence_index_cost_total_tokens";
-const NULL_FIELD_PRUNE_THRESHOLD = 0.5;
-const NULL_FIELD_PRUNE_RECENT_LOOKBACK_DAYS = 90;
 const STABLE_TOP_LEVEL_KEYS = new Set<string>([
   "id",
   "name",
@@ -89,7 +92,11 @@ function buildSpeed(
   };
 }
 
-function buildCost(model: JsonObject, openRouterPricing: JsonObject): unknown {
+function buildCost(
+  model: JsonObject,
+  openRouterPricing: JsonObject,
+  scoringConfig: ScoringConfig,
+): unknown {
   const baseCost = asRecord(model.cost);
   const cleanedCost: JsonObject = Object.fromEntries(
     Object.entries(baseCost).filter(([, value]) => value != null),
@@ -102,7 +109,7 @@ function buildCost(model: JsonObject, openRouterPricing: JsonObject): unknown {
   if (weightedOutput != null) {
     cleanedCost.weighted_output = weightedOutput;
   }
-  const blendedPrice = blendedPriceValue(cleanedCost);
+  const blendedPrice = blendedPriceValue(cleanedCost, scoringConfig);
   if (blendedPrice != null) {
     cleanedCost.blended_price = blendedPrice;
   }
@@ -152,18 +159,18 @@ function buildIntelligenceIndexCost(model: JsonObject): unknown {
   return Object.keys(cleaned).length > 0 ? cleaned : null;
 }
 
-function intelligencePercentileValue(
+function intelligenceRelativeScoreValue(
   model: ModelStatsSelectedModel,
 ): number | null {
   return asFiniteNumber(asRecord(model.relative_scores).intelligence_score);
 }
 
-function sortModelsByIntelligencePercentile(
+function sortModelsByIntelligenceRelativeScore(
   models: ModelStatsSelectedModel[],
 ): ModelStatsSelectedModel[] {
   return [...models].sort((left, right) => {
-    const leftIntelligence = intelligencePercentileValue(left);
-    const rightIntelligence = intelligencePercentileValue(right);
+    const leftIntelligence = intelligenceRelativeScoreValue(left);
+    const rightIntelligence = intelligenceRelativeScoreValue(right);
     if (leftIntelligence == null && rightIntelligence == null) {
       return (left.id ?? "").localeCompare(right.id ?? "");
     }
@@ -201,11 +208,12 @@ function isWithinRecentLookback(
 
 function selectPruneSampleModels(
   models: ModelStatsSelectedModel[],
+  finalConfig: FinalStageConfig,
 ): ModelStatsSelectedModel[] {
   const recentModels = models.filter((model) =>
     isWithinRecentLookback(
       model.release_date,
-      NULL_FIELD_PRUNE_RECENT_LOOKBACK_DAYS,
+      finalConfig.nullFieldPruneRecentLookbackDays,
     ),
   );
   return recentModels.length > 0 ? recentModels : models;
@@ -238,13 +246,13 @@ function countNullishNestedKey(
 
 function pruneSparseFields(
   models: ModelStatsSelectedModel[],
-  nullThreshold: number = NULL_FIELD_PRUNE_THRESHOLD,
+  finalConfig: FinalStageConfig,
 ): ModelStatsSelectedModel[] {
   if (models.length === 0) {
     return models;
   }
 
-  const sampleModels = selectPruneSampleModels(models);
+  const sampleModels = selectPruneSampleModels(models, finalConfig);
   const sampleTotal = sampleModels.length;
   const topLevelKeys = new Set<string>();
   const nestedKeysByParent = new Map<string, Set<string>>();
@@ -269,7 +277,7 @@ function pruneSparseFields(
       continue;
     }
     const nullCount = countNullishTopLevelKey(sampleModels, key);
-    if (nullCount / sampleTotal > nullThreshold) {
+    if (nullCount / sampleTotal > finalConfig.nullFieldPruneThreshold) {
       topLevelKeysToPrune.add(key);
     }
   }
@@ -286,7 +294,7 @@ function pruneSparseFields(
         parentKey,
         nestedKey,
       );
-      if (nullCount / sampleTotal > nullThreshold) {
+      if (nullCount / sampleTotal > finalConfig.nullFieldPruneThreshold) {
         keysToPrune.add(nestedKey);
       }
     }
@@ -331,6 +339,7 @@ function projectFinalModel(
   openRouterSpeedById: Map<string, JsonObject>,
   openRouterPricingById: Map<string, JsonObject>,
   speedOutputTokenAnchors: number[],
+  scoringConfig: ScoringConfig,
 ): ModelStatsSelectedModel {
   const model = asRecord(row);
   const provider = providerFromModel(model);
@@ -339,7 +348,7 @@ function projectFinalModel(
   const pricing =
     (modelId != null ? openRouterPricingById.get(modelId) : null) ??
     EMPTY_OPENROUTER_PRICING;
-  const cost = buildCost(model, pricing);
+  const cost = buildCost(model, pricing, scoringConfig);
   return {
     id: modelId,
     name: typeof model.name === "string" ? model.name : null,
@@ -358,7 +367,13 @@ function projectFinalModel(
     intelligence: buildIntelligence(model),
     intelligence_index_cost: buildIntelligenceIndexCost(model),
     evaluations: buildEvaluations(model),
-    scores: buildScores(model, cost, speed, speedOutputTokenAnchors),
+    scores: buildScores(
+      model,
+      cost,
+      speed,
+      speedOutputTokenAnchors,
+      scoringConfig,
+    ),
     relative_scores: null,
   };
 }
@@ -367,6 +382,8 @@ function projectFinalModel(
 export function buildFinalModels(
   enrichedRows: EnrichedRows,
   id: string | null | undefined,
+  finalConfig: FinalStageConfig,
+  scoringConfig: ScoringConfig,
 ): ModelStatsSelectedModel[] {
   const models = enrichedRows.rows.map((row) =>
     projectFinalModel(
@@ -374,12 +391,13 @@ export function buildFinalModels(
       enrichedRows.openRouterSpeedById,
       enrichedRows.openRouterPricingById,
       enrichedRows.speedOutputTokenAnchors,
+      scoringConfig,
     ),
   );
   const modelsWithRelativeScores = attachRelativeScores(models);
-  const sortedModels = sortModelsByIntelligencePercentile(
+  const sortedModels = sortModelsByIntelligenceRelativeScore(
     modelsWithRelativeScores,
   );
-  const prunedModels = pruneSparseFields(sortedModels);
+  const prunedModels = pruneSparseFields(sortedModels, finalConfig);
   return filterModelsById(prunedModels, id);
 }
