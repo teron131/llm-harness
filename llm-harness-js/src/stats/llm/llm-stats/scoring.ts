@@ -3,10 +3,6 @@ import { asFiniteNumber, asRecord, type JsonObject } from "../shared.js";
 
 import { type ModelStatsSelectedModel } from "./types.js";
 
-const MIN_INTELLIGENCE_COST_TOKEN_THRESHOLD = 1_000_000;
-const INTELLIGENCE_COST_TOTAL_COST_KEY = "intelligence_index_cost_total_cost";
-const INTELLIGENCE_COST_TOTAL_TOKENS_KEY =
-  "intelligence_index_cost_total_tokens";
 const INTELLIGENCE_BENCHMARK_KEYS = [
   "omniscience_accuracy",
   "hle",
@@ -35,49 +31,6 @@ function meanOfFinite(values: Array<number | null>): number | null {
   }
   const total = finiteValues.reduce((sum, value) => sum + value, 0);
   return total / finiteValues.length;
-}
-
-export function buildEvaluations(model: JsonObject): unknown {
-  const evaluations = asRecord(model.evaluations);
-  return Object.keys(evaluations).length > 0 ? evaluations : null;
-}
-
-export function buildIntelligence(model: JsonObject): unknown {
-  const intelligence = asRecord(model.intelligence);
-  const nonhallucinationRate = asFiniteNumber(
-    intelligence.omniscience_hallucination_rate,
-  );
-  if (nonhallucinationRate != null) {
-    intelligence.omniscience_nonhallucination_rate = nonhallucinationRate;
-    delete intelligence.omniscience_hallucination_rate;
-  }
-  delete intelligence[INTELLIGENCE_COST_TOTAL_COST_KEY];
-  delete intelligence[INTELLIGENCE_COST_TOTAL_TOKENS_KEY];
-  return Object.keys(intelligence).length > 0 ? intelligence : null;
-}
-
-export function buildIntelligenceIndexCost(model: JsonObject): unknown {
-  const fromRow = asRecord(model.intelligence_index_cost);
-  const fromIntelligence = asRecord(model.intelligence);
-  const totalCost =
-    asFiniteNumber(fromRow.total_cost) ??
-    asFiniteNumber(fromIntelligence[INTELLIGENCE_COST_TOTAL_COST_KEY]);
-  const totalTokens =
-    asFiniteNumber(fromRow.total_tokens) ??
-    asFiniteNumber(fromIntelligence[INTELLIGENCE_COST_TOTAL_TOKENS_KEY]);
-  const normalized = {
-    ...fromRow,
-    total_cost: totalCost,
-    total_tokens:
-      totalTokens != null &&
-      totalTokens >= MIN_INTELLIGENCE_COST_TOKEN_THRESHOLD
-        ? totalTokens
-        : null,
-  } as JsonObject;
-  const cleaned = Object.fromEntries(
-    Object.entries(normalized).filter(([, value]) => value != null),
-  );
-  return Object.keys(cleaned).length > 0 ? cleaned : null;
 }
 
 function metricValue(model: JsonObject, key: string): number | null {

@@ -1,4 +1,3 @@
-import { getArtificialAnalysisStats } from "../sources/artificial-analysis-api.js";
 import { getModelsDevStats } from "../sources/models-dev.js";
 import { type JsonObject } from "../shared.js";
 
@@ -56,7 +55,6 @@ export type ModelStatsSelectedPayload = {
  */
 export type ModelStatsSelectedOptions = {
   id?: string | null;
-  apiKey?: string;
 };
 
 export type SourceData = {
