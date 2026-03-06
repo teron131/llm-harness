@@ -13,8 +13,8 @@ import {
 } from "../shared.js";
 
 import {
-  backfillFreeRouteCosts,
-  dedupeUnionModelsPreferOpenrouter,
+  backfillFreeModelCosts,
+  dedupeRowsPreferOpenRouter,
   filterModelsById,
   pruneSparseFields,
   sortModelsByIntelligencePercentile,
@@ -26,7 +26,7 @@ import {
   buildIntelligenceIndexCost,
   buildScores,
   deriveSpeedOutputTokenAnchors,
-  withComputedPercentiles,
+  attachPercentiles,
 } from "./scoring.js";
 import {
   type EnrichedUnionRows,
@@ -99,7 +99,7 @@ function buildLogo(model: JsonObject, provider: string | null): string {
   return `https://models.dev/logos/${provider ?? "unknown"}.svg`;
 }
 
-function scopeToPreferredProviderModels(
+function dedupePreferredProviderModels(
   modelsDevModels: ModelsDevModel[],
 ): ModelsDevModel[] {
   const preferredModels = modelsDevModels.filter(
@@ -215,12 +215,12 @@ function normalizeOpenRouterPricing(pricing: unknown): JsonObject {
 }
 
 async function buildOpenRouterDataById(
-  unionModels: Record<string, unknown>[],
+  rows: Record<string, unknown>[],
 ): Promise<{
   speedById: Map<string, JsonObject>;
   pricingById: Map<string, JsonObject>;
 }> {
-  const modelIds = unionModels
+  const modelIds = rows
     .map((row) => asRecord(row).id)
     .filter((id): id is string => typeof id === "string" && id.length > 0);
   if (modelIds.length === 0) {
@@ -336,12 +336,12 @@ function mapUnionModelToSelected(
   };
 }
 
-export async function fetchSelectedSourceData(): Promise<SelectedSourceData> {
+export async function fetchSourceData(): Promise<SelectedSourceData> {
   const [artificialAnalysisScrapedStats, modelsDevStats] = await Promise.all([
     getArtificialAnalysisScrapedEvalsOnlyStats(),
     getModelsDevStats(),
   ]);
-  const scopedModelsDevModels = scopeToPreferredProviderModels(
+  const preferredModelsDevModels = dedupePreferredProviderModels(
     modelsDevStats.models,
   );
   const scrapedBySlug = new Map<string, ScrapedEvalModel>();
@@ -354,13 +354,13 @@ export async function fetchSelectedSourceData(): Promise<SelectedSourceData> {
   }
   return {
     scrapedRows: artificialAnalysisScrapedStats.data,
-    scopedModelsDevModels,
-    modelsDevById: buildModelsDevById(scopedModelsDevModels),
+    scopedModelsDevModels: preferredModelsDevModels,
+    modelsDevById: buildModelsDevById(preferredModelsDevModels),
     scrapedBySlug,
   };
 }
 
-export async function buildMatchedUnionRows(
+export async function buildMatchedRows(
   sourceData: SelectedSourceData,
 ): Promise<Record<string, unknown>[]> {
   const fallbackDiagnostics = await getScraperFallbackMatchDiagnostics({
@@ -399,38 +399,38 @@ export async function buildMatchedUnionRows(
     );
 }
 
-export async function enrichUnionRowsWithFallbacks(
-  matchedUnionRows: Record<string, unknown>[],
+export async function enrichRows(
+  matchedRows: Record<string, unknown>[],
 ): Promise<EnrichedUnionRows> {
-  const dedupedUnionRows = dedupeUnionModelsPreferOpenrouter(matchedUnionRows);
-  const unionRowsWithCostBackfill = backfillFreeRouteCosts(dedupedUnionRows);
+  const dedupedRows = dedupeRowsPreferOpenRouter(matchedRows);
+  const rows = backfillFreeModelCosts(dedupedRows);
   const { speedById: openRouterSpeedById, pricingById: openRouterPricingById } =
-    await buildOpenRouterDataById(unionRowsWithCostBackfill);
+    await buildOpenRouterDataById(rows);
   const speedOutputTokenAnchors =
     deriveSpeedOutputTokenAnchors(openRouterSpeedById);
   return {
-    unionRows: unionRowsWithCostBackfill,
+    unionRows: rows,
     openRouterSpeedById,
     openRouterPricingById,
     speedOutputTokenAnchors,
   };
 }
 
-export function projectSelectedRowsWithScores(
-  enrichedUnionRows: EnrichedUnionRows,
+export function buildFinalModels(
+  enrichedRows: EnrichedUnionRows,
   id: string | null | undefined,
 ): ModelStatsSelectedModel[] {
-  const allModels = enrichedUnionRows.unionRows.map((unionRow) =>
+  const models = enrichedRows.unionRows.map((row) =>
     mapUnionModelToSelected(
-      unionRow,
-      enrichedUnionRows.openRouterSpeedById,
-      enrichedUnionRows.openRouterPricingById,
-      enrichedUnionRows.speedOutputTokenAnchors,
+      row,
+      enrichedRows.openRouterSpeedById,
+      enrichedRows.openRouterPricingById,
+      enrichedRows.speedOutputTokenAnchors,
     ),
   );
-  const modelsWithComputedPercentiles = withComputedPercentiles(allModels);
+  const modelsWithPercentiles = attachPercentiles(models);
   const sortedModels = sortModelsByIntelligencePercentile(
-    modelsWithComputedPercentiles,
+    modelsWithPercentiles,
   );
   const prunedModels = pruneSparseFields(sortedModels);
   return filterModelsById(prunedModels, id);

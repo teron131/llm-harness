@@ -322,7 +322,7 @@ export function buildScores(
   };
 }
 
-export function withComputedPercentiles(
+export function attachPercentiles(
   models: ModelStatsSelectedModel[],
 ): ModelStatsSelectedModel[] {
   const intelligenceScores = models.map((model) =>

@@ -6,7 +6,7 @@ import {
   buildInputModelsFromArtificialAnalysis,
   buildInputModelsFromScrapedRows,
   runMatcher,
-  scopeToPreferredProviderModels,
+  splitPreferredProviderModels,
   uniqueModelCount,
 } from "./matcher/pipeline.js";
 import {
@@ -48,7 +48,7 @@ export async function getMatchModelMapping(
         }
       : await getModelsDevStats();
 
-  const scopedModels = scopeToPreferredProviderModels(modelsDevStats.models);
+  const scopedModels = splitPreferredProviderModels(modelsDevStats.models);
   const totalScopedModels = uniqueModelCount([
     ...scopedModels.primary,
     ...scopedModels.fallback,
@@ -95,7 +95,7 @@ export async function getScraperFallbackMatchDiagnostics(
         }
       : await getModelsDevStats();
 
-  const scopedModels = scopeToPreferredProviderModels(modelsDevStats.models);
+  const scopedModels = splitPreferredProviderModels(modelsDevStats.models);
   const totalScopedModels = uniqueModelCount([
     ...scopedModels.primary,
     ...scopedModels.fallback,

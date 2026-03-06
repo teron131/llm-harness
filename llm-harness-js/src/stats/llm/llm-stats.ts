@@ -5,10 +5,10 @@ import {
   saveModelStatsSelectedToPath,
 } from "./llm-stats/cache.js";
 import {
-  buildMatchedUnionRows,
-  enrichUnionRowsWithFallbacks,
-  fetchSelectedSourceData,
-  projectSelectedRowsWithScores,
+  buildFinalModels,
+  buildMatchedRows,
+  enrichRows,
+  fetchSourceData,
 } from "./llm-stats/pipeline.js";
 import {
   type ModelStatsSelectedModel,
@@ -55,26 +55,22 @@ export async function getModelStatsSelected(
       }
     }
 
-    const sourceData = await fetchSelectedSourceData();
-    const matchedUnionRows = await buildMatchedUnionRows(sourceData);
-    const enrichedUnionRows =
-      await enrichUnionRowsWithFallbacks(matchedUnionRows);
-    const filteredModels = projectSelectedRowsWithScores(
-      enrichedUnionRows,
-      options.id,
-    );
+    const sourceData = await fetchSourceData();
+    const matchedRows = await buildMatchedRows(sourceData);
+    const enrichedRows = await enrichRows(matchedRows);
+    const models = buildFinalModels(enrichedRows, options.id);
     const fetchedAt = currentEpochSeconds();
 
     if (options.id != null) {
       return {
         fetched_at_epoch_seconds: fetchedAt,
-        models: filteredModels,
+        models,
       };
     }
 
     const listPayload: ModelStatsSelectedPayload = {
       fetched_at_epoch_seconds: fetchedAt,
-      models: filteredModels,
+      models,
     };
     await saveModelStatsSelected(listPayload, DEFAULT_OUTPUT_PATH);
     return listPayload;

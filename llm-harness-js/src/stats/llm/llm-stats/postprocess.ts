@@ -68,13 +68,13 @@ export function sortModelsByIntelligencePercentile(
   });
 }
 
-function hasIntelligenceCost(unionRow: JsonObject): boolean {
-  const intelligenceIndexCost = asRecord(unionRow.intelligence_index_cost);
+function hasIntelligenceCost(row: JsonObject): boolean {
+  const intelligenceIndexCost = asRecord(row.intelligence_index_cost);
   return asFiniteNumber(intelligenceIndexCost.total_cost) != null;
 }
 
-function hasScoreSignal(unionRow: JsonObject): boolean {
-  const scores = asRecord(unionRow.scores);
+function hasScoreSignal(row: JsonObject): boolean {
+  const scores = asRecord(row.scores);
   return (
     asFiniteNumber(scores.intelligence_score) != null ||
     asFiniteNumber(scores.agentic_score) != null ||
@@ -83,37 +83,37 @@ function hasScoreSignal(unionRow: JsonObject): boolean {
   );
 }
 
-function unionRowPriority(unionRow: JsonObject): number {
-  const providerId = unionRow.provider_id;
+function rowPriority(row: JsonObject): number {
+  const providerId = row.provider_id;
   const openrouterBoost = providerId === PRIMARY_PROVIDER_ID ? 1_000_000 : 0;
-  const intelligenceCostBoost = hasIntelligenceCost(unionRow) ? 1_000 : 0;
-  const scoreSignalBoost = hasScoreSignal(unionRow) ? 10 : 0;
+  const intelligenceCostBoost = hasIntelligenceCost(row) ? 1_000 : 0;
+  const scoreSignalBoost = hasScoreSignal(row) ? 10 : 0;
   return openrouterBoost + intelligenceCostBoost + scoreSignalBoost;
 }
 
-export function dedupeUnionModelsPreferOpenrouter(
-  unionModels: Record<string, unknown>[],
+export function dedupeRowsPreferOpenRouter(
+  rows: Record<string, unknown>[],
 ): Record<string, unknown>[] {
   const groupedByNormalizedId = new Map<string, JsonObject[]>();
   const passthrough: Record<string, unknown>[] = [];
 
-  for (const unionModel of unionModels) {
-    const unionRow = asRecord(unionModel);
-    const id = typeof unionRow.id === "string" ? unionRow.id : null;
+  for (const row of rows) {
+    const rowRecord = asRecord(row);
+    const id = typeof rowRecord.id === "string" ? rowRecord.id : null;
     if (!id) {
-      passthrough.push(unionModel);
+      passthrough.push(row);
       continue;
     }
     const key = normalizeProviderModelId(id);
     const group = groupedByNormalizedId.get(key) ?? [];
-    group.push(unionRow);
+    group.push(rowRecord);
     groupedByNormalizedId.set(key, group);
   }
 
   const dedupedRows: JsonObject[] = [];
   for (const group of groupedByNormalizedId.values()) {
     const winner = [...group].sort(
-      (left, right) => unionRowPriority(right) - unionRowPriority(left),
+      (left, right) => rowPriority(right) - rowPriority(left),
     )[0] as JsonObject;
     const mergedIntelligenceIndexCost: JsonObject = {
       ...asRecord(winner.intelligence_index_cost),
@@ -145,38 +145,38 @@ function hasPositiveCostFields(cost: JsonObject): boolean {
   return input != null && input > 0 && output != null && output > 0;
 }
 
-export function backfillFreeRouteCosts(
-  unionModels: Record<string, unknown>[],
+export function backfillFreeModelCosts(
+  rows: Record<string, unknown>[],
 ): Record<string, unknown>[] {
   const nonFreeCostById = new Map<string, JsonObject>();
-  for (const unionModel of unionModels) {
-    const unionRow = asRecord(unionModel);
-    const id = typeof unionRow.id === "string" ? unionRow.id : null;
+  for (const row of rows) {
+    const rowRecord = asRecord(row);
+    const id = typeof rowRecord.id === "string" ? rowRecord.id : null;
     if (!id || id.endsWith(":free")) {
       continue;
     }
-    const cost = asRecord(unionRow.cost);
+    const cost = asRecord(rowRecord.cost);
     if (hasPositiveCostFields(cost)) {
       nonFreeCostById.set(id, cost);
     }
   }
 
-  return unionModels.map((unionModel) => {
-    const unionRow = asRecord(unionModel);
-    const id = typeof unionRow.id === "string" ? unionRow.id : null;
+  return rows.map((row) => {
+    const rowRecord = asRecord(row);
+    const id = typeof rowRecord.id === "string" ? rowRecord.id : null;
     if (!id) {
-      return unionModel;
+      return row;
     }
     const baseId = nonFreeModelId(id);
     if (!baseId) {
-      return unionModel;
+      return row;
     }
     const baseCost = nonFreeCostById.get(baseId);
     if (!baseCost) {
-      return unionModel;
+      return row;
     }
     return {
-      ...unionRow,
+      ...rowRecord,
       cost: {
         ...baseCost,
       },

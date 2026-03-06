@@ -51,7 +51,7 @@ function hasExactSlugFallbackCandidate(
   });
 }
 
-export function scopeToPreferredProviderModels(
+export function splitPreferredProviderModels(
   modelsDevModels: ModelsDevModel[],
 ): PreferredProviderScopedModels {
   const primary = modelsDevModels.filter(
