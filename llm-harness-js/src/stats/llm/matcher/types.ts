@@ -9,10 +9,10 @@ export type ArtificialAnalysisModel = Awaited<
   ReturnType<typeof getArtificialAnalysisStats>
 >["models"][number];
 
-export type MatcherInputModel = {
-  artificialAnalysisSlug: string;
-  artificialAnalysisName: string | null;
-  artificialAnalysisReleaseDate: string | null;
+export type MatcherSourceModel = {
+  sourceSlug: string;
+  sourceName: string | null;
+  sourceReleaseDate: string | null;
 };
 
 /**
@@ -80,7 +80,7 @@ export type LlmScraperFallbackMatchDiagnosticsPayload = {
   models: LlmMatchMappedModel[];
 };
 
-export type PreferredProviderScopedModels = {
+export type PreferredProviderPools = {
   primary: ModelsDevModel[];
   fallback: ModelsDevModel[];
 };

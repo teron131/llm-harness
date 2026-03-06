@@ -1,8 +1,6 @@
 import {
   FALLBACK_PROVIDER_IDS,
   PRIMARY_PROVIDER_ID,
-  asRecord,
-  modelSlugFromModelId,
   normalizeModelToken,
 } from "../shared.js";
 
@@ -13,13 +11,12 @@ import {
 } from "./scoring.js";
 import { splitBaseModelId } from "./tokenize.js";
 import {
-  type ArtificialAnalysisModel,
   type LlmMatchCandidate,
   type LlmMatchResult,
-  type MatcherInputModel,
+  type MatcherSourceModel,
   type MatcherRunOutput,
   type ModelsDevModel,
-  type PreferredProviderScopedModels,
+  type PreferredProviderPools,
 } from "./types.js";
 
 const VOID_THRESHOLD_RANGE_RATIO = 0.35;
@@ -31,29 +28,24 @@ export function uniqueModelCount(modelsDevModels: ModelsDevModel[]): number {
 }
 
 function hasExactSlugFallbackCandidate(
-  artificialAnalysisSlug: string,
+  sourceSlug: string,
   fallbackCandidates: LlmMatchCandidate[],
 ): boolean {
-  const normalizedArtificialAnalysisSlug = normalizeModelToken(
-    artificialAnalysisSlug,
-  );
-  if (normalizedArtificialAnalysisSlug.length === 0) {
+  const normalizedSourceSlug = normalizeModelToken(sourceSlug);
+  if (normalizedSourceSlug.length === 0) {
     return false;
   }
   return fallbackCandidates.some((candidate) => {
     const candidateSlug = normalizeModelToken(
       splitBaseModelId(candidate.model_id),
     );
-    return (
-      candidateSlug.length > 0 &&
-      candidateSlug === normalizedArtificialAnalysisSlug
-    );
+    return candidateSlug.length > 0 && candidateSlug === normalizedSourceSlug;
   });
 }
 
 export function splitPreferredProviderModels(
   modelsDevModels: ModelsDevModel[],
-): PreferredProviderScopedModels {
+): PreferredProviderPools {
   const primary = modelsDevModels.filter(
     (modelsDevModel) => modelsDevModel.provider_id === PRIMARY_PROVIDER_ID,
   );
@@ -63,11 +55,11 @@ export function splitPreferredProviderModels(
   return { primary, fallback };
 }
 
-function collectCandidatesForArtificialAnalysisSlug(
-  artificialAnalysisSlug: string,
+function collectCandidatesForSourceSlug(
+  sourceSlug: string,
   modelsDevModels: ModelsDevModel[],
 ): LlmMatchCandidate[] {
-  if (!artificialAnalysisSlug) {
+  if (!sourceSlug) {
     return [];
   }
 
@@ -79,7 +71,7 @@ function collectCandidatesForArtificialAnalysisSlug(
           : "";
       if (
         !hasFirstTokenMatch(
-          artificialAnalysisSlug,
+          sourceSlug,
           modelsDevModel.model_id,
           modelsDevModelName,
         )
@@ -87,7 +79,7 @@ function collectCandidatesForArtificialAnalysisSlug(
         return null;
       }
       const candidateScore = scoreCandidate(
-        artificialAnalysisSlug,
+        sourceSlug,
         modelsDevModel.model_id,
         modelsDevModelName,
       );
@@ -107,23 +99,21 @@ function collectCandidatesForArtificialAnalysisSlug(
 }
 
 function selectPreferredCandidatesForArtificialAnalysisSlug(
-  artificialAnalysisSlug: string,
-  scopedModels: PreferredProviderScopedModels,
+  sourceSlug: string,
+  providerPools: PreferredProviderPools,
 ): LlmMatchCandidate[] {
-  const primaryCandidates = collectCandidatesForArtificialAnalysisSlug(
-    artificialAnalysisSlug,
-    scopedModels.primary,
+  const primaryCandidates = collectCandidatesForSourceSlug(
+    sourceSlug,
+    providerPools.primary,
   );
-  const fallbackCandidates = collectCandidatesForArtificialAnalysisSlug(
-    artificialAnalysisSlug,
-    scopedModels.fallback,
+  const fallbackCandidates = collectCandidatesForSourceSlug(
+    sourceSlug,
+    providerPools.fallback,
   );
   if (primaryCandidates.length === 0) {
     return fallbackCandidates;
   }
-  if (
-    hasExactSlugFallbackCandidate(artificialAnalysisSlug, fallbackCandidates)
-  ) {
+  if (hasExactSlugFallbackCandidate(sourceSlug, fallbackCandidates)) {
     return fallbackCandidates;
   }
   return primaryCandidates;
@@ -159,20 +149,19 @@ function applyMaxMinHalfVoid<
 }
 
 export function runMatcher(
-  sourceModels: MatcherInputModel[],
-  scopedModels: PreferredProviderScopedModels,
+  sourceModels: MatcherSourceModel[],
+  providerPools: PreferredProviderPools,
   maxCandidates: number,
 ): MatcherRunOutput {
   const models = sourceModels.map((sourceModel) => {
     const candidates = selectPreferredCandidatesForArtificialAnalysisSlug(
-      sourceModel.artificialAnalysisSlug,
-      scopedModels,
+      sourceModel.sourceSlug,
+      providerPools,
     ).slice(0, maxCandidates);
     return {
-      artificial_analysis_slug: sourceModel.artificialAnalysisSlug,
-      artificial_analysis_name: sourceModel.artificialAnalysisName,
-      artificial_analysis_release_date:
-        sourceModel.artificialAnalysisReleaseDate,
+      artificial_analysis_slug: sourceModel.sourceSlug,
+      artificial_analysis_name: sourceModel.sourceName,
+      artificial_analysis_release_date: sourceModel.sourceReleaseDate,
       best_match: candidates[0] ?? null,
       candidates,
     };
@@ -197,41 +186,4 @@ export function runMatcher(
     matchedCount,
     unmatchedCount,
   };
-}
-
-export function buildInputModelsFromArtificialAnalysis(
-  artificialAnalysisModels: ArtificialAnalysisModel[],
-): MatcherInputModel[] {
-  return artificialAnalysisModels.map((artificialAnalysisModel) => ({
-    artificialAnalysisSlug:
-      typeof artificialAnalysisModel.slug === "string"
-        ? artificialAnalysisModel.slug
-        : "",
-    artificialAnalysisName:
-      typeof artificialAnalysisModel.name === "string"
-        ? artificialAnalysisModel.name
-        : null,
-    artificialAnalysisReleaseDate:
-      typeof artificialAnalysisModel.release_date === "string"
-        ? artificialAnalysisModel.release_date
-        : null,
-  }));
-}
-
-export function buildInputModelsFromScrapedRows(
-  scrapedRows: unknown[],
-): MatcherInputModel[] {
-  return scrapedRows.map((scrapedRow) => {
-    const scrapedRowRecord = asRecord(scrapedRow);
-    const modelId =
-      typeof scrapedRowRecord.model_id === "string"
-        ? scrapedRowRecord.model_id
-        : null;
-    const artificialAnalysisSlug = modelSlugFromModelId(modelId) ?? "";
-    return {
-      artificialAnalysisSlug,
-      artificialAnalysisName: modelId,
-      artificialAnalysisReleaseDate: null,
-    };
-  });
 }

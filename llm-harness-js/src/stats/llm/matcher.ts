@@ -3,12 +3,14 @@ import { getArtificialAnalysisScrapedEvalsOnlyStats } from "./sources/artificial
 import { getModelsDevStats } from "./sources/models-dev.js";
 
 import {
-  buildInputModelsFromArtificialAnalysis,
-  buildInputModelsFromScrapedRows,
   runMatcher,
   splitPreferredProviderModels,
   uniqueModelCount,
 } from "./matcher/pipeline.js";
+import {
+  buildSourceModelsFromArtificialAnalysis,
+  buildSourceModelsFromScrapedRows,
+} from "./matcher/source-model.js";
 import {
   type LlmMatchModelMappingOptions,
   type LlmMatchModelMappingPayload,
@@ -48,15 +50,15 @@ export async function getMatchModelMapping(
         }
       : await getModelsDevStats();
 
-  const scopedModels = splitPreferredProviderModels(modelsDevStats.models);
+  const providerPools = splitPreferredProviderModels(modelsDevStats.models);
   const totalScopedModels = uniqueModelCount([
-    ...scopedModels.primary,
-    ...scopedModels.fallback,
+    ...providerPools.primary,
+    ...providerPools.fallback,
   ]);
-  const inputModels = buildInputModelsFromArtificialAnalysis(
+  const sourceModels = buildSourceModelsFromArtificialAnalysis(
     artificialAnalysisStats.models,
   );
-  const matcherOutput = runMatcher(inputModels, scopedModels, maxCandidates);
+  const matcherOutput = runMatcher(sourceModels, providerPools, maxCandidates);
 
   return {
     artificial_analysis_fetched_at_epoch_seconds:
@@ -95,13 +97,13 @@ export async function getScraperFallbackMatchDiagnostics(
         }
       : await getModelsDevStats();
 
-  const scopedModels = splitPreferredProviderModels(modelsDevStats.models);
+  const providerPools = splitPreferredProviderModels(modelsDevStats.models);
   const totalScopedModels = uniqueModelCount([
-    ...scopedModels.primary,
-    ...scopedModels.fallback,
+    ...providerPools.primary,
+    ...providerPools.fallback,
   ]);
-  const inputModels = buildInputModelsFromScrapedRows(scrapedStats.data);
-  const matcherOutput = runMatcher(inputModels, scopedModels, maxCandidates);
+  const sourceModels = buildSourceModelsFromScrapedRows(scrapedStats.data);
+  const matcherOutput = runMatcher(sourceModels, providerPools, maxCandidates);
 
   return {
     scraped_fetched_at_epoch_seconds: scrapedStats.fetched_at_epoch_seconds,

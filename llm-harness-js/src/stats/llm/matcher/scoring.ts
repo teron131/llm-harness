@@ -7,9 +7,10 @@ import {
   isNumericToken,
   parseActiveBToken,
   parseBScaleToken,
-  parseNumericOrBScaleToken,
   splitBaseModelId,
+  splitBaseModelTokens,
   splitTokens,
+  parsedNumericTokens,
 } from "./tokenize.js";
 
 const TOKEN_PREFIX_WEIGHTS = [5, 4, 3, 2, 1] as const;
@@ -44,196 +45,178 @@ function weightedTokenPrefixScore(
 }
 
 function numericMatchReward(
-  artificialAnalysisSlug: string,
-  modelsDevModelId: string,
+  sourceSlug: string,
+  candidateModelId: string,
 ): number {
-  const artificialAnalysisTokens = splitTokens(artificialAnalysisSlug);
-  const modelTokens = splitTokens(splitBaseModelId(modelsDevModelId));
-  const maxLength = Math.min(
-    artificialAnalysisTokens.length,
-    modelTokens.length,
-  );
+  const sourceTokens = splitTokens(sourceSlug);
+  const candidateTokens = splitBaseModelTokens(candidateModelId);
+  const maxLength = Math.min(sourceTokens.length, candidateTokens.length);
   for (let tokenIndex = 0; tokenIndex < maxLength; tokenIndex += 1) {
-    const artificialAnalysisToken = artificialAnalysisTokens[tokenIndex];
-    const modelToken = modelTokens[tokenIndex];
-    const artificialAnalysisNumericValue = parseNumericOrBScaleToken(
-      artificialAnalysisToken,
-    );
-    const modelNumericValue = parseNumericOrBScaleToken(modelToken);
-    if (artificialAnalysisNumericValue != null && modelNumericValue != null) {
-      return artificialAnalysisNumericValue === modelNumericValue
-        ? NUMERIC_EXACT_MATCH_REWARD
-        : 0;
+    const sourceValue = parsedNumericTokens([
+      sourceTokens[tokenIndex] ?? "",
+    ])[0];
+    const candidateValue = parsedNumericTokens([
+      candidateTokens[tokenIndex] ?? "",
+    ])[0];
+    if (sourceValue != null && candidateValue != null) {
+      return sourceValue === candidateValue ? NUMERIC_EXACT_MATCH_REWARD : 0;
     }
   }
   return 0;
 }
 
 function numericClosenessReward(
-  artificialAnalysisSlug: string,
-  modelsDevModelId: string,
+  sourceSlug: string,
+  candidateModelId: string,
 ): number {
-  const artificialAnalysisNumbers = splitTokens(artificialAnalysisSlug)
-    .map((token) => parseNumericOrBScaleToken(token))
-    .filter((value): value is number => value != null);
-  const modelNumbers = splitTokens(splitBaseModelId(modelsDevModelId))
-    .map((token) => parseNumericOrBScaleToken(token))
-    .filter((value): value is number => value != null);
-
-  const maxLength = Math.max(
-    artificialAnalysisNumbers.length,
-    modelNumbers.length,
+  const sourceNumbers = parsedNumericTokens(splitTokens(sourceSlug));
+  const candidateNumbers = parsedNumericTokens(
+    splitBaseModelTokens(candidateModelId),
   );
+
+  const maxLength = Math.max(sourceNumbers.length, candidateNumbers.length);
   for (let numberIndex = 0; numberIndex < maxLength; numberIndex += 1) {
-    const artificialAnalysisValue = artificialAnalysisNumbers[numberIndex];
-    const modelValue = modelNumbers[numberIndex];
-    if (artificialAnalysisValue == null || modelValue == null) {
+    const sourceValue = sourceNumbers[numberIndex];
+    const candidateValue = candidateNumbers[numberIndex];
+    if (sourceValue == null || candidateValue == null) {
       return 0;
     }
-    if (artificialAnalysisValue === modelValue) {
+    if (sourceValue === candidateValue) {
       continue;
     }
     return (
       NUMERIC_CLOSENESS_REWARD_SCALE /
-      (1 + Math.abs(artificialAnalysisValue - modelValue))
+      (1 + Math.abs(sourceValue - candidateValue))
     );
   }
   return NUMERIC_ALL_EQUAL_REWARD;
 }
 
-function bScaleRewardOrPenalty(
-  artificialAnalysisSlug: string,
-  modelsDevModelId: string,
-  modelsDevModelName: string,
-): number {
-  const artificialAnalysisTokens = splitTokens(artificialAnalysisSlug);
-  const modelBaseTokens = splitTokens(splitBaseModelId(modelsDevModelId));
-  const modelNameTokens = splitTokens(modelsDevModelName);
+function candidateScaleValue(
+  candidateModelId: string,
+  candidateModelName: string,
+  parser: (token: string | undefined) => number | null,
+): number | null {
+  const baseValue = firstParsedNumber(
+    splitBaseModelTokens(candidateModelId),
+    parser,
+  );
+  const nameValue = firstParsedNumber(splitTokens(candidateModelName), parser);
+  return baseValue ?? nameValue;
+}
 
-  const artificialAnalysisBScale = firstParsedNumber(
-    artificialAnalysisTokens,
+function bScaleRewardOrPenalty(
+  sourceSlug: string,
+  candidateModelId: string,
+  candidateModelName: string,
+): number {
+  const sourceBScale = firstParsedNumber(
+    splitTokens(sourceSlug),
     parseBScaleToken,
   );
-  if (artificialAnalysisBScale == null) {
+  if (sourceBScale == null) {
     return 0;
   }
-
-  const baseBScale = firstParsedNumber(modelBaseTokens, parseBScaleToken);
-  const nameBScale = firstParsedNumber(modelNameTokens, parseBScaleToken);
-  const candidateBScale = baseBScale ?? nameBScale;
+  const candidateBScale = candidateScaleValue(
+    candidateModelId,
+    candidateModelName,
+    parseBScaleToken,
+  );
   if (candidateBScale == null) {
     return -B_SCALE_MISSING_PENALTY;
   }
-  if (candidateBScale === artificialAnalysisBScale) {
+  if (candidateBScale === sourceBScale) {
     return B_SCALE_EXACT_REWARD;
   }
   return -B_SCALE_MISMATCH_PENALTY;
 }
 
 function hasHardBScaleMismatch(
-  artificialAnalysisSlug: string,
-  modelsDevModelId: string,
-  modelsDevModelName: string,
+  sourceSlug: string,
+  candidateModelId: string,
+  candidateModelName: string,
 ): boolean {
-  const artificialAnalysisBScale = firstParsedNumber(
-    splitTokens(artificialAnalysisSlug),
+  const sourceBScale = firstParsedNumber(
+    splitTokens(sourceSlug),
     parseBScaleToken,
   );
-  if (artificialAnalysisBScale == null) {
+  if (sourceBScale == null) {
     return false;
   }
-
-  const modelBaseBScale = firstParsedNumber(
-    splitTokens(splitBaseModelId(modelsDevModelId)),
+  const candidateBScale = candidateScaleValue(
+    candidateModelId,
+    candidateModelName,
     parseBScaleToken,
   );
-  const modelNameBScale = firstParsedNumber(
-    splitTokens(modelsDevModelName),
-    parseBScaleToken,
-  );
-  const candidateBScale = modelBaseBScale ?? modelNameBScale;
   if (candidateBScale == null) {
     return false;
   }
-
-  return candidateBScale !== artificialAnalysisBScale;
+  return candidateBScale !== sourceBScale;
 }
 
 function activeBRewardOrPenalty(
-  artificialAnalysisSlug: string,
-  modelsDevModelId: string,
-  modelsDevModelName: string,
+  sourceSlug: string,
+  candidateModelId: string,
+  candidateModelName: string,
 ): number {
-  const artificialAnalysisTokens = splitTokens(artificialAnalysisSlug);
-  const modelBaseTokens = splitTokens(splitBaseModelId(modelsDevModelId));
-  const modelNameTokens = splitTokens(modelsDevModelName);
-
-  const artificialAnalysisActiveB = firstParsedNumber(
-    artificialAnalysisTokens,
+  const sourceActiveB = firstParsedNumber(
+    splitTokens(sourceSlug),
     parseActiveBToken,
   );
-  if (artificialAnalysisActiveB == null) {
+  if (sourceActiveB == null) {
     return 0;
   }
-
-  const baseActiveB = firstParsedNumber(modelBaseTokens, parseActiveBToken);
-  const nameActiveB = firstParsedNumber(modelNameTokens, parseActiveBToken);
-  const candidateActiveB = baseActiveB ?? nameActiveB;
+  const candidateActiveB = candidateScaleValue(
+    candidateModelId,
+    candidateModelName,
+    parseActiveBToken,
+  );
   if (candidateActiveB == null) {
     return 0;
   }
-  if (candidateActiveB === artificialAnalysisActiveB) {
+  if (candidateActiveB === sourceActiveB) {
     return ACTIVE_B_EXACT_REWARD;
   }
   return -ACTIVE_B_MISMATCH_PENALTY;
 }
 
 function sameVariantReward(
-  artificialAnalysisSlug: string,
-  modelsDevModelId: string,
-  modelsDevModelName: string,
+  sourceSlug: string,
+  candidateModelId: string,
+  candidateModelName: string,
 ): number {
-  const artificialAnalysisTokens = splitTokens(artificialAnalysisSlug);
-  const modelBaseTokens = splitTokens(splitBaseModelId(modelsDevModelId));
-  const modelNameTokens = splitTokens(modelsDevModelName);
-  const artificialAnalysisLastToken = artificialAnalysisTokens.at(-1);
-  if (
-    !artificialAnalysisLastToken ||
-    isNumericToken(artificialAnalysisLastToken)
-  ) {
+  const sourceLastToken = splitTokens(sourceSlug).at(-1);
+  if (!sourceLastToken || isNumericToken(sourceLastToken)) {
     return 0;
   }
-  const baseLastToken = modelBaseTokens.at(-1);
-  const nameLastToken = modelNameTokens.at(-1);
-  if (
-    artificialAnalysisLastToken === baseLastToken ||
-    artificialAnalysisLastToken === nameLastToken
-  ) {
+  const baseLastToken = splitBaseModelTokens(candidateModelId).at(-1);
+  const nameLastToken = splitTokens(candidateModelName).at(-1);
+  if (sourceLastToken === baseLastToken || sourceLastToken === nameLastToken) {
     return VARIANT_SUFFIX_REWARD;
   }
   return 0;
 }
 
 function coverageRewardOrPenalty(
-  artificialAnalysisSlug: string,
-  modelsDevModelId: string,
-  modelsDevModelName: string,
+  sourceSlug: string,
+  candidateModelId: string,
+  candidateModelName: string,
 ): number {
-  const artificialAnalysisSet = new Set(splitTokens(artificialAnalysisSlug));
-  const baseSet = new Set(splitTokens(splitBaseModelId(modelsDevModelId)));
-  const nameSet = new Set(splitTokens(modelsDevModelName));
+  const sourceSet = new Set(splitTokens(sourceSlug));
+  const baseSet = new Set(splitBaseModelTokens(candidateModelId));
+  const nameSet = new Set(splitTokens(candidateModelName));
 
   function compareSets(candidateSet: Set<string>): number {
-    if (artificialAnalysisSet.size === 0) {
+    if (sourceSet.size === 0) {
       return 0;
     }
-    const missingCount = [...artificialAnalysisSet].filter(
+    const missingCount = [...sourceSet].filter(
       (token) => !candidateSet.has(token),
     ).length;
     if (missingCount > 0) {
       return -COVERAGE_MISSING_BASE_PENALTY - missingCount;
     }
-    if (candidateSet.size === artificialAnalysisSet.size) {
+    if (candidateSet.size === sourceSet.size) {
       return COVERAGE_EXACT_REWARD;
     }
     return 0;
@@ -243,63 +226,54 @@ function coverageRewardOrPenalty(
 }
 
 export function hasFirstTokenMatch(
-  artificialAnalysisSlug: string,
-  modelsDevModelId: string,
-  modelsDevModelName: string,
+  sourceSlug: string,
+  candidateModelId: string,
+  candidateModelName: string,
 ): boolean {
   // Guardrail: first-token mismatch usually means wrong model family.
-  const artificialAnalysisFirstToken = splitTokens(artificialAnalysisSlug)[0];
-  if (!artificialAnalysisFirstToken) {
+  const sourceFirstToken = splitTokens(sourceSlug)[0];
+  if (!sourceFirstToken) {
     return false;
   }
   return (
-    artificialAnalysisFirstToken ===
-      splitTokens(splitBaseModelId(modelsDevModelId))[0] ||
-    artificialAnalysisFirstToken === splitTokens(modelsDevModelName)[0]
+    sourceFirstToken === splitBaseModelTokens(candidateModelId)[0] ||
+    sourceFirstToken === splitTokens(candidateModelName)[0]
   );
 }
 
 export function scoreCandidate(
-  artificialAnalysisSlug: string,
-  modelsDevModelId: string,
-  modelsDevModelName: string,
+  sourceSlug: string,
+  candidateModelId: string,
+  candidateModelName: string,
 ): number {
   // Prefix reward addresses cross-family false positives.
-  const normalizedArtificialAnalysisSlug = normalizeModelToken(
-    artificialAnalysisSlug,
-  );
+  const normalizedSourceSlug = normalizeModelToken(sourceSlug);
   const normalizedModelBase = normalizeModelToken(
-    splitBaseModelId(modelsDevModelId),
+    splitBaseModelId(candidateModelId),
   );
-  const normalizedModelName = normalizeModelToken(modelsDevModelName);
-  const artificialAnalysisTokens = splitTokens(artificialAnalysisSlug);
-  const modelBaseTokens = splitTokens(splitBaseModelId(modelsDevModelId));
-  const modelNameTokens = splitTokens(modelsDevModelName);
+  const normalizedModelName = normalizeModelToken(candidateModelName);
+  const sourceTokens = splitTokens(sourceSlug);
+  const modelBaseTokens = splitBaseModelTokens(candidateModelId);
+  const modelNameTokens = splitTokens(candidateModelName);
   const basePrefixLength = commonPrefixLength(
-    normalizedArtificialAnalysisSlug,
+    normalizedSourceSlug,
     normalizedModelBase,
   );
   const modelNamePrefixLength = commonPrefixLength(
-    normalizedArtificialAnalysisSlug,
+    normalizedSourceSlug,
     normalizedModelName,
   );
   const maxPrefixLength = Math.max(basePrefixLength, modelNamePrefixLength);
   if (maxPrefixLength === 0) {
     return 0;
   }
-  if (
-    hasHardBScaleMismatch(
-      artificialAnalysisSlug,
-      modelsDevModelId,
-      modelsDevModelName,
-    )
-  ) {
+  if (hasHardBScaleMismatch(sourceSlug, candidateModelId, candidateModelName)) {
     return 0;
   }
 
   const weightedTokenScore = Math.max(
-    weightedTokenPrefixScore(artificialAnalysisTokens, modelBaseTokens),
-    weightedTokenPrefixScore(artificialAnalysisTokens, modelNameTokens),
+    weightedTokenPrefixScore(sourceTokens, modelBaseTokens),
+    weightedTokenPrefixScore(sourceTokens, modelNameTokens),
   );
 
   // Numeric reward keeps nearby versions ordered (e.g. 5.2 > 5.1 when 5.3 is missing).
@@ -307,32 +281,14 @@ export function scoreCandidate(
   // Coverage penalty suppresses unrelated but superficially similar names.
   return (
     weightedTokenScore * TOKEN_PREFIX_REWARD_MULTIPLIER +
-    numericMatchReward(artificialAnalysisSlug, modelsDevModelId) +
-    numericClosenessReward(artificialAnalysisSlug, modelsDevModelId) +
-    sameVariantReward(
-      artificialAnalysisSlug,
-      modelsDevModelId,
-      modelsDevModelName,
-    ) +
-    bScaleRewardOrPenalty(
-      artificialAnalysisSlug,
-      modelsDevModelId,
-      modelsDevModelName,
-    ) +
-    activeBRewardOrPenalty(
-      artificialAnalysisSlug,
-      modelsDevModelId,
-      modelsDevModelName,
-    ) +
-    coverageRewardOrPenalty(
-      artificialAnalysisSlug,
-      modelsDevModelId,
-      modelsDevModelName,
-    ) +
+    numericMatchReward(sourceSlug, candidateModelId) +
+    numericClosenessReward(sourceSlug, candidateModelId) +
+    sameVariantReward(sourceSlug, candidateModelId, candidateModelName) +
+    bScaleRewardOrPenalty(sourceSlug, candidateModelId, candidateModelName) +
+    activeBRewardOrPenalty(sourceSlug, candidateModelId, candidateModelName) +
+    coverageRewardOrPenalty(sourceSlug, candidateModelId, candidateModelName) +
     maxPrefixLength * CHAR_PREFIX_REWARD_SCALE -
-    Math.abs(
-      normalizedArtificialAnalysisSlug.length - normalizedModelBase.length,
-    ) *
+    Math.abs(normalizedSourceSlug.length - normalizedModelBase.length) *
       LENGTH_GAP_PENALTY_SCALE
   );
 }

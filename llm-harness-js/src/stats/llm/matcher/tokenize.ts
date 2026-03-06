@@ -17,6 +17,10 @@ export function splitBaseModelId(modelId: string): string {
   return modelIdParts.at(-1) ?? modelId;
 }
 
+export function splitBaseModelTokens(modelId: string): string[] {
+  return splitTokens(splitBaseModelId(modelId));
+}
+
 function isBScaleToken(token: string): boolean {
   return /^\d+b$/.test(token) || /^a\d+b$/.test(token);
 }
@@ -86,6 +90,12 @@ export function parseActiveBToken(token: string | undefined): number | null {
   }
   const activeMatch = /^a(\d+)b$/.exec(token);
   return activeMatch ? Number(activeMatch[1]) : null;
+}
+
+export function parsedNumericTokens(tokens: string[]): number[] {
+  return tokens
+    .map((token) => parseNumericOrBScaleToken(token))
+    .filter((value): value is number => value != null);
 }
 
 export function commonPrefixLength(left: string, right: string): number {
