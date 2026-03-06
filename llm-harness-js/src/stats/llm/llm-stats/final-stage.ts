@@ -6,19 +6,23 @@ import {
   sortModelsByIntelligencePercentile,
 } from "./postprocess.js";
 import {
+  attachPercentiles,
   blendedPriceValue,
   buildEvaluations,
   buildIntelligence,
   buildIntelligenceIndexCost,
   buildScores,
-  attachPercentiles,
 } from "./scoring.js";
-import { type ModelStatsSelectedModel } from "./types.js";
+import {
+  type EnrichedUnionRows,
+  type ModelStatsSelectedModel,
+} from "./types.js";
 
 const EMPTY_OPENROUTER_PRICING = {
   weighted_input: null,
   weighted_output: null,
 } as const;
+
 function providerFromId(modelId: unknown): string | null {
   if (typeof modelId !== "string") {
     return null;
@@ -90,13 +94,13 @@ function buildCost(model: JsonObject, openRouterPricing: JsonObject): unknown {
   return Object.keys(cleanedCost).length > 0 ? cleanedCost : null;
 }
 
-function mapUnionModelToSelected(
-  unionModel: unknown,
+function projectFinalModel(
+  row: unknown,
   openRouterSpeedById: Map<string, JsonObject>,
   openRouterPricingById: Map<string, JsonObject>,
   speedOutputTokenAnchors: number[],
 ): ModelStatsSelectedModel {
-  const model = asRecord(unionModel);
+  const model = asRecord(row);
   const provider = providerFromModel(model);
   const modelId = typeof model.id === "string" ? model.id : null;
   const speed = buildSpeed(model, modelId, openRouterSpeedById);
@@ -128,16 +132,11 @@ function mapUnionModelToSelected(
 }
 
 export function buildFinalModels(
-  enrichedRows: {
-    unionRows: Record<string, unknown>[];
-    openRouterSpeedById: Map<string, JsonObject>;
-    openRouterPricingById: Map<string, JsonObject>;
-    speedOutputTokenAnchors: number[];
-  },
+  enrichedRows: EnrichedUnionRows,
   id: string | null | undefined,
 ): ModelStatsSelectedModel[] {
   const models = enrichedRows.unionRows.map((row) =>
-    mapUnionModelToSelected(
+    projectFinalModel(
       row,
       enrichedRows.openRouterSpeedById,
       enrichedRows.openRouterPricingById,

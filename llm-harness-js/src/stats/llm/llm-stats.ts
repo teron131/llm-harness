@@ -4,10 +4,10 @@ import {
   loadModelStatsSelectedFromCache,
   saveModelStatsSelectedToPath,
 } from "./llm-stats/cache.js";
+import { buildFinalModels } from "./llm-stats/final-stage.js";
 import { enrichRows } from "./llm-stats/openrouter-stage.js";
 import { buildMatchedRows } from "./llm-stats/match-stage.js";
 import { fetchSourceData } from "./llm-stats/source-stage.js";
-import { buildFinalModels } from "./llm-stats/pipeline.js";
 import {
   type ModelStatsSelectedModel,
   type ModelStatsSelectedOptions,
