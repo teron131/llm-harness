@@ -6,6 +6,9 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, TypedDict
 
 import httpx
+import polars as pl
+
+from ...utils import as_finite_number, now_epoch_seconds
 
 MODELS_DEV_URL = "https://models.dev/api.json"
 LOOKBACK_DAYS = 365
@@ -22,10 +25,6 @@ class ModelsDevOutputPayload(TypedDict):
     models: list[dict[str, Any]]
 
 
-def _now_epoch_seconds() -> int:
-    return int(datetime.now(UTC).timestamp())
-
-
 def _iso_date_days_ago(days: int) -> str:
     return (datetime.now(UTC) - timedelta(days=days)).date().isoformat()
 
@@ -34,22 +33,12 @@ def _is_recent_date(iso_date: str | None, cutoff_iso_date: str) -> bool:
     return bool(iso_date) and iso_date >= cutoff_iso_date
 
 
-def _as_finite_number(value: Any) -> float | None:
-    try:
-        numeric = float(value)
-    except (TypeError, ValueError):
-        return None
-    if numeric != numeric or numeric in (float("inf"), float("-inf")):
-        return None
-    return numeric
-
-
 def _fetch_models_dev() -> dict[str, Any]:
     with httpx.Client(timeout=REQUEST_TIMEOUT_SECONDS) as client:
         response = client.get(MODELS_DEV_URL)
     response.raise_for_status()
     return {
-        "fetched_at_epoch_seconds": _now_epoch_seconds(),
+        "fetched_at_epoch_seconds": now_epoch_seconds(),
         "status_code": response.status_code,
         "payload": response.json(),
     }
@@ -82,16 +71,28 @@ def _rank_recent_models(
     models: list[dict[str, Any]],
     cutoff_iso_date: str,
 ) -> list[dict[str, Any]]:
-    filtered = [row for row in models if _is_recent_date((row.get("model") or {}).get("release_date"), cutoff_iso_date)]
-    return sorted(
-        filtered,
-        key=lambda row: (
-            _as_finite_number(((row.get("model") or {}).get("cost") or {}).get("output"))
-            if _as_finite_number(((row.get("model") or {}).get("cost") or {}).get("output")) is not None
-            else float("inf"),
-            -ord("a"),
-        ),
+    ranking_rows = [
+        {
+            "row_index": row_index,
+            "release_date": (row.get("model") or {}).get("release_date"),
+            "output_cost": as_finite_number(((row.get("model") or {}).get("cost") or {}).get("output")),
+        }
+        for row_index, row in enumerate(models)
+        if _is_recent_date((row.get("model") or {}).get("release_date"), cutoff_iso_date)
+    ]
+    if not ranking_rows:
+        return []
+    ranked_indices = (
+        pl.DataFrame(ranking_rows)
+        .with_columns(pl.col("output_cost").fill_null(float("inf")))
+        .sort(
+            by=["output_cost", "release_date"],
+            descending=[False, True],
+        )
+        .get_column("row_index")
+        .to_list()
     )
+    return [models[row_index] for row_index in ranked_indices]
 
 
 def get_models_dev_stats(
@@ -104,17 +105,6 @@ def get_models_dev_stats(
         ranked = _rank_recent_models(
             _flatten_models(source_payload.get("payload") or {}),
             cutoff_iso_date,
-        )
-        ranked.sort(
-            key=lambda row: (row.get("model") or {}).get("release_date") or "",
-            reverse=True,
-        )
-        ranked.sort(
-            key=lambda row: (
-                _as_finite_number(((row.get("model") or {}).get("cost") or {}).get("output"))
-                if _as_finite_number(((row.get("model") or {}).get("cost") or {}).get("output")) is not None
-                else float("inf")
-            ),
         )
         return {
             "fetched_at_epoch_seconds": source_payload["fetched_at_epoch_seconds"],

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from ...utils import is_fresh_epoch_seconds, now_epoch_seconds, write_json_file
-from .types import ModelStatsSelectedPayload
+from .types import ModelStatsSelectedPayload, ModelStatsSelectedPayloadModel
 
 DEFAULT_OUTPUT_PATH = Path(".cache/llm_stats.json")
 CACHE_TTL_SECONDS = 60 * 60 * 24
@@ -22,7 +22,8 @@ def save_model_stats_selected_to_path(
     output_path: Path = DEFAULT_OUTPUT_PATH,
 ) -> None:
     try:
-        write_json_file(output_path, payload)
+        validated_payload = ModelStatsSelectedPayloadModel.model_validate(payload)
+        write_json_file(output_path, validated_payload.model_dump())
     except Exception:
         return
 
@@ -40,9 +41,9 @@ def load_model_stats_selected_from_cache(
         fetched_at_epoch_seconds: Any = payload.get("fetched_at_epoch_seconds")
         if not is_fresh_epoch_seconds(fetched_at_epoch_seconds, CACHE_TTL_SECONDS):
             return None
-        return {
-            "fetched_at_epoch_seconds": int(fetched_at_epoch_seconds),
-            "models": models,
-        }
+        return ModelStatsSelectedPayloadModel(
+            fetched_at_epoch_seconds=int(fetched_at_epoch_seconds),
+            models=models,
+        ).model_dump()
     except Exception:
         return None

@@ -17,22 +17,25 @@ from .llm_stats_stages.source_stage import fetch_source_data
 from .llm_stats_stages.types import (
     LlmSourceData,
     LlmStatsStageConfig,
+    LlmStatsStageConfigModel,
     ModelStatsSelectedOptions,
+    ModelStatsSelectedOptionsModel,
     ModelStatsSelectedPayload,
+    ModelStatsSelectedPayloadModel,
 )
 
-LLM_STATS_STAGE_CONFIG: LlmStatsStageConfig = {
-    "matcher": {
+LLM_STATS_STAGE_CONFIG_MODEL = LlmStatsStageConfigModel(
+    matcher={
         "variant_tokens": ["flash-lite", "flash", "pro", "nano", "mini", "lite"],
     },
-    "openrouter": {
+    openrouter={
         "speed_concurrency": 8,
     },
-    "final": {
+    final={
         "null_field_prune_threshold": 0.5,
         "null_field_prune_recent_lookback_days": 90,
     },
-    "scoring": {
+    scoring={
         "intelligence_benchmark_keys": [
             "omniscience_accuracy",
             "hle",
@@ -52,27 +55,29 @@ LLM_STATS_STAGE_CONFIG: LlmStatsStageConfig = {
         "weighted_price_input_ratio": 0.75,
         "weighted_price_output_ratio": 0.25,
     },
-}
+)
+LLM_STATS_STAGE_CONFIG: LlmStatsStageConfig = LLM_STATS_STAGE_CONFIG_MODEL.model_dump()
 
 
 def save_model_stats_selected(
     payload: ModelStatsSelectedPayload,
     output_path: Path = DEFAULT_OUTPUT_PATH,
 ) -> None:
-    save_model_stats_selected_to_path(payload, output_path)
+    validated_payload = ModelStatsSelectedPayloadModel.model_validate(payload)
+    save_model_stats_selected_to_path(validated_payload.model_dump(), output_path)
 
 
 def get_model_stats_selected(
     options: ModelStatsSelectedOptions | None = None,
 ) -> ModelStatsSelectedPayload:
     """Build the final selected LLM stats payload with cache-first list mode."""
-    options = options or {}
-    model_id = options.get("id")
+    options_model = ModelStatsSelectedOptionsModel.model_validate(options or {})
+    model_id = options_model.id
     try:
         if model_id is None:
             cached_payload = load_model_stats_selected_from_cache(DEFAULT_OUTPUT_PATH)
             if cached_payload is not None:
-                return cached_payload
+                return ModelStatsSelectedPayloadModel.model_validate(cached_payload).model_dump()
         source_data = fetch_source_data()
         matched_payload = build_matched_payload(
             source_data,
@@ -92,20 +97,22 @@ def get_model_stats_selected(
             speed_output_token_anchors=enriched.get("speed_output_token_anchors") or [],
             scoring_config=LLM_STATS_STAGE_CONFIG.get("scoring"),
         )
+        validated_payload = ModelStatsSelectedPayloadModel.model_validate(payload)
         if model_id is not None:
-            return payload
-        save_model_stats_selected(payload, DEFAULT_OUTPUT_PATH)
-        return payload
+            return validated_payload.model_dump()
+        save_model_stats_selected(validated_payload.model_dump(), DEFAULT_OUTPUT_PATH)
+        return validated_payload.model_dump()
     except Exception:
-        return {
-            "fetched_at_epoch_seconds": None,
-            "models": [],
-        }
+        return ModelStatsSelectedPayloadModel(
+            fetched_at_epoch_seconds=None,
+            models=[],
+        ).model_dump()
 
 
 __all__ = [
     "DEFAULT_OUTPUT_PATH",
     "LLM_STATS_STAGE_CONFIG",
+    "LLM_STATS_STAGE_CONFIG_MODEL",
     "LlmSourceData",
     "LlmStatsStageConfig",
     "ModelStatsSelectedOptions",

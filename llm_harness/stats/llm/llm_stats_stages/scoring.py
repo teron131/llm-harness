@@ -5,6 +5,8 @@ from __future__ import annotations
 from statistics import median
 from typing import Any
 
+import polars as pl
+
 from ..shared import as_finite_number, as_record
 
 
@@ -15,12 +17,14 @@ def percentile_rank(values: list[Any], value: Any) -> float | None:
     finite_values = [item for item in (as_finite_number(v) for v in values) if item is not None]
     if not finite_values:
         return None
-    return (sum(1 for item in finite_values if item <= numeric_value) / len(finite_values)) * 100
+    return pl.DataFrame({"value": finite_values}).select(((pl.col("value") <= numeric_value).sum() / pl.len()) * 100).item()
 
 
 def mean_of_finite(values: list[float | None]) -> float | None:
     finite_values = [value for value in values if value is not None]
-    return (sum(finite_values) / len(finite_values)) if finite_values else None
+    if not finite_values:
+        return None
+    return pl.Series("value", finite_values).mean()
 
 
 def _metric_value(model: dict[str, Any], key: str) -> float | None:
@@ -69,16 +73,11 @@ def derive_speed_output_token_anchors(openrouter_speed_by_id: dict[str, dict[str
     if not implied_token_usages:
         return default_anchors
     quantiles = [0, *scoring_config.get("speed_anchor_quantiles", [0.25, 0.5, 0.75]), 1]
-    anchors: list[float] = []
-    for quantile in quantiles:
-        if len(implied_token_usages) == 1:
-            anchors.append(implied_token_usages[0])
-            continue
-        index = (len(implied_token_usages) - 1) * quantile
-        lower = int(index)
-        upper = min(lower + 1, len(implied_token_usages) - 1)
-        ratio = index - lower
-        anchors.append(implied_token_usages[lower] + (implied_token_usages[upper] - implied_token_usages[lower]) * ratio)
+    token_series = pl.Series("tokens", implied_token_usages)
+    anchors = [
+        implied_token_usages[0] if quantile == 0 else implied_token_usages[-1] if quantile == 1 else float(token_series.quantile(quantile, interpolation="linear"))
+        for quantile in quantiles
+    ]
     source_min = anchors[0]
     source_max = anchors[-1]
     if source_max <= source_min:
@@ -117,44 +116,77 @@ def build_scores(model: dict[str, Any], cost: Any, speed: dict[str, Any], speed_
 
 
 def attach_relative_scores(models: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    def min_max_scale(values: list[float | None], value: float | None) -> float | None:
-        if value is None:
-            return None
-        finite_values = [candidate for candidate in values if candidate is not None]
-        if not finite_values:
-            return None
-        min_value = min(finite_values)
-        max_value = max(finite_values)
-        if max_value == min_value:
-            return 100
-        return ((value - min_value) / (max_value - min_value)) * 100
+    if not models:
+        return []
 
-    intelligence_scores = [as_finite_number(as_record(model.get("scores")).get("intelligence_score")) for model in models]
-    agentic_scores = [as_finite_number(as_record(model.get("scores")).get("agentic_score")) for model in models]
-    speed_scores = [as_finite_number(as_record(model.get("scores")).get("speed_score")) for model in models]
-    price_scores = [as_finite_number(as_record(model.get("scores")).get("price_score")) for model in models]
-    output = []
-    for model in models:
-        scores = as_record(model.get("scores"))
-        intelligence_score = as_finite_number(scores.get("intelligence_score"))
-        agentic_score = as_finite_number(scores.get("agentic_score"))
-        speed_score = as_finite_number(scores.get("speed_score"))
-        price_score = as_finite_number(scores.get("price_score"))
-        intelligence_relative = min_max_scale(intelligence_scores, intelligence_score)
-        agentic_relative = min_max_scale(agentic_scores, agentic_score)
-        speed_relative = percentile_rank(speed_scores, speed_score)
-        price_relative = percentile_rank(price_scores, price_score)
-        overall_relative = mean_of_finite([intelligence_relative, agentic_relative, speed_relative, price_relative])
-        output.append(
+    score_frame = pl.DataFrame(
+        [
             {
-                **model,
-                "relative_scores": {
-                    "intelligence_score": intelligence_relative,
-                    "agentic_score": agentic_relative,
-                    "speed_score": speed_relative,
-                    "price_score": price_relative,
-                    "overall_score": overall_relative,
-                },
+                "row_index": row_index,
+                "intelligence_score": as_finite_number(as_record(model.get("scores")).get("intelligence_score")),
+                "agentic_score": as_finite_number(as_record(model.get("scores")).get("agentic_score")),
+                "speed_score": as_finite_number(as_record(model.get("scores")).get("speed_score")),
+                "price_score": as_finite_number(as_record(model.get("scores")).get("price_score")),
             }
+            for row_index, model in enumerate(models)
+        ]
+    )
+
+    def min_max_relative(column_name: str) -> pl.Expr:
+        return (
+            pl.when(pl.col(column_name).is_null() | (pl.col(column_name).count() == 0))
+            .then(None)
+            .when(pl.col(column_name).max() == pl.col(column_name).min())
+            .then(100.0)
+            .otherwise(((pl.col(column_name) - pl.col(column_name).min()) / (pl.col(column_name).max() - pl.col(column_name).min())) * 100)
+            .alias(f"{column_name}_relative")
         )
-    return output
+
+    def percentile_relative(column_name: str) -> pl.Expr:
+        return (
+            pl.when(pl.col(column_name).is_null() | (pl.col(column_name).count() == 0))
+            .then(None)
+            .otherwise((pl.col(column_name).rank(method="max") / pl.col(column_name).count()) * 100)
+            .alias(f"{column_name}_relative")
+        )
+
+    relative_frame = score_frame.with_columns(
+        [
+            min_max_relative("intelligence_score"),
+            min_max_relative("agentic_score"),
+            percentile_relative("speed_score"),
+            percentile_relative("price_score"),
+        ]
+    ).with_columns(
+        pl.mean_horizontal(
+            "intelligence_score_relative",
+            "agentic_score_relative",
+            "speed_score_relative",
+            "price_score_relative",
+        ).alias("overall_score_relative")
+    )
+
+    relative_by_index = {
+        row["row_index"]: row
+        for row in relative_frame.select(
+            "row_index",
+            "intelligence_score_relative",
+            "agentic_score_relative",
+            "speed_score_relative",
+            "price_score_relative",
+            "overall_score_relative",
+        ).to_dicts()
+    }
+    return [
+        {
+            **model,
+            "relative_scores": {
+                "intelligence_score": relative_by_index[row_index]["intelligence_score_relative"],
+                "agentic_score": relative_by_index[row_index]["agentic_score_relative"],
+                "speed_score": relative_by_index[row_index]["speed_score_relative"],
+                "price_score": relative_by_index[row_index]["price_score_relative"],
+                "overall_score": relative_by_index[row_index]["overall_score_relative"],
+            },
+        }
+        for row_index, model in enumerate(models)
+    ]
