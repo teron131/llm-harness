@@ -4,6 +4,7 @@ import {
   PRIMARY_PROVIDER_ID,
   asFiniteNumber,
   asRecord,
+  modelSlugFromModelId,
   normalizeProviderModelId,
   type JsonObject,
 } from "../shared.js";
@@ -51,12 +52,48 @@ function hasScoreSignal(row: JsonObject): boolean {
   );
 }
 
-function rowPriority(row: JsonObject): number {
+function reasoningEffortPriority(
+  aaSlug: string | null,
+  canonicalSlug: string | null,
+): number {
+  if (aaSlug == null || canonicalSlug == null) {
+    return 0;
+  }
+  const normalizedAaSlug = normalizeProviderModelId(aaSlug);
+  const normalizedCanonicalSlug = normalizeProviderModelId(canonicalSlug);
+  if (normalizedAaSlug === normalizedCanonicalSlug) {
+    return 5;
+  }
+  const effortSuffixes = [
+    ["-xhigh", 5],
+    ["-high", 4],
+    ["-medium", 3],
+    ["-low", 2],
+    ["-minimal", 1],
+  ] as const;
+  for (const [suffix, priority] of effortSuffixes) {
+    if (normalizedAaSlug === `${normalizedCanonicalSlug}${suffix}`) {
+      return priority;
+    }
+  }
+  return 0;
+}
+
+function rowPriority(row: JsonObject, normalizedId: string): number {
   const providerId = row.provider_id;
   const openrouterBoost = providerId === PRIMARY_PROVIDER_ID ? 1_000_000 : 0;
   const intelligenceCostBoost = hasIntelligenceCost(row) ? 1_000 : 0;
   const scoreSignalBoost = hasScoreSignal(row) ? 10 : 0;
-  return openrouterBoost + intelligenceCostBoost + scoreSignalBoost;
+  const aaSlug = typeof row.aa_slug === "string" ? row.aa_slug : null;
+  const canonicalSlug = modelSlugFromModelId(normalizedId);
+  const reasoningEffortBoost =
+    reasoningEffortPriority(aaSlug, canonicalSlug) * 10_000_000;
+  return (
+    reasoningEffortBoost +
+    openrouterBoost +
+    intelligenceCostBoost +
+    scoreSignalBoost
+  );
 }
 
 function dedupeRowsPreferOpenRouter(
@@ -79,9 +116,10 @@ function dedupeRowsPreferOpenRouter(
   }
 
   const dedupedRows: JsonObject[] = [];
-  for (const group of groupedByNormalizedId.values()) {
+  for (const [normalizedId, group] of groupedByNormalizedId.entries()) {
     const winner = [...group].sort(
-      (left, right) => rowPriority(right) - rowPriority(left),
+      (left, right) =>
+        rowPriority(right, normalizedId) - rowPriority(left, normalizedId),
     )[0] as JsonObject;
     const mergedIntelligenceIndexCost: JsonObject = {
       ...asRecord(winner.intelligence_index_cost),
