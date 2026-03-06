@@ -1,3 +1,4 @@
+/** Public matcher APIs for LLM model mapping and scraper fallback diagnostics. */
 import { getArtificialAnalysisStats } from "./sources/artificial-analysis-api.js";
 import { getArtificialAnalysisScrapedEvalsOnlyStats } from "./sources/artificial-analysis-scraper.js";
 import { getModelsDevStats } from "./sources/models-dev.js";
@@ -28,9 +29,7 @@ export type {
 
 const DEFAULT_MAX_CANDIDATES = 5;
 
-/**
- * Build candidate mappings from Artificial Analysis models to models.dev models.
- */
+/** Build candidate mappings from Artificial Analysis API rows to models.dev identities. */
 export async function getMatchModelMapping(
   options: LlmMatchModelMappingOptions = {},
 ): Promise<LlmMatchModelMappingPayload> {
@@ -75,9 +74,7 @@ export async function getMatchModelMapping(
   };
 }
 
-/**
- * Run the same matcher algorithm using scraper-only AA models (API-keyless fallback).
- */
+/** Run the same matcher algorithm against scraper rows for the API-keyless fallback path. */
 export async function getScraperFallbackMatchDiagnostics(
   options: LlmMatchModelMappingOptions = {},
 ): Promise<LlmScraperFallbackMatchDiagnosticsPayload> {

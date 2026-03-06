@@ -1,3 +1,4 @@
+/** Public LLM stats API: cache list payloads, rebuild from live sources when needed, and return failure-safe output. */
 import {
   DEFAULT_OUTPUT_PATH,
   currentEpochSeconds,
@@ -20,12 +21,7 @@ export type {
   ModelStatsSelectedPayload,
 };
 
-/**
- * Persist the final model stats payload to disk.
- *
- * Write failures are intentionally swallowed to keep API behavior in-memory
- * first.
- */
+/** Persist the final model stats payload to disk while keeping write failures non-fatal. */
 export async function saveModelStatsSelected(
   payload: ModelStatsSelectedPayload,
   outputPath = DEFAULT_OUTPUT_PATH,
@@ -33,14 +29,7 @@ export async function saveModelStatsSelected(
   await saveModelStatsSelectedToPath(payload, outputPath);
 }
 
-/**
- * Return final model stats enriched from source data + matcher links.
- *
- * Design:
- * - list mode (`id == null`): cache-first (< 1 day), else recompute and save
- * - single-model mode (`id != null`): in-memory only, exact-id filtering
- * - failure mode: never throw; returns `{ fetched_at_epoch_seconds: null, models: [] }`
- */
+/** Build the final selected LLM stats payload with cache-first list mode and in-memory single-model mode. */
 export async function getModelStatsSelected(
   options: ModelStatsSelectedOptions = {},
 ): Promise<ModelStatsSelectedPayload> {

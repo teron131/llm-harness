@@ -1,3 +1,4 @@
+/** OpenRouter enrichment stage for LLM stats: dedupe rows, backfill free costs, and fetch speed/pricing enrichments. */
 import { getOpenRouterScrapedStats } from "../sources/openrouter-scraper.js";
 import {
   PRIMARY_PROVIDER_ID,
@@ -191,6 +192,7 @@ async function buildOpenRouterDataById(
   }
 }
 
+/** Fetch OpenRouter enrichments for the matched rows and return the late-bound speed/pricing maps. */
 export async function enrichRows(
   matchedRows: Record<string, unknown>[],
 ): Promise<EnrichedRows> {

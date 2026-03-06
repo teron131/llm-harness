@@ -1,3 +1,4 @@
+/** Tokenization helpers for matcher scoring, especially around model scales and variant suffixes. */
 import { normalizeModelToken } from "../shared.js";
 
 const MODEL_NAME_TAG_TOKENS = new Set([

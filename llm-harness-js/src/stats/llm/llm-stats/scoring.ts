@@ -1,3 +1,4 @@
+/** Score helpers for LLM stats: keep raw score formulas here and attach normalized relative scores later. */
 import { percentileRank } from "../../utils.js";
 import { asFiniteNumber, asRecord, type JsonObject } from "../shared.js";
 
@@ -57,6 +58,7 @@ function metricValue(model: JsonObject, key: string): number | null {
   );
 }
 
+/** Estimate a blended price from raw pricing fields, preferring weighted OpenRouter pricing when available. */
 export function blendedPriceValue(costLike: unknown): number | null {
   const cost = asRecord(costLike);
   const inputCost = asFiniteNumber(cost.input);
@@ -147,6 +149,7 @@ function quantileFromSorted(values: number[], quantile: number): number | null {
   return lowerValue + (upperValue - lowerValue) * ratio;
 }
 
+/** Derive representative output-token anchors from OpenRouter latency/throughput observations. */
 export function deriveSpeedOutputTokenAnchors(
   openRouterSpeedById: Map<string, JsonObject>,
 ): number[] {
@@ -210,6 +213,7 @@ export function deriveSpeedOutputTokenAnchors(
   });
 }
 
+/** Compute the raw score bundle for a single final model row. */
 export function buildScores(
   model: JsonObject,
   cost: unknown,
@@ -303,6 +307,7 @@ function minMaxScale(
   return ((value - minValue) / (maxValue - minValue)) * 100;
 }
 
+/** Attach normalized `relative_scores` using min-max for intelligence/agentic and percentiles for speed/price. */
 export function attachRelativeScores(
   models: ModelStatsSelectedModel[],
 ): ModelStatsSelectedModel[] {

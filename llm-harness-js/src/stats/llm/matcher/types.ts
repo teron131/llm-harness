@@ -1,3 +1,4 @@
+/** Shared public and intermediate types for the LLM matcher pipeline. */
 import { getArtificialAnalysisStats } from "../sources/artificial-analysis-api.js";
 import { getModelsDevStats } from "../sources/models-dev.js";
 
@@ -15,9 +16,7 @@ export type MatcherSourceModel = {
   sourceReleaseDate: string | null;
 };
 
-/**
- * Candidate model from models.dev for a given Artificial Analysis model.
- */
+/** Candidate model from models.dev for one Artificial Analysis source model. */
 export type LlmMatchCandidate = {
   model_id: string;
   provider_id: string;
@@ -28,9 +27,7 @@ export type LlmMatchCandidate = {
 
 export type LlmMatchResult = LlmMatchCandidate | null;
 
-/**
- * Mapping entry for one Artificial Analysis model and its match candidates.
- */
+/** Mapping entry for one Artificial Analysis model and its ranked match candidates. */
 export type LlmMatchMappedModel = {
   artificial_analysis_slug: string;
   artificial_analysis_name: string | null;
@@ -39,9 +36,7 @@ export type LlmMatchMappedModel = {
   candidates: LlmMatchCandidate[];
 };
 
-/**
- * Full mapping payload (Artificial Analysis -> models.dev candidates).
- */
+/** Full mapping payload for Artificial Analysis -> models.dev candidate resolution. */
 export type LlmMatchModelMappingPayload = {
   artificial_analysis_fetched_at_epoch_seconds: number | null;
   models_dev_fetched_at_epoch_seconds: number | null;
@@ -54,9 +49,7 @@ export type LlmMatchModelMappingPayload = {
   models: LlmMatchMappedModel[];
 };
 
-/**
- * Options for mapping generation.
- */
+/** Options for mapping generation and fallback-source injection. */
 export type LlmMatchModelMappingOptions = {
   maxCandidates?: number;
   artificialAnalysisModels?: ArtificialAnalysisModel[];

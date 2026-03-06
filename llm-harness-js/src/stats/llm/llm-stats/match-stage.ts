@@ -1,3 +1,4 @@
+/** Match stage for LLM stats: turn scraper-first matcher diagnostics into merged source rows. */
 import { getScraperFallbackMatchDiagnostics } from "../matcher.js";
 import {
   asRecord,
@@ -54,6 +55,7 @@ function hasVariantConflict(
   );
 }
 
+/** Build one matched row from scraper data, then fill missing nested fields from the AA API row when available. */
 function buildMatchedRowFromScrapedModel(
   scrapedModel: ScrapedEvalModel,
   apiModel: ArtificialAnalysisModel | null,
@@ -116,6 +118,7 @@ function buildMatchedRowFromScrapedModel(
   };
 }
 
+/** Build matched intermediate rows by running scraper fallback diagnostics and rejecting obvious variant mismatches. */
 export async function buildMatchedRows(
   sourceData: SourceData,
 ): Promise<Record<string, unknown>[]> {

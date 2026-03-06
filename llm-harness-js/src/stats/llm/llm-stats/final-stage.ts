@@ -1,3 +1,4 @@
+/** Final projection stage for LLM stats: build the public model shape, attach normalized ranking data, then sort/prune/filter. */
 import { asFiniteNumber, asRecord, type JsonObject } from "../shared.js";
 
 import {
@@ -324,6 +325,7 @@ function filterModelsById(
   return models.filter((model) => model.id === id);
 }
 
+/** Build the final public model row from one enriched intermediate row. */
 function projectFinalModel(
   row: unknown,
   openRouterSpeedById: Map<string, JsonObject>,
@@ -361,6 +363,7 @@ function projectFinalModel(
   };
 }
 
+/** Build the final selected models list and attach the normalized ranking layer used for ordering. */
 export function buildFinalModels(
   enrichedRows: EnrichedRows,
   id: string | null | undefined,

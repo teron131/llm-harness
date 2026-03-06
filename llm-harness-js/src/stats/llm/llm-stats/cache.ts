@@ -1,3 +1,4 @@
+/** Cache helpers for the final selected LLM stats payload. */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
@@ -28,6 +29,7 @@ export function currentEpochSeconds(): number {
   return nowEpochSeconds();
 }
 
+/** Save the final payload to disk and swallow write failures to keep the API failure-safe. */
 export async function saveModelStatsSelectedToPath(
   payload: ModelStatsSelectedPayload,
   outputPath = DEFAULT_OUTPUT_PATH,
@@ -39,6 +41,7 @@ export async function saveModelStatsSelectedToPath(
   }
 }
 
+/** Load a fresh cached list payload from disk or return `null` when it is missing, invalid, or stale. */
 export async function loadModelStatsSelectedFromCache(
   outputPath: string,
 ): Promise<ModelStatsSelectedPayload | null> {

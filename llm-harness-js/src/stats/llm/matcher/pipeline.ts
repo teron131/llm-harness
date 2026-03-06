@@ -1,3 +1,4 @@
+/** Internal matcher pipeline: scope provider pools, collect candidates, and apply the final void threshold. */
 import {
   FALLBACK_PROVIDER_IDS,
   PRIMARY_PROVIDER_ID,
@@ -21,6 +22,7 @@ import {
 
 const VOID_THRESHOLD_RANGE_RATIO = 0.35;
 
+/** Count unique models.dev model ids after provider scoping. */
 export function uniqueModelCount(modelsDevModels: ModelsDevModel[]): number {
   return new Set(
     modelsDevModels.map((modelsDevModel) => modelsDevModel.model_id),
@@ -43,6 +45,7 @@ function hasExactSlugFallbackCandidate(
   });
 }
 
+/** Split models.dev rows into primary and fallback provider pools for deterministic matcher behavior. */
 export function splitPreferredProviderModels(
   modelsDevModels: ModelsDevModel[],
 ): PreferredProviderPools {
@@ -148,6 +151,7 @@ function applyMaxMinHalfVoid<
   return { threshold, voided };
 }
 
+/** Run the matcher over source rows and return ranked candidates plus post-void summary counts. */
 export function runMatcher(
   sourceModels: MatcherSourceModel[],
   providerPools: PreferredProviderPools,

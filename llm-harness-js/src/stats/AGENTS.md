@@ -2,29 +2,32 @@
 
 ## Scope
 
-- Cross-source model analytics, matching, and projection utilities built from provider stats feeds.
+- Cross-source stats fetchers, matchers, and final projection helpers for LLM and image model analytics.
 
 ## What Module Is For
 
-- Keep data-source fetch/cache logic separate from matching/scoring logic.
-- Expose reusable APIs for:
-  - fetching normalized Artificial Analysis stats,
-  - fetching normalized models.dev stats,
-  - matching and unioning models (OpenRouter-only),
-  - projecting final selected payloads for downstream consumers.
+- `index.ts` is the public export surface for stats helpers.
+- `llm/` owns the LLM stats pipeline:
+  - source fetch,
+  - cross-source matching,
+  - OpenRouter enrichment,
+  - final payload projection.
+- `image/` owns the image leaderboard fetch/projection path.
+- Keep raw source adapters, matcher logic, and final selected payload builders in separate modules.
 
 ## High-signal locations
 
-- `src/stats/data-sources/artificialAnalysis.ts -> Artificial Analysis fetch/cache/filter/rank pipeline`
-- `src/stats/data-sources/modelsDev.ts -> models.dev fetch/cache/flatten/filter pipeline`
-- `src/stats/data-sources/matcher.ts -> cross-source matching, candidate scoring, union generation, and void-thresholding`
-- `src/stats/modelStats.ts -> final selected projection used by test/output scripts`
-- `src/stats/index.ts -> public re-export surface for stats helpers`
+- `llm/llm-stats.ts -> public LLM stats API and cache-first orchestration`
+- `llm/llm-stats/ -> staged LLM stats pipeline (source -> match -> OpenRouter enrich -> final build)`
+- `llm/matcher.ts -> public matcher APIs and scraper fallback diagnostics`
+- `llm/matcher/ -> provider scoping, candidate scoring, tokenizer helpers, source-model builders`
+- `llm/sources/ -> upstream Artificial Analysis, models.dev, and OpenRouter adapters`
+- `image/image-stats.ts -> final image stats payload builder`
 
 ## Project-specific conventions and rationale
 
-- Keep output payload keys stable for `.cache/*` JSON interoperability.
-- Keep fetch/cache behavior deterministic; use explicit options for refresh/TTL.
-- Keep scoring constants explicit and named as rewards/penalties when adding new matching logic.
-- Keep matcher provider scope fixed to OpenRouter for deterministic results.
-- Keep source-of-truth names from models.dev in merged outputs when available.
+- Keep top-level output keys stable for `.cache/*.json` interoperability.
+- Prefer scraper-first LLM stats rows, then use the Artificial Analysis API as field-level fallback when it adds missing evaluations.
+- Keep OpenRouter enrichment separate from source fetch/matching because it is a later fallback layer.
+- Keep raw `scores` formula-native and expose normalized user-facing ranking values separately.
+- When adding benchmarks or fields, preserve scraper precedence unless a field is missing.

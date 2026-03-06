@@ -1,3 +1,4 @@
+/** Build matcher source rows from Artificial Analysis API rows or scraper rows. */
 import { asRecord, modelSlugFromModelId } from "../shared.js";
 
 import {
@@ -5,6 +6,7 @@ import {
   type MatcherSourceModel,
 } from "./types.js";
 
+/** Build matcher source rows from the Artificial Analysis API payload. */
 export function buildSourceModelsFromArtificialAnalysis(
   artificialAnalysisModels: ArtificialAnalysisModel[],
 ): MatcherSourceModel[] {
@@ -24,6 +26,7 @@ export function buildSourceModelsFromArtificialAnalysis(
   }));
 }
 
+/** Build matcher source rows from scraper rows when the API path is unavailable. */
 export function buildSourceModelsFromScrapedRows(
   scrapedRows: unknown[],
 ): MatcherSourceModel[] {

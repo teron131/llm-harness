@@ -1,3 +1,4 @@
+/** Shared public and stage-handoff types for the final selected LLM stats pipeline. */
 import { getArtificialAnalysisStats } from "../sources/artificial-analysis-api.js";
 import { getModelsDevStats } from "../sources/models-dev.js";
 import { type JsonObject } from "../shared.js";
@@ -18,9 +19,7 @@ export type ScrapedEvalModel = {
   intelligence_index_cost?: unknown;
 };
 
-/**
- * Final selected model row exposed by the stats API.
- */
+/** Final selected model row exposed by the stats API. */
 export type ModelStatsSelectedModel = {
   id: string | null;
   name: string | null;
@@ -41,23 +40,13 @@ export type ModelStatsSelectedModel = {
   relative_scores: unknown;
 };
 
-/**
- * Final model stats payload returned by the public stats API.
- *
- * `fetched_at_epoch_seconds` is `null` when the upstream pipeline fails and
- * the function returns an empty-safe payload.
- */
+/** Final model stats payload returned by the public stats API, with `null` fetch time when the pipeline fails safely. */
 export type ModelStatsSelectedPayload = {
   fetched_at_epoch_seconds: number | null;
   models: ModelStatsSelectedModel[];
 };
 
-/**
- * Options for model stats lookup.
- *
- * - omit `id` (or set `null`) to return the full list
- * - set `id` to return exact-id matches only
- */
+/** Options for model stats lookup: omit `id` for the full list or set it for exact-id filtering. */
 export type ModelStatsSelectedOptions = {
   id?: string | null;
 };

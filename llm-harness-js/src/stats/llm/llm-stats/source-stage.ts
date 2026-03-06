@@ -1,3 +1,4 @@
+/** Source stage for LLM stats: fetch scraper rows, fetch AA API fallback rows, and build lookup maps. */
 import { getArtificialAnalysisStats } from "../sources/artificial-analysis-api.js";
 import { getArtificialAnalysisScrapedEvalsOnlyStats } from "../sources/artificial-analysis-scraper.js";
 import { getModelsDevStats } from "../sources/models-dev.js";
@@ -14,6 +15,7 @@ import {
   type SourceData,
 } from "./types.js";
 
+/** Keep one preferred models.dev row per model id with OpenRouter first and trusted providers as fallback. */
 function dedupePreferredProviderModels(
   modelsDevModels: ModelsDevModel[],
 ): ModelsDevModel[] {
@@ -82,6 +84,7 @@ function buildApiBySlug(
   );
 }
 
+/** Fetch the source snapshots and precompute the slug/id maps used by later stages. */
 export async function fetchSourceData(): Promise<SourceData> {
   const [
     artificialAnalysisApiStats,
