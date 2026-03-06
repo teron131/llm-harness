@@ -1,7 +1,7 @@
-import { asRecord } from "../utils.js";
+import { asRecord } from "../utils";
 
-import { getArtificialAnalysisImageStats } from "./sources/artificial-analysis.js";
-import { getArenaAiImageStats } from "./sources/arena-ai.js";
+import { getArtificialAnalysisImageStats } from "./sources/artificial-analysis";
+import { getArenaAiImageStats } from "./sources/arena-ai";
 
 type ArtificialAnalysisImageModel = Awaited<
   ReturnType<typeof getArtificialAnalysisImageStats>

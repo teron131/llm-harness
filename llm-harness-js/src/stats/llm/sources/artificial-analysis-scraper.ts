@@ -1,5 +1,5 @@
-import { fetchWithTimeout, nowEpochSeconds } from "../../utils.js";
-import { asRecord, type JsonObject } from "../shared.js";
+import { fetchWithTimeout, nowEpochSeconds } from "../../utils";
+import { asRecord, type JsonObject } from "../shared";
 
 const DEFAULT_SCRAPE_URL = "https://artificialanalysis.ai/leaderboards/models";
 const DEFAULT_TIMEOUT_MS = 30_000;

@@ -1,7 +1,7 @@
-import { getArtificialAnalysisImageStats } from "../sources/artificial-analysis.js";
-import { getArenaAiImageStats } from "../sources/arena-ai.js";
+import { getArtificialAnalysisImageStats } from "../sources/artificial-analysis";
+import { getArenaAiImageStats } from "../sources/arena-ai";
 
-import type { ImageSourceData } from "./types.js";
+import type { ImageSourceData } from "./types";
 
 export async function fetchSourceData(): Promise<ImageSourceData> {
   const [artificialAnalysisPayload, arenaPayload] = await Promise.all([

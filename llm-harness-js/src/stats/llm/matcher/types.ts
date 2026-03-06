@@ -1,6 +1,6 @@
 /** Shared public and intermediate types for the LLM matcher pipeline. */
-import { getArtificialAnalysisStats } from "../sources/artificial-analysis-api.js";
-import { getModelsDevStats } from "../sources/models-dev.js";
+import { getArtificialAnalysisStats } from "../sources/artificial-analysis-api";
+import { getModelsDevStats } from "../sources/models-dev";
 
 export type ModelsDevModel = Awaited<
   ReturnType<typeof getModelsDevStats>

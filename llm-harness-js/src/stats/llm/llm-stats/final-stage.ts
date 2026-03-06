@@ -1,17 +1,17 @@
 /** Final projection stage for LLM stats: build the public model shape, attach normalized ranking data, then sort/prune/filter. */
-import { asFiniteNumber, asRecord, type JsonObject } from "../shared.js";
+import { asFiniteNumber, asRecord, type JsonObject } from "../shared";
 
 import {
   attachRelativeScores,
   blendedPriceValue,
   buildScores,
-} from "./scoring.js";
+} from "./scoring";
 import {
   type EnrichedRows,
   type FinalStageConfig,
   type ModelStatsSelectedModel,
   type ScoringConfig,
-} from "./types.js";
+} from "./types";
 
 const EMPTY_OPENROUTER_PRICING = {
   weighted_input: null,

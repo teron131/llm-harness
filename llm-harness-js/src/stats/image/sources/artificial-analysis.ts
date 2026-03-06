@@ -2,7 +2,7 @@ import {
   fetchWithTimeout,
   nowEpochSeconds,
   percentileRank,
-} from "../../utils.js";
+} from "../../utils";
 
 const TEXT_TO_IMAGE_URL =
   "https://artificialanalysis.ai/api/v2/data/media/text-to-image?include_categories=true";

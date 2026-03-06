@@ -1,10 +1,10 @@
 /** Build matcher source rows from Artificial Analysis API rows or scraper rows. */
-import { asRecord, modelSlugFromModelId } from "../shared.js";
+import { asRecord, modelSlugFromModelId } from "../shared";
 
 import {
   type ArtificialAnalysisModel,
   type MatcherSourceModel,
-} from "./types.js";
+} from "./types";
 
 /** Build matcher source rows from the Artificial Analysis API payload. */
 export function buildSourceModelsFromArtificialAnalysis(

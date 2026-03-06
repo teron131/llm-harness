@@ -1,5 +1,5 @@
-import { fetchWithTimeout, nowEpochSeconds } from "../../utils.js";
-import { asRecord, type JsonObject } from "../shared.js";
+import { fetchWithTimeout, nowEpochSeconds } from "../../utils";
+import { asRecord, type JsonObject } from "../shared";
 
 const OPENROUTER_MODELS_URL = "https://openrouter.ai/api/frontend/models";
 const OPENROUTER_THROUGHPUT_URL =

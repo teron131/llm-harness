@@ -1,11 +1,11 @@
 /** Match stage for LLM stats: turn scraper-first matcher diagnostics into merged source rows. */
-import { getScraperFallbackMatchDiagnostics } from "../matcher.js";
+import { getScraperFallbackMatchDiagnostics } from "../matcher";
 import {
   asRecord,
   modelSlugFromModelId,
   normalizeProviderModelId,
   type JsonObject,
-} from "../shared.js";
+} from "../shared";
 
 import {
   type ArtificialAnalysisModel,
@@ -13,7 +13,7 @@ import {
   type ModelsDevModel,
   type ScrapedEvalModel,
   type SourceData,
-} from "./types.js";
+} from "./types";
 
 function hasToken(id: string, token: string) {
   return id.includes(token);

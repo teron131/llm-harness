@@ -1,22 +1,22 @@
 /** Public matcher APIs for LLM model mapping and scraper fallback diagnostics. */
-import { getArtificialAnalysisStats } from "./sources/artificial-analysis-api.js";
-import { getArtificialAnalysisScrapedEvalsOnlyStats } from "./sources/artificial-analysis-scraper.js";
-import { getModelsDevStats } from "./sources/models-dev.js";
+import { getArtificialAnalysisStats } from "./sources/artificial-analysis-api";
+import { getArtificialAnalysisScrapedEvalsOnlyStats } from "./sources/artificial-analysis-scraper";
+import { getModelsDevStats } from "./sources/models-dev";
 
 import {
   runMatcher,
   splitPreferredProviderModels,
   uniqueModelCount,
-} from "./matcher/pipeline.js";
+} from "./matcher/pipeline";
 import {
   buildSourceModelsFromArtificialAnalysis,
   buildSourceModelsFromScrapedRows,
-} from "./matcher/source-model.js";
+} from "./matcher/source-model";
 import {
   type LlmMatchModelMappingOptions,
   type LlmMatchModelMappingPayload,
   type LlmScraperFallbackMatchDiagnosticsPayload,
-} from "./matcher/types.js";
+} from "./matcher/types";
 
 export type {
   LlmMatchCandidate,
@@ -25,7 +25,7 @@ export type {
   LlmMatchModelMappingPayload,
   LlmMatchResult,
   LlmScraperFallbackMatchDiagnosticsPayload,
-} from "./matcher/types.js";
+} from "./matcher/types";
 
 const DEFAULT_MAX_CANDIDATES = 5;
 

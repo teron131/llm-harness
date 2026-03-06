@@ -3,14 +3,14 @@ import {
   FALLBACK_PROVIDER_IDS,
   PRIMARY_PROVIDER_ID,
   normalizeModelToken,
-} from "../shared.js";
+} from "../shared";
 
 import {
   compareCandidates,
   hasFirstTokenMatch,
   scoreCandidate,
-} from "./scoring.js";
-import { splitBaseModelId } from "./tokenize.js";
+} from "./scoring";
+import { splitBaseModelId } from "./tokenize";
 import {
   type LlmMatchCandidate,
   type LlmMatchResult,
@@ -18,7 +18,7 @@ import {
   type MatcherRunOutput,
   type ModelsDevModel,
   type PreferredProviderPools,
-} from "./types.js";
+} from "./types";
 
 const VOID_THRESHOLD_RANGE_RATIO = 0.35;
 

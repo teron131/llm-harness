@@ -1,13 +1,13 @@
 import type {
   ArtificialAnalysisImageEnrichedModel,
   ArtificialAnalysisImageOutputPayload,
-} from "../sources/artificial-analysis.js";
+} from "../sources/artificial-analysis";
 import type {
   ArenaAiImageAggregatedModel,
   ArenaAiImageOutputPayload,
-} from "../sources/arena-ai.js";
-import type { ImageMatchCandidate } from "../matcher.js";
-import type { JsonObject, NumberOrNull } from "../../utils.js";
+} from "../sources/arena-ai";
+import type { ImageMatchCandidate } from "../matcher";
+import type { JsonObject, NumberOrNull } from "../../utils";
 
 export type ImageStatsSelectedModel = {
   id: string | null;

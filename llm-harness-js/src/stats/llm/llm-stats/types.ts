@@ -1,7 +1,7 @@
 /** Shared public and stage-handoff types for the final selected LLM stats pipeline. */
-import { getArtificialAnalysisStats } from "../sources/artificial-analysis-api.js";
-import { getModelsDevStats } from "../sources/models-dev.js";
-import { type JsonObject } from "../shared.js";
+import { getArtificialAnalysisStats } from "../sources/artificial-analysis-api";
+import { getModelsDevStats } from "../sources/models-dev";
+import { type JsonObject } from "../shared";
 
 export type ArtificialAnalysisModel = Awaited<
   ReturnType<typeof getArtificialAnalysisStats>

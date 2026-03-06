@@ -1,8 +1,8 @@
 /** Score helpers for LLM stats: keep raw score formulas here and attach normalized relative scores later. */
-import { percentileRank } from "../../utils.js";
-import { asFiniteNumber, asRecord, type JsonObject } from "../shared.js";
+import { percentileRank } from "../../utils";
+import { asFiniteNumber, asRecord, type JsonObject } from "../shared";
 
-import { type ModelStatsSelectedModel, type ScoringConfig } from "./types.js";
+import { type ModelStatsSelectedModel, type ScoringConfig } from "./types";
 
 function meanOfFinite(values: Array<number | null>): number | null {
   const finiteValues = values.filter(

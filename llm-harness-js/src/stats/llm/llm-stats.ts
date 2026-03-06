@@ -4,17 +4,17 @@ import {
   currentEpochSeconds,
   loadModelStatsSelectedFromCache,
   saveModelStatsSelectedToPath,
-} from "./llm-stats/cache.js";
-import { buildFinalModels } from "./llm-stats/final-stage.js";
-import { enrichRows } from "./llm-stats/openrouter-stage.js";
-import { buildMatchedRows } from "./llm-stats/match-stage.js";
-import { fetchSourceData } from "./llm-stats/source-stage.js";
+} from "./llm-stats/cache";
+import { buildFinalModels } from "./llm-stats/final-stage";
+import { enrichRows } from "./llm-stats/openrouter-stage";
+import { buildMatchedRows } from "./llm-stats/match-stage";
+import { fetchSourceData } from "./llm-stats/source-stage";
 import {
   type LlmStatsStageConfig,
   type ModelStatsSelectedModel,
   type ModelStatsSelectedOptions,
   type ModelStatsSelectedPayload,
-} from "./llm-stats/types.js";
+} from "./llm-stats/types";
 
 export type {
   LlmStatsStageConfig,

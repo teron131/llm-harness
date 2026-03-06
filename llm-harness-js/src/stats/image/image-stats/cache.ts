@@ -5,8 +5,8 @@ import {
   isFreshEpochSeconds,
   nowEpochSeconds,
   writeJsonFile,
-} from "../../utils.js";
-import type { ImageStatsSelectedPayload } from "./types.js";
+} from "../../utils";
+import type { ImageStatsSelectedPayload } from "./types";
 
 export const DEFAULT_OUTPUT_PATH = resolve(".cache/image_stats.json");
 const CACHE_TTL_SECONDS = 60 * 60 * 24;

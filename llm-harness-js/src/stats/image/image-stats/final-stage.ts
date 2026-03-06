@@ -1,6 +1,6 @@
-import { asRecord, meanOrNull, type JsonObject } from "../../utils.js";
+import { asRecord, meanOrNull, type JsonObject } from "../../utils";
 
-import type { ImageStatsSelectedModel, ImageUnionRow } from "./types.js";
+import type { ImageStatsSelectedModel, ImageUnionRow } from "./types";
 
 function toModelId(value: string): string {
   return value

@@ -5,68 +5,68 @@ export type {
   LlmMatchModelMappingPayload,
   LlmMatchResult,
   LlmScraperFallbackMatchDiagnosticsPayload,
-} from "./llm/matcher.js";
-export type { ArtificialAnalysisOptions } from "./llm/sources/artificial-analysis-api.js";
-export { getArtificialAnalysisStats } from "./llm/sources/artificial-analysis-api.js";
+} from "./llm/matcher";
+export type { ArtificialAnalysisOptions } from "./llm/sources/artificial-analysis-api";
+export { getArtificialAnalysisStats } from "./llm/sources/artificial-analysis-api";
 export type {
   ArtificialAnalysisScrapedPayload,
   ArtificialAnalysisScrapedRawPayload,
   ArtificialAnalysisScraperProcessOptions,
   ArtificialAnalysisScraperOptions,
-} from "./llm/sources/artificial-analysis-scraper.js";
+} from "./llm/sources/artificial-analysis-scraper";
 export {
   ARTIFICIAL_ANALYSIS_EVALS_ONLY_COLUMNS,
   getArtificialAnalysisScrapedEvalsOnlyStats,
   getArtificialAnalysisScrapedRawStats,
   getArtificialAnalysisScrapedStats,
   processArtificialAnalysisScrapedRows,
-} from "./llm/sources/artificial-analysis-scraper.js";
+} from "./llm/sources/artificial-analysis-scraper";
 export type {
   ArtificialAnalysisImageOptions,
   ArtificialAnalysisImageOutputPayload,
-} from "./image/sources/artificial-analysis.js";
-export { getArtificialAnalysisImageStats } from "./image/sources/artificial-analysis.js";
+} from "./image/sources/artificial-analysis";
+export { getArtificialAnalysisImageStats } from "./image/sources/artificial-analysis";
 export type {
   ArenaAiImageOptions,
   ArenaAiImageOutputPayload,
-} from "./image/sources/arena-ai.js";
-export { getArenaAiImageStats } from "./image/sources/arena-ai.js";
+} from "./image/sources/arena-ai";
+export { getArenaAiImageStats } from "./image/sources/arena-ai";
 export type {
   ImageMatchCandidate,
   ImageMatchMappedModel,
   ImageMatchModelMappingOptions,
   ImageMatchModelMappingPayload,
-} from "./image/matcher.js";
-export { getImageMatchModelMapping } from "./image/matcher.js";
-export { getMatchModelMapping } from "./llm/matcher.js";
-export type { ModelsDevOptions } from "./llm/sources/models-dev.js";
-export { getModelsDevStats } from "./llm/sources/models-dev.js";
+} from "./image/matcher";
+export { getImageMatchModelMapping } from "./image/matcher";
+export { getMatchModelMapping } from "./llm/matcher";
+export type { ModelsDevOptions } from "./llm/sources/models-dev";
+export { getModelsDevStats } from "./llm/sources/models-dev";
 export type {
   OpenRouterPerformanceSummary,
   OpenRouterSingleModelOptions,
   OpenRouterScrapedModel,
   OpenRouterScrapedPayload,
   OpenRouterScraperOptions,
-} from "./llm/sources/openrouter-scraper.js";
+} from "./llm/sources/openrouter-scraper";
 export {
   getOpenRouterModelStats,
   getOpenRouterScrapedStats,
-} from "./llm/sources/openrouter-scraper.js";
+} from "./llm/sources/openrouter-scraper";
 export type {
   ImageStatsSelectedModel,
   ImageStatsSelectedOptions,
   ImageStatsSelectedPayload,
-} from "./image/image-stats.js";
+} from "./image/image-stats";
 export {
   getImageStatsSelected,
   saveImageStatsSelected,
-} from "./image/image-stats.js";
+} from "./image/image-stats";
 export type {
   ModelStatsSelectedModel,
   ModelStatsSelectedOptions,
   ModelStatsSelectedPayload,
-} from "./llm/llm-stats.js";
+} from "./llm/llm-stats";
 export {
   getModelStatsSelected,
   saveModelStatsSelected,
-} from "./llm/llm-stats.js";
+} from "./llm/llm-stats";

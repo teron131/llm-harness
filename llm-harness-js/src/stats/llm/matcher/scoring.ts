@@ -1,6 +1,6 @@
-import { normalizeModelToken } from "../shared.js";
+import { normalizeModelToken } from "../shared";
 
-import { type LlmMatchCandidate } from "./types.js";
+import { type LlmMatchCandidate } from "./types";
 import {
   commonPrefixLength,
   firstParsedNumber,
@@ -11,7 +11,7 @@ import {
   splitBaseModelTokens,
   splitTokens,
   parsedNumericTokens,
-} from "./tokenize.js";
+} from "./tokenize";
 
 const TOKEN_PREFIX_WEIGHTS = [5, 4, 3, 2, 1] as const;
 const TOKEN_PREFIX_REWARD_MULTIPLIER = 2;

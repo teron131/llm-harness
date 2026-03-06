@@ -4,15 +4,15 @@ import {
   DEFAULT_OUTPUT_PATH,
   loadImageStatsSelectedFromCache,
   saveImageStatsSelectedToPath,
-} from "./image-stats/cache.js";
-import { buildFinalModels } from "./image-stats/final-stage.js";
-import { buildMatchedRows } from "./image-stats/match-stage.js";
-import { fetchSourceData } from "./image-stats/source-stage.js";
+} from "./image-stats/cache";
+import { buildFinalModels } from "./image-stats/final-stage";
+import { buildMatchedRows } from "./image-stats/match-stage";
+import { fetchSourceData } from "./image-stats/source-stage";
 import {
   type ImageStatsSelectedModel,
   type ImageStatsSelectedOptions,
   type ImageStatsSelectedPayload,
-} from "./image-stats/types.js";
+} from "./image-stats/types";
 
 export type {
   ImageStatsSelectedModel,

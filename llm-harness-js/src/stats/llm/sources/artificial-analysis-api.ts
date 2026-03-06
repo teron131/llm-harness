@@ -4,7 +4,7 @@ import {
   finiteNumbers,
   nowEpochSeconds,
   percentileRank,
-} from "../../utils.js";
+} from "../../utils";
 
 const MODELS_URL = "https://artificialanalysis.ai/api/v2/data/llms/models";
 const LOOKBACK_DAYS = 365;

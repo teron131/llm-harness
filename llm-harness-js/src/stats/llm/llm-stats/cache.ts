@@ -6,8 +6,8 @@ import {
   isFreshEpochSeconds,
   nowEpochSeconds,
   writeJsonFile,
-} from "../../utils.js";
-import type { ModelStatsSelectedPayload } from "./types.js";
+} from "../../utils";
+import type { ModelStatsSelectedPayload } from "./types";
 
 export const DEFAULT_OUTPUT_PATH = resolve(".cache/llm_stats.json");
 const CACHE_TTL_SECONDS = 60 * 60 * 24;

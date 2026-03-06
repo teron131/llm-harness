@@ -1,5 +1,5 @@
 /** OpenRouter enrichment stage for LLM stats: dedupe rows, backfill free costs, and fetch speed/pricing enrichments. */
-import { getOpenRouterScrapedStats } from "../sources/openrouter-scraper.js";
+import { getOpenRouterScrapedStats } from "../sources/openrouter-scraper";
 import {
   PRIMARY_PROVIDER_ID,
   asFiniteNumber,
@@ -7,14 +7,14 @@ import {
   modelSlugFromModelId,
   normalizeProviderModelId,
   type JsonObject,
-} from "../shared.js";
+} from "../shared";
 
-import { deriveSpeedOutputTokenAnchors } from "./scoring.js";
+import { deriveSpeedOutputTokenAnchors } from "./scoring";
 import {
   type EnrichedRows,
   type OpenRouterConfig,
   type ScoringConfig,
-} from "./types.js";
+} from "./types";
 
 function normalizeOpenRouterSpeed(performance: unknown): JsonObject {
   const parsed = asRecord(performance);

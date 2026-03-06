@@ -1,4 +1,4 @@
-import { asFiniteNumber, asRecord, type JsonObject } from "../utils.js";
+import { asFiniteNumber, asRecord, type JsonObject } from "../utils";
 
 export { asFiniteNumber, asRecord, type JsonObject };
 

@@ -1,7 +1,7 @@
-import { getImageMatchModelMapping } from "../matcher.js";
-import { asRecord } from "../../utils.js";
+import { getImageMatchModelMapping } from "../matcher";
+import { asRecord } from "../../utils";
 
-import type { ImageSourceData, ImageUnionRow } from "./types.js";
+import type { ImageSourceData, ImageUnionRow } from "./types";
 
 function mergeImageRow(
   sourceData: ImageSourceData,

@@ -1,19 +1,19 @@
 /** Source stage for LLM stats: fetch scraper rows, fetch AA API fallback rows, and build lookup maps. */
-import { getArtificialAnalysisStats } from "../sources/artificial-analysis-api.js";
-import { getArtificialAnalysisScrapedEvalsOnlyStats } from "../sources/artificial-analysis-scraper.js";
-import { getModelsDevStats } from "../sources/models-dev.js";
+import { getArtificialAnalysisStats } from "../sources/artificial-analysis-api";
+import { getArtificialAnalysisScrapedEvalsOnlyStats } from "../sources/artificial-analysis-scraper";
+import { getModelsDevStats } from "../sources/models-dev";
 import {
   FALLBACK_PROVIDER_IDS,
   PRIMARY_PROVIDER_ID,
   modelSlugFromModelId,
-} from "../shared.js";
+} from "../shared";
 
 import {
   type ArtificialAnalysisModel,
   type ModelsDevModel,
   type ScrapedEvalModel,
   type SourceData,
-} from "./types.js";
+} from "./types";
 
 /** Keep one preferred models.dev row per model id with OpenRouter first and trusted providers as fallback. */
 function dedupePreferredProviderModels(
