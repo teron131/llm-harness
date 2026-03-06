@@ -1,0 +1,77 @@
+import { getArtificialAnalysisScrapedEvalsOnlyStats } from "../sources/artificial-analysis-scraper.js";
+import { getModelsDevStats } from "../sources/models-dev.js";
+import {
+  FALLBACK_PROVIDER_IDS,
+  PRIMARY_PROVIDER_ID,
+  modelSlugFromModelId,
+} from "../shared.js";
+
+import {
+  type ModelsDevModel,
+  type ScrapedEvalModel,
+  type SelectedSourceData,
+} from "./types.js";
+
+function dedupePreferredProviderModels(
+  modelsDevModels: ModelsDevModel[],
+): ModelsDevModel[] {
+  const preferredModels = modelsDevModels.filter(
+    (modelsDevModel) =>
+      modelsDevModel.provider_id === PRIMARY_PROVIDER_ID ||
+      FALLBACK_PROVIDER_IDS.has(modelsDevModel.provider_id),
+  );
+  const byModelId = new Map<string, ModelsDevModel>();
+  const withPriority = preferredModels.map((modelsDevModel) => ({
+    modelsDevModel,
+    priority: modelsDevModel.provider_id === PRIMARY_PROVIDER_ID ? 0 : 1,
+  }));
+  withPriority.sort((left, right) => left.priority - right.priority);
+  for (const { modelsDevModel } of withPriority) {
+    byModelId.set(
+      modelsDevModel.model_id,
+      byModelId.get(modelsDevModel.model_id) ?? modelsDevModel,
+    );
+  }
+  return [...byModelId.values()];
+}
+
+function buildModelsDevById(
+  modelsDevModels: ModelsDevModel[],
+): Map<string, ModelsDevModel> {
+  return new Map(
+    modelsDevModels.map((modelsDevModel) => [
+      modelsDevModel.model_id,
+      modelsDevModel,
+    ]),
+  );
+}
+
+function buildScrapedBySlug(
+  scrapedRows: unknown[],
+): Map<string, ScrapedEvalModel> {
+  const scrapedBySlug = new Map<string, ScrapedEvalModel>();
+  for (const scrapedRow of scrapedRows) {
+    const scrapedModel = scrapedRow as ScrapedEvalModel;
+    const artificialAnalysisSlug = modelSlugFromModelId(scrapedModel.model_id);
+    if (artificialAnalysisSlug) {
+      scrapedBySlug.set(artificialAnalysisSlug, scrapedModel);
+    }
+  }
+  return scrapedBySlug;
+}
+
+export async function fetchSourceData(): Promise<SelectedSourceData> {
+  const [artificialAnalysisScrapedStats, modelsDevStats] = await Promise.all([
+    getArtificialAnalysisScrapedEvalsOnlyStats(),
+    getModelsDevStats(),
+  ]);
+  const preferredModelsDevModels = dedupePreferredProviderModels(
+    modelsDevStats.models,
+  );
+  return {
+    scrapedRows: artificialAnalysisScrapedStats.data,
+    scopedModelsDevModels: preferredModelsDevModels,
+    modelsDevById: buildModelsDevById(preferredModelsDevModels),
+    scrapedBySlug: buildScrapedBySlug(artificialAnalysisScrapedStats.data),
+  };
+}
