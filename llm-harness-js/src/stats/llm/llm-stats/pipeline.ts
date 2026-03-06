@@ -1,12 +1,5 @@
 import { getOpenRouterScrapedStats } from "../sources/openrouter-scraper.js";
-import { getScraperFallbackMatchDiagnostics } from "../matcher.js";
-import {
-  asFiniteNumber,
-  asRecord,
-  modelSlugFromModelId,
-  normalizeProviderModelId,
-  type JsonObject,
-} from "../shared.js";
+import { asFiniteNumber, asRecord, type JsonObject } from "../shared.js";
 
 import {
   backfillFreeModelCosts,
@@ -27,9 +20,6 @@ import {
 import {
   type EnrichedUnionRows,
   type ModelStatsSelectedModel,
-  type ModelsDevModel,
-  type ScrapedEvalModel,
-  type SelectedSourceData,
 } from "./types.js";
 
 const OPENROUTER_SPEED_CONCURRENCY = 8;
@@ -37,36 +27,6 @@ const EMPTY_OPENROUTER_PRICING = {
   weighted_input: null,
   weighted_output: null,
 } as const;
-const MODEL_VARIANT_TOKENS = [
-  "flash-lite",
-  "flash",
-  "pro",
-  "nano",
-  "mini",
-  "lite",
-] as const;
-
-function hasToken(id: string, token: (typeof MODEL_VARIANT_TOKENS)[number]) {
-  return id.includes(token);
-}
-
-function canonicalModelId(
-  modelId: unknown,
-  providerId: unknown,
-  fallbackModelId: unknown,
-): string | null {
-  if (typeof modelId === "string" && modelId.includes("/")) {
-    return modelId;
-  }
-  if (typeof providerId === "string" && typeof modelId === "string") {
-    return `${providerId}/${modelId}`;
-  }
-  if (typeof providerId === "string" && typeof fallbackModelId === "string") {
-    return `${providerId}/${fallbackModelId}`;
-  }
-  return typeof modelId === "string" ? modelId : null;
-}
-
 function providerFromId(modelId: unknown): string | null {
   if (typeof modelId !== "string") {
     return null;
@@ -93,66 +53,6 @@ function buildLogo(model: JsonObject, provider: string | null): string {
     return `https://artificialanalysis.ai/img/logos/${logoSlug}_small.svg`;
   }
   return `https://models.dev/logos/${provider ?? "unknown"}.svg`;
-}
-
-function hasVariantConflict(
-  artificialAnalysisSlug: string,
-  matchedModelId: string,
-): boolean {
-  const aa = normalizeProviderModelId(artificialAnalysisSlug);
-  const matched = normalizeProviderModelId(matchedModelId);
-  return MODEL_VARIANT_TOKENS.some(
-    (token) => hasToken(aa, token) !== hasToken(matched, token),
-  );
-}
-
-function buildUnionFromScrapedMatch(
-  scrapedModel: ScrapedEvalModel,
-  matchedModelId: string,
-  modelsDevById: Map<string, ModelsDevModel>,
-): Record<string, unknown> {
-  const artificialAnalysisModelId =
-    typeof scrapedModel.model_id === "string" ? scrapedModel.model_id : null;
-  const artificialAnalysisSlug = modelSlugFromModelId(
-    artificialAnalysisModelId,
-  );
-  const evaluations = asRecord(scrapedModel.evaluations);
-  const intelligence = asRecord(scrapedModel.intelligence);
-  const intelligenceIndexCost = asRecord(scrapedModel.intelligence_index_cost);
-  const logo = typeof scrapedModel.logo === "string" ? scrapedModel.logo : null;
-  const matchedModelsDev = modelsDevById.get(matchedModelId) ?? null;
-  const matchedModelFields = asRecord(matchedModelsDev?.model);
-  const canonicalId = canonicalModelId(
-    matchedModelsDev?.model?.id ?? matchedModelId,
-    matchedModelsDev?.provider_id,
-    matchedModelsDev?.model_id,
-  );
-  const {
-    id: _matchedId,
-    name: _matchedName,
-    family: matchedFamily,
-    model_id: _matchedModelId,
-    slug: _matchedSlug,
-    ...matchedModelFieldsWithoutIdFamilyAndModelRefs
-  } = matchedModelFields;
-
-  return {
-    id: canonicalId,
-    provider_id: matchedModelsDev?.provider_id ?? null,
-    openrouter_id: matchedModelsDev?.model?.id ?? null,
-    name:
-      typeof matchedModelsDev?.model?.name === "string"
-        ? matchedModelsDev.model.name
-        : artificialAnalysisModelId,
-    aa_id: artificialAnalysisModelId,
-    aa_slug: artificialAnalysisSlug,
-    family: matchedFamily,
-    logo,
-    ...matchedModelFieldsWithoutIdFamilyAndModelRefs,
-    evaluations,
-    intelligence,
-    intelligence_index_cost: intelligenceIndexCost,
-  };
 }
 
 function normalizeOpenRouterSpeed(performance: unknown): JsonObject {
@@ -296,45 +196,6 @@ function mapUnionModelToSelected(
     scores: buildScores(model, cost, speed, speedOutputTokenAnchors),
     percentiles: null,
   };
-}
-
-export async function buildMatchedRows(
-  sourceData: SelectedSourceData,
-): Promise<Record<string, unknown>[]> {
-  const fallbackDiagnostics = await getScraperFallbackMatchDiagnostics({
-    scrapedRows: sourceData.scrapedRows,
-    modelsDevModels: sourceData.scopedModelsDevModels,
-  });
-
-  return fallbackDiagnostics.models
-    .map((matchedModel) => {
-      const matchedModelId = matchedModel.best_match?.model_id;
-      if (typeof matchedModelId !== "string" || matchedModelId.length === 0) {
-        return null;
-      }
-      if (
-        hasVariantConflict(
-          matchedModel.artificial_analysis_slug,
-          matchedModelId,
-        )
-      ) {
-        return null;
-      }
-      const scrapedModel = sourceData.scrapedBySlug.get(
-        matchedModel.artificial_analysis_slug,
-      );
-      if (!scrapedModel) {
-        return null;
-      }
-      return buildUnionFromScrapedMatch(
-        scrapedModel,
-        matchedModelId,
-        sourceData.modelsDevById,
-      );
-    })
-    .filter(
-      (unionRow): unionRow is Record<string, unknown> => unionRow != null,
-    );
 }
 
 export async function enrichRows(
