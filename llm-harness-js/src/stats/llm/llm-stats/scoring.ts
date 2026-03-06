@@ -15,7 +15,9 @@ const AGENTIC_BENCHMARK_KEYS = [
   "ifbench",
   "terminalbench_hard",
 ] as const;
-const DEFAULT_SPEED_OUTPUT_TOKEN_ANCHORS = [200, 500, 1_000, 2_000, 8_000] as const;
+const DEFAULT_SPEED_OUTPUT_TOKEN_ANCHORS = [
+  200, 500, 1_000, 2_000, 8_000,
+] as const;
 const SPEED_OUTPUT_TOKEN_RANGE_MIN = 200;
 const SPEED_OUTPUT_TOKEN_RANGE_MAX = 8_000;
 const SPEED_ANCHOR_QUANTILES = [0.25, 0.5, 0.75] as const;

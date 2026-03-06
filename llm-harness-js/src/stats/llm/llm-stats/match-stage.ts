@@ -7,6 +7,7 @@ import {
 } from "../shared.js";
 
 import {
+  type ArtificialAnalysisModel,
   type ModelsDevModel,
   type ScrapedEvalModel,
   type SourceData,
@@ -55,6 +56,7 @@ function hasVariantConflict(
 
 function buildMatchedRowFromScrapedModel(
   scrapedModel: ScrapedEvalModel,
+  apiModel: ArtificialAnalysisModel | null,
   matchedModelId: string,
   modelsDevById: Map<string, ModelsDevModel>,
 ): Record<string, unknown> {
@@ -67,6 +69,9 @@ function buildMatchedRowFromScrapedModel(
   const intelligence = asRecord(scrapedModel.intelligence);
   const intelligenceIndexCost = asRecord(scrapedModel.intelligence_index_cost);
   const logo = typeof scrapedModel.logo === "string" ? scrapedModel.logo : null;
+  const apiEvaluations = asRecord(apiModel?.evaluations);
+  const apiIntelligence = asRecord(apiModel?.intelligence);
+  const apiIntelligenceIndexCost = asRecord(apiModel?.intelligence_index_cost);
   const matchedModelsDev = modelsDevById.get(matchedModelId) ?? null;
   const matchedModelFields = asRecord(matchedModelsDev?.model);
   const canonicalId = canonicalModelId(
@@ -96,9 +101,18 @@ function buildMatchedRowFromScrapedModel(
     family: matchedFamily,
     logo,
     ...matchedModelFieldsWithoutIdFamilyAndModelRefs,
-    evaluations,
-    intelligence,
-    intelligence_index_cost: intelligenceIndexCost,
+    evaluations: {
+      ...apiEvaluations,
+      ...evaluations,
+    },
+    intelligence: {
+      ...apiIntelligence,
+      ...intelligence,
+    },
+    intelligence_index_cost: {
+      ...apiIntelligenceIndexCost,
+      ...intelligenceIndexCost,
+    },
   };
 }
 
@@ -130,8 +144,11 @@ export async function buildMatchedRows(
       if (!scrapedModel) {
         return null;
       }
+      const apiModel =
+        sourceData.apiBySlug.get(matchedModel.artificial_analysis_slug) ?? null;
       return buildMatchedRowFromScrapedModel(
         scrapedModel,
+        apiModel,
         matchedModelId,
         sourceData.modelsDevById,
       );

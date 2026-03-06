@@ -1,3 +1,4 @@
+import { getArtificialAnalysisStats } from "../sources/artificial-analysis-api.js";
 import { getArtificialAnalysisScrapedEvalsOnlyStats } from "../sources/artificial-analysis-scraper.js";
 import { getModelsDevStats } from "../sources/models-dev.js";
 import {
@@ -7,6 +8,7 @@ import {
 } from "../shared.js";
 
 import {
+  type ArtificialAnalysisModel,
   type ModelsDevModel,
   type ScrapedEvalModel,
   type SourceData,
@@ -60,8 +62,33 @@ function buildScrapedBySlug(
   return scrapedBySlug;
 }
 
+function buildApiBySlug(
+  artificialAnalysisModels: ArtificialAnalysisModel[],
+): Map<string, ArtificialAnalysisModel> {
+  return new Map(
+    artificialAnalysisModels
+      .map(
+        (model) =>
+          [
+            typeof model.slug === "string" && model.slug.length > 0
+              ? model.slug
+              : null,
+            model,
+          ] as const,
+      )
+      .filter(
+        (entry): entry is [string, ArtificialAnalysisModel] => entry[0] != null,
+      ),
+  );
+}
+
 export async function fetchSourceData(): Promise<SourceData> {
-  const [artificialAnalysisScrapedStats, modelsDevStats] = await Promise.all([
+  const [
+    artificialAnalysisApiStats,
+    artificialAnalysisScrapedStats,
+    modelsDevStats,
+  ] = await Promise.all([
+    getArtificialAnalysisStats(),
     getArtificialAnalysisScrapedEvalsOnlyStats(),
     getModelsDevStats(),
   ]);
@@ -72,6 +99,7 @@ export async function fetchSourceData(): Promise<SourceData> {
     scrapedRows: artificialAnalysisScrapedStats.data,
     preferredModelsDevModels,
     modelsDevById: buildModelsDevById(preferredModelsDevModels),
+    apiBySlug: buildApiBySlug(artificialAnalysisApiStats.models),
     scrapedBySlug: buildScrapedBySlug(artificialAnalysisScrapedStats.data),
   };
 }

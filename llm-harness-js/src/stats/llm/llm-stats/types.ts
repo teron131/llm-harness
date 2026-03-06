@@ -1,5 +1,10 @@
+import { getArtificialAnalysisStats } from "../sources/artificial-analysis-api.js";
 import { getModelsDevStats } from "../sources/models-dev.js";
 import { type JsonObject } from "../shared.js";
+
+export type ArtificialAnalysisModel = Awaited<
+  ReturnType<typeof getArtificialAnalysisStats>
+>["models"][number];
 
 export type ModelsDevModel = Awaited<
   ReturnType<typeof getModelsDevStats>
@@ -61,6 +66,7 @@ export type SourceData = {
   scrapedRows: unknown[];
   preferredModelsDevModels: ModelsDevModel[];
   modelsDevById: Map<string, ModelsDevModel>;
+  apiBySlug: Map<string, ArtificialAnalysisModel>;
   scrapedBySlug: Map<string, ScrapedEvalModel>;
 };
 
