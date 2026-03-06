@@ -1,7 +1,7 @@
 import { asFiniteNumber, asRecord, type JsonObject } from "../shared.js";
 
 import {
-  attachPercentiles,
+  attachRelativeScores,
   blendedPriceValue,
   buildScores,
 } from "./scoring.js";
@@ -34,7 +34,7 @@ const STABLE_TOP_LEVEL_KEYS = new Set<string>([
   "intelligence_index_cost",
   "evaluations",
   "scores",
-  "percentiles",
+  "relative_scores",
 ]);
 
 function providerFromId(modelId: unknown): string | null {
@@ -154,7 +154,7 @@ function buildIntelligenceIndexCost(model: JsonObject): unknown {
 function intelligencePercentileValue(
   model: ModelStatsSelectedModel,
 ): number | null {
-  return asFiniteNumber(asRecord(model.percentiles).intelligence_percentile);
+  return asFiniteNumber(asRecord(model.relative_scores).intelligence_score);
 }
 
 function sortModelsByIntelligencePercentile(
@@ -357,7 +357,7 @@ function projectFinalModel(
     intelligence_index_cost: buildIntelligenceIndexCost(model),
     evaluations: buildEvaluations(model),
     scores: buildScores(model, cost, speed, speedOutputTokenAnchors),
-    percentiles: null,
+    relative_scores: null,
   };
 }
 
@@ -373,9 +373,9 @@ export function buildFinalModels(
       enrichedRows.speedOutputTokenAnchors,
     ),
   );
-  const modelsWithPercentiles = attachPercentiles(models);
+  const modelsWithRelativeScores = attachRelativeScores(models);
   const sortedModels = sortModelsByIntelligencePercentile(
-    modelsWithPercentiles,
+    modelsWithRelativeScores,
   );
   const prunedModels = pruneSparseFields(sortedModels);
   return filterModelsById(prunedModels, id);

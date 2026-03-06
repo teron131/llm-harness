@@ -281,7 +281,29 @@ export function buildScores(
   };
 }
 
-export function attachPercentiles(
+function minMaxScale(
+  values: Array<number | null>,
+  value: number | null,
+): number | null {
+  if (value == null) {
+    return null;
+  }
+  const finiteValues = values.filter(
+    (candidate): candidate is number =>
+      candidate != null && Number.isFinite(candidate),
+  );
+  if (finiteValues.length === 0) {
+    return null;
+  }
+  const minValue = Math.min(...finiteValues);
+  const maxValue = Math.max(...finiteValues);
+  if (maxValue === minValue) {
+    return 100;
+  }
+  return ((value - minValue) / (maxValue - minValue)) * 100;
+}
+
+export function attachRelativeScores(
   models: ModelStatsSelectedModel[],
 ): ModelStatsSelectedModel[] {
   const intelligenceScores = models.map((model) =>
@@ -303,23 +325,22 @@ export function attachPercentiles(
     const agenticScore = asFiniteNumber(scores.agentic_score);
     const speedScore = asFiniteNumber(scores.speed_score);
     const priceScore = asFiniteNumber(scores.price_score);
-    const intelligencePercentile =
-      intelligenceScore == null
-        ? null
-        : percentileRank(intelligenceScores, intelligenceScore);
-    const agenticPercentile =
-      agenticScore == null ? null : percentileRank(agenticScores, agenticScore);
-    const speedPercentile =
+    const intelligenceRelativeScore = minMaxScale(
+      intelligenceScores,
+      intelligenceScore,
+    );
+    const agenticRelativeScore = minMaxScale(agenticScores, agenticScore);
+    const speedRelativeScore =
       speedScore == null ? null : percentileRank(speedScores, speedScore);
-    const pricePercentile =
+    const priceRelativeScore =
       priceScore == null ? null : percentileRank(priceScores, priceScore);
     return {
       ...model,
-      percentiles: {
-        intelligence_percentile: intelligencePercentile,
-        agentic_percentile: agenticPercentile,
-        speed_percentile: speedPercentile,
-        price_percentile: pricePercentile,
+      relative_scores: {
+        intelligence_score: intelligenceRelativeScore,
+        agentic_score: agenticRelativeScore,
+        speed_score: speedRelativeScore,
+        price_score: priceRelativeScore,
       },
     };
   });

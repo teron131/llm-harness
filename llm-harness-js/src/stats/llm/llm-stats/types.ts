@@ -38,7 +38,7 @@ export type ModelStatsSelectedModel = {
   intelligence_index_cost: unknown;
   evaluations: unknown;
   scores: unknown;
-  percentiles: unknown;
+  relative_scores: unknown;
 };
 
 /**
