@@ -1,4 +1,3 @@
-import { getArtificialAnalysisStats } from "../sources/artificial-analysis-api.js";
 import { getArtificialAnalysisScrapedEvalsOnlyStats } from "../sources/artificial-analysis-scraper.js";
 import { getModelsDevStats } from "../sources/models-dev.js";
 import { getOpenRouterScrapedStats } from "../sources/openrouter-scraper.js";
@@ -21,6 +20,7 @@ import {
   sortModelsByIntelligencePercentile,
 } from "./postprocess.js";
 import {
+  blendedPriceValue,
   buildEvaluations,
   buildIntelligence,
   buildIntelligenceIndexCost,
@@ -41,9 +41,6 @@ const EMPTY_OPENROUTER_PRICING = {
   weighted_input: null,
   weighted_output: null,
 } as const;
-const WEIGHTED_PRICE_INPUT_RATIO = 0.75;
-const WEIGHTED_PRICE_OUTPUT_RATIO = 0.25;
-
 const MODEL_VARIANT_TOKENS = [
   "flash-lite",
   "flash",
@@ -217,69 +214,6 @@ function normalizeOpenRouterPricing(pricing: unknown): JsonObject {
   };
 }
 
-function blendedPriceValue(model: JsonObject): number | null {
-  const cost = asRecord(model.cost);
-  const inputCost = asFiniteNumber(cost.input);
-  const outputCost = asFiniteNumber(cost.output);
-  const weightedInputCost = asFiniteNumber(cost.weighted_input);
-  const weightedOutputCost = asFiniteNumber(cost.weighted_output);
-  const cacheReadCost = asFiniteNumber(cost.cache_read);
-  const cacheWriteCost = asFiniteNumber(cost.cache_write);
-  if (
-    inputCost == null ||
-    outputCost == null ||
-    inputCost <= 0 ||
-    outputCost <= 0
-  ) {
-    return null;
-  }
-  if (weightedInputCost != null || weightedOutputCost != null) {
-    const effectiveInputCost =
-      weightedInputCost != null ? weightedInputCost : inputCost;
-    const effectiveOutputCost =
-      weightedOutputCost != null ? weightedOutputCost : outputCost;
-    return (
-      WEIGHTED_PRICE_INPUT_RATIO * effectiveInputCost +
-      WEIGHTED_PRICE_OUTPUT_RATIO * effectiveOutputCost
-    );
-  }
-
-  const cacheWeightedInput = cacheReadCost != null ? cacheReadCost : inputCost;
-  const cacheWeightedOutput =
-    cacheWriteCost != null
-      ? 0.1 * cacheWriteCost + 0.9 * outputCost
-      : outputCost;
-  const baseProxy =
-    0.9 * (0.75 * cacheWeightedInput + 0.25 * inputCost) +
-    0.1 * cacheWeightedOutput;
-
-  const over200kCost = asRecord(cost.context_over_200k);
-  const over200kInput = asFiniteNumber(over200kCost.input);
-  const over200kOutput = asFiniteNumber(over200kCost.output);
-  const over200kCacheRead = asFiniteNumber(over200kCost.cache_read);
-  const over200kCacheWrite = asFiniteNumber(over200kCost.cache_write);
-  if (
-    over200kInput == null ||
-    over200kOutput == null ||
-    over200kInput <= 0 ||
-    over200kOutput <= 0
-  ) {
-    return baseProxy;
-  }
-
-  const over200kInputWeighted =
-    over200kCacheRead != null ? over200kCacheRead : over200kInput;
-  const over200kOutputWeighted =
-    over200kCacheWrite != null
-      ? 0.1 * over200kCacheWrite + 0.9 * over200kOutput
-      : over200kOutput;
-  const over200kProxy =
-    0.9 * (0.75 * over200kInputWeighted + 0.25 * over200kInput) +
-    0.1 * over200kOutputWeighted;
-
-  return 0.95 * baseProxy + 0.05 * over200kProxy;
-}
-
 async function buildOpenRouterDataById(
   unionModels: Record<string, unknown>[],
 ): Promise<{
@@ -358,7 +292,7 @@ function buildCost(model: JsonObject, openRouterPricing: JsonObject): unknown {
   if (weightedOutput != null) {
     cleanedCost.weighted_output = weightedOutput;
   }
-  const blendedPrice = blendedPriceValue(model);
+  const blendedPrice = blendedPriceValue(cleanedCost);
   if (blendedPrice != null) {
     cleanedCost.blended_price = blendedPrice;
   }
@@ -378,6 +312,7 @@ function mapUnionModelToSelected(
   const pricing =
     (modelId != null ? openRouterPricingById.get(modelId) : null) ??
     EMPTY_OPENROUTER_PRICING;
+  const cost = buildCost(model, pricing);
   return {
     id: modelId,
     name: typeof model.name === "string" ? model.name : null,
@@ -390,26 +325,19 @@ function mapUnionModelToSelected(
     modalities: model.modalities ?? null,
     open_weights:
       typeof model.open_weights === "boolean" ? model.open_weights : null,
-    cost: buildCost(model, pricing),
+    cost,
     context_window: model.limit ?? null,
     speed,
     intelligence: buildIntelligence(model),
     intelligence_index_cost: buildIntelligenceIndexCost(model),
     evaluations: buildEvaluations(model),
-    scores: buildScores(model, speed, speedOutputTokenAnchors),
+    scores: buildScores(model, cost, speed, speedOutputTokenAnchors),
     percentiles: null,
   };
 }
 
-export async function fetchSelectedSourceData(
-  apiKey?: string,
-): Promise<SelectedSourceData> {
-  const [
-    artificialAnalysisStats,
-    artificialAnalysisScrapedStats,
-    modelsDevStats,
-  ] = await Promise.all([
-    getArtificialAnalysisStats(apiKey ? { apiKey } : {}),
+export async function fetchSelectedSourceData(): Promise<SelectedSourceData> {
+  const [artificialAnalysisScrapedStats, modelsDevStats] = await Promise.all([
     getArtificialAnalysisScrapedEvalsOnlyStats(),
     getModelsDevStats(),
   ]);
@@ -425,7 +353,6 @@ export async function fetchSelectedSourceData(
     }
   }
   return {
-    artificialAnalysisModels: artificialAnalysisStats.models,
     scrapedRows: artificialAnalysisScrapedStats.data,
     scopedModelsDevModels,
     modelsDevById: buildModelsDevById(scopedModelsDevModels),

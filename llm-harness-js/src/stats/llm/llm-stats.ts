@@ -55,9 +55,7 @@ export async function getModelStatsSelected(
       }
     }
 
-    const sourceData = await fetchSelectedSourceData(options.apiKey);
-    // Temporary override: keep scraper fallback matching path as the active source.
-    void sourceData.artificialAnalysisModels;
+    const sourceData = await fetchSelectedSourceData();
     const matchedUnionRows = await buildMatchedUnionRows(sourceData);
     const enrichedUnionRows =
       await enrichUnionRowsWithFallbacks(matchedUnionRows);

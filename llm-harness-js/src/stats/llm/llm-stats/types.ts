@@ -60,9 +60,6 @@ export type ModelStatsSelectedOptions = {
 };
 
 export type SelectedSourceData = {
-  artificialAnalysisModels: Awaited<
-    ReturnType<typeof getArtificialAnalysisStats>
-  >["models"];
   scrapedRows: unknown[];
   scopedModelsDevModels: ModelsDevModel[];
   modelsDevById: Map<string, ModelsDevModel>;

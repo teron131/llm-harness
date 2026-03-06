@@ -102,8 +102,8 @@ function metricValue(model: JsonObject, key: string): number | null {
   );
 }
 
-function blendedPriceValue(model: JsonObject): number | null {
-  const cost = asRecord(model.cost);
+export function blendedPriceValue(costLike: unknown): number | null {
+  const cost = asRecord(costLike);
   const inputCost = asFiniteNumber(cost.input);
   const outputCost = asFiniteNumber(cost.output);
   const weightedInputCost = asFiniteNumber(cost.weighted_input);
@@ -253,6 +253,7 @@ export function deriveSpeedOutputTokenAnchors(
 
 export function buildScores(
   model: JsonObject,
+  cost: unknown,
   speed: JsonObject,
   speedOutputTokenAnchors: number[],
 ): unknown {
@@ -276,7 +277,7 @@ export function buildScores(
     agenticIndex != null && agenticBenchmarkMean != null
       ? (agenticIndex + agenticBenchmarkMean) / 2
       : null;
-  const blendedPrice = blendedPriceValue(model);
+  const blendedPrice = blendedPriceValue(cost);
   const latencySeconds = asFiniteNumber(speed.latency_seconds_median);
   const throughputTokensPerSecond = asFiniteNumber(
     speed.throughput_tokens_per_second_median,
