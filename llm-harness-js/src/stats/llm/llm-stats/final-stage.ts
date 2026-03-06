@@ -61,8 +61,10 @@ function providerFromModel(model: JsonObject): string | null {
 }
 
 function buildLogo(model: JsonObject, provider: string | null): string {
-  const modelCreator = asRecord(model.model_creator);
-  const logoSlug = modelCreator.slug;
+  if (typeof model.logo === "string" && model.logo.length > 0) {
+    return model.logo;
+  }
+  const logoSlug = asRecord(model.model_creator).slug;
   if (typeof logoSlug === "string" && logoSlug.length > 0) {
     return `https://artificialanalysis.ai/img/logos/${logoSlug}_small.svg`;
   }
