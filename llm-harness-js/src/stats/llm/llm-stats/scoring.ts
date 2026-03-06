@@ -339,6 +339,12 @@ export function attachRelativeScores(
       speedScore == null ? null : percentileRank(speedScores, speedScore);
     const priceRelativeScore =
       priceScore == null ? null : percentileRank(priceScores, priceScore);
+    const overallRelativeScore = meanOfFinite([
+      intelligenceRelativeScore,
+      agenticRelativeScore,
+      speedRelativeScore,
+      priceRelativeScore,
+    ]);
     return {
       ...model,
       relative_scores: {
@@ -346,6 +352,7 @@ export function attachRelativeScores(
         agentic_score: agenticRelativeScore,
         speed_score: speedRelativeScore,
         price_score: priceRelativeScore,
+        overall_score: overallRelativeScore,
       },
     };
   });
