@@ -1,4 +1,4 @@
-"""Artificial Analysis stats source (API-only, failure-safe)."""
+"""Artificial Analysis LLM source ported from the JS stats pipeline."""
 
 from __future__ import annotations
 
@@ -20,21 +20,9 @@ SCORE_WEIGHTS = {
     "speed": 0.2,
 }
 
-NumberOrNone = float | int | None
-
 
 class ArtificialAnalysisOptions(TypedDict, total=False):
-    """Options for Artificial Analysis stats fetching."""
-
     api_key: str
-
-
-class ArtificialAnalysisOutputPayload(TypedDict):
-    """Ranked and enriched Artificial Analysis payload."""
-
-    fetched_at_epoch_seconds: int | None
-    status_code: int | None
-    models: list[dict[str, Any]]
 
 
 def _as_finite_float(value: Any) -> float | None:
@@ -54,11 +42,11 @@ def _signed_log(value: Any, *, invert: bool = False) -> float | None:
     numeric = _as_finite_float(value)
     if numeric is None or numeric <= 0:
         return None
-    return -math.log(numeric) if invert else math.log(numeric)
+    return -math.log10(numeric) if invert else math.log10(numeric)
 
 
 def _mean(values: list[float | None]) -> float | None:
-    finite_values = [item for item in values if item is not None and math.isfinite(item)]
+    finite_values = [value for value in values if value is not None and math.isfinite(value)]
     if not finite_values:
         return None
     return sum(finite_values) / len(finite_values)
@@ -75,7 +63,7 @@ def _weighted_mean(pairs: list[tuple[float | None, float]]) -> float | None:
     return weighted_sum / weight_sum
 
 
-def _percentile_rank(values: list[NumberOrNone], value: NumberOrNone) -> float | None:
+def _percentile_rank(values: list[Any], value: Any) -> float | None:
     numeric_value = _as_finite_float(value)
     if numeric_value is None:
         return None
@@ -100,34 +88,29 @@ def _compute_scores(filtered_models: list[dict[str, Any]]) -> list[dict[str, Any
     for model in filtered_models:
         evaluations = model.get("evaluations") or {}
         pricing = model.get("pricing") or {}
-
-        intelligence = _as_finite_float(evaluations.get("artificial_analysis_intelligence_index"))
+        intelligence = _as_finite_float(
+            evaluations.get("artificial_analysis_intelligence_index"),
+        )
         coding = _as_finite_float(evaluations.get("artificial_analysis_coding_index"))
         blended_price = pricing.get("price_1m_blended_3_to_1")
         ttfa = model.get("median_time_to_first_answer_token")
         tps = model.get("median_output_tokens_per_second")
-
-        intelligence_score = None
-        if intelligence is not None and coding is not None:
-            intelligence_score = (2 * intelligence) + coding
-
+        intelligence_score = (2 * intelligence) + coding if intelligence is not None and coding is not None else None
         benchmark_bias_score = _mean([_as_finite_float(evaluations.get(key)) if _is_positive_finite(evaluations.get(key)) else None for key in BENCHMARK_KEYS])
         price_score = _signed_log(blended_price, invert=True)
         speed_score = _mean([_signed_log(ttfa, invert=True), _signed_log(tps)])
-        overall_score = _weighted_mean(
-            [
-                (intelligence_score, SCORE_WEIGHTS["intelligence"]),
-                (benchmark_bias_score, SCORE_WEIGHTS["benchmark_bias"]),
-                (price_score, SCORE_WEIGHTS["price"]),
-                (speed_score, SCORE_WEIGHTS["speed"]),
-            ]
-        )
-
         scored_models.append(
             {
                 **model,
                 "scores": {
-                    "overall_score": overall_score,
+                    "overall_score": _weighted_mean(
+                        [
+                            (intelligence_score, SCORE_WEIGHTS["intelligence"]),
+                            (benchmark_bias_score, SCORE_WEIGHTS["benchmark_bias"]),
+                            (price_score, SCORE_WEIGHTS["price"]),
+                            (speed_score, SCORE_WEIGHTS["speed"]),
+                        ]
+                    ),
                     "intelligence_score": intelligence_score,
                     "benchmark_bias_score": benchmark_bias_score,
                     "price_score": price_score,
@@ -138,7 +121,10 @@ def _compute_scores(filtered_models: list[dict[str, Any]]) -> list[dict[str, Any
     return scored_models
 
 
-def _rank_and_enrich_models(models: list[dict[str, Any]], cutoff_date: str) -> list[dict[str, Any]]:
+def _rank_and_enrich_models(
+    models: list[dict[str, Any]],
+    cutoff_date: str,
+) -> list[dict[str, Any]]:
     filtered_models = [
         model
         for model in models
@@ -149,45 +135,47 @@ def _rank_and_enrich_models(models: list[dict[str, Any]], cutoff_date: str) -> l
         and _is_positive_finite(model.get("median_time_to_first_answer_token"))
         and _is_positive_finite(model.get("median_output_tokens_per_second"))
     ]
-
-    scored_models = _compute_scores(filtered_models)
     ranked = sorted(
-        [model for model in scored_models if _as_finite_float((model.get("scores") or {}).get("overall_score")) is not None],
-        key=lambda model: _as_finite_float((model.get("scores") or {}).get("overall_score")) or float("-inf"),
+        [model for model in _compute_scores(filtered_models) if math.isfinite(float((model.get("scores") or {}).get("overall_score")))],
+        key=lambda model: float((model.get("scores") or {}).get("overall_score")),
         reverse=True,
     )
-
     overall_values = [(model.get("scores") or {}).get("overall_score") for model in ranked]
     intelligence_values = [(model.get("scores") or {}).get("intelligence_score") for model in ranked]
     speed_values = [(model.get("scores") or {}).get("speed_score") for model in ranked]
     price_values = [(model.get("scores") or {}).get("price_score") for model in ranked]
-
-    enriched_models: list[dict[str, Any]] = []
-    for model in ranked:
-        scores = model.get("scores") or {}
-        enriched_models.append(
-            {
-                **model,
-                "percentiles": {
-                    "overall_percentile": _percentile_rank(overall_values, scores.get("overall_score")),
-                    "intelligence_percentile": _percentile_rank(intelligence_values, scores.get("intelligence_score")),
-                    "speed_percentile": _percentile_rank(speed_values, scores.get("speed_score")),
-                    "price_percentile": _percentile_rank(price_values, scores.get("price_score")),
-                },
-            }
-        )
-
-    return enriched_models
+    return [
+        {
+            **model,
+            "percentiles": {
+                "overall_percentile": _percentile_rank(
+                    overall_values,
+                    (model.get("scores") or {}).get("overall_score"),
+                ),
+                "intelligence_percentile": _percentile_rank(
+                    intelligence_values,
+                    (model.get("scores") or {}).get("intelligence_score"),
+                ),
+                "speed_percentile": _percentile_rank(
+                    speed_values,
+                    (model.get("scores") or {}).get("speed_score"),
+                ),
+                "price_percentile": _percentile_rank(
+                    price_values,
+                    (model.get("scores") or {}).get("price_score"),
+                ),
+            },
+        }
+        for model in ranked
+    ]
 
 
 def _fetch_models(api_key: str | None) -> dict[str, Any]:
     if not api_key:
         raise ValueError("Missing ARTIFICIALANALYSIS_API_KEY.")
-
     with httpx.Client(timeout=REQUEST_TIMEOUT_SECONDS) as client:
         response = client.get(MODELS_URL, headers={"x-api-key": api_key})
     response.raise_for_status()
-
     payload = response.json()
     return {
         "fetched_at_epoch_seconds": int(datetime.now(UTC).timestamp()),
@@ -198,7 +186,7 @@ def _fetch_models(api_key: str | None) -> dict[str, Any]:
 
 def get_artificial_analysis_stats(
     options: ArtificialAnalysisOptions | None = None,
-) -> ArtificialAnalysisOutputPayload:
+) -> dict[str, Any]:
     """Fetch, rank, and enrich Artificial Analysis model stats."""
     options = options or {}
     try:
@@ -216,3 +204,9 @@ def get_artificial_analysis_stats(
             "status_code": None,
             "models": [],
         }
+
+
+__all__ = [
+    "ArtificialAnalysisOptions",
+    "get_artificial_analysis_stats",
+]

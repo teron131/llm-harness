@@ -17,6 +17,7 @@
     "build": "tsc -p tsconfig.json",
     "aa:stats": "bun ./scripts/run-aa-stats.mjs",
     "image:reference": "bun ./scripts/run-image-stats-reference.mjs",
+    "stats:parity": "bun ./scripts/run-stats-parity-snapshot.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

@@ -3,6 +3,7 @@ uv.lock
 bun.lock
 package-lock.json
 *test*
+*script*
 
 __pycache__
 node_modules

@@ -1,32 +1,67 @@
-"""Stats APIs for model data sources, matching, and final selected output."""
+"""Stats APIs for JS-parity LLM and image source, matcher, and selected outputs."""
 
-from .data_sources.artificial_analysis import (
+from .image import (
+    ArenaAiImageOptions,
+    ArtificialAnalysisImageOptions,
+    ImageMatchModelMappingOptions,
+    ImageStatsSelectedOptions,
+    get_arena_ai_image_stats,
+    get_artificial_analysis_image_stats,
+    get_image_match_model_mapping,
+    get_image_stats_selected,
+    save_image_stats_selected,
+)
+from .llm import (
     ArtificialAnalysisOptions,
-    get_artificial_analysis_stats,
-)
-from .data_sources.matcher import (
-    MatchModelMappingOptions,
-    MatchModelsUnionOptions,
-    get_match_model_mapping,
-    get_match_models_union,
-)
-from .data_sources.models_dev import ModelsDevOptions, get_models_dev_stats
-from .model_stats import (
+    ArtificialAnalysisScraperOptions,
+    LlmMatchModelMappingOptions,
+    LlmStatsStageConfig,
+    ModelsDevOptions,
     ModelStatsSelectedOptions,
+    OpenRouterModelOptions,
+    OpenRouterScraperOptions,
+    get_artificial_analysis_scraped_evals_only_stats,
+    get_artificial_analysis_scraped_raw_stats,
+    get_artificial_analysis_scraped_stats,
+    get_artificial_analysis_stats,
+    get_match_model_mapping,
     get_model_stats_selected,
+    get_models_dev_stats,
+    get_openrouter_model_stats,
+    get_openrouter_scraped_stats,
+    get_scraper_fallback_match_diagnostics,
+    process_artificial_analysis_scraped_rows,
     save_model_stats_selected,
 )
 
 __all__ = [
+    "ArenaAiImageOptions",
+    "ArtificialAnalysisImageOptions",
     "ArtificialAnalysisOptions",
-    "MatchModelMappingOptions",
-    "MatchModelsUnionOptions",
+    "ArtificialAnalysisScraperOptions",
+    "ImageMatchModelMappingOptions",
+    "ImageStatsSelectedOptions",
+    "LlmMatchModelMappingOptions",
+    "LlmStatsStageConfig",
     "ModelStatsSelectedOptions",
     "ModelsDevOptions",
+    "OpenRouterModelOptions",
+    "OpenRouterScraperOptions",
+    "get_arena_ai_image_stats",
+    "get_artificial_analysis_image_stats",
+    "get_artificial_analysis_scraped_evals_only_stats",
+    "get_artificial_analysis_scraped_raw_stats",
+    "get_artificial_analysis_scraped_stats",
     "get_artificial_analysis_stats",
+    "get_image_match_model_mapping",
+    "get_image_stats_selected",
     "get_match_model_mapping",
-    "get_match_models_union",
     "get_model_stats_selected",
     "get_models_dev_stats",
+    "get_openrouter_model_stats",
+    "get_openrouter_scraped_stats",
+    "get_scraper_fallback_match_diagnostics",
+    "process_artificial_analysis_scraped_rows",
+    "save_image_stats_selected",
     "save_model_stats_selected",
 ]
