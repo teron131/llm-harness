@@ -12,7 +12,10 @@
   - cross-source matching,
   - OpenRouter enrichment,
   - final payload projection.
-- `image/` owns the image leaderboard fetch/projection path.
+- `image/` owns the image leaderboard fetch/projection path:
+  - staged final payload pipeline in `image-stats/`
+  - AA/Arena source adapters in `sources/`
+  - Arena matching heuristics in `matcher.ts`
 - Keep raw source adapters, matcher logic, and final selected payload builders in separate modules.
 
 ## High-signal locations
@@ -22,7 +25,9 @@
 - `llm/matcher.ts -> public matcher APIs and scraper fallback diagnostics`
 - `llm/matcher/ -> provider scoping, candidate scoring, tokenizer helpers, source-model builders`
 - `llm/sources/ -> upstream Artificial Analysis, models.dev, and OpenRouter adapters`
-- `image/image-stats.ts -> final image stats payload builder`
+- `image/image-stats.ts -> public image stats API and cache-first orchestration`
+- `image/image-stats/ -> staged image stats pipeline (source -> match -> final build)`
+- `image/sources/ -> upstream Artificial Analysis and Arena image adapters`
 
 ## Project-specific conventions and rationale
 

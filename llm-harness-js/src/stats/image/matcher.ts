@@ -1,5 +1,7 @@
-import { getArtificialAnalysisImageStats } from "./artificial-analysis";
-import { getArenaAiImageStats } from "./arena-ai";
+import { asRecord } from "../utils.js";
+
+import { getArtificialAnalysisImageStats } from "./sources/artificial-analysis.js";
+import { getArenaAiImageStats } from "./sources/arena-ai.js";
 
 type ArtificialAnalysisImageModel = Awaited<
   ReturnType<typeof getArtificialAnalysisImageStats>
@@ -114,12 +116,6 @@ export type ImageMatchModelMappingOptions = {
   artificialAnalysisModels?: ArtificialAnalysisImageModel[];
   arenaModels?: ArenaAiImageModel[];
 };
-
-function asRecord(value: unknown): Record<string, unknown> {
-  return value != null && typeof value === "object"
-    ? (value as Record<string, unknown>)
-    : {};
-}
 
 function getModelCreatorName(
   model: ArtificialAnalysisImageModel,

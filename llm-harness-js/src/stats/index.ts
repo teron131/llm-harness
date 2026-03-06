@@ -24,13 +24,13 @@ export {
 export type {
   ArtificialAnalysisImageOptions,
   ArtificialAnalysisImageOutputPayload,
-} from "./image/artificial-analysis.js";
-export { getArtificialAnalysisImageStats } from "./image/artificial-analysis.js";
+} from "./image/sources/artificial-analysis.js";
+export { getArtificialAnalysisImageStats } from "./image/sources/artificial-analysis.js";
 export type {
   ArenaAiImageOptions,
   ArenaAiImageOutputPayload,
-} from "./image/arena-ai.js";
-export { getArenaAiImageStats } from "./image/arena-ai.js";
+} from "./image/sources/arena-ai.js";
+export { getArenaAiImageStats } from "./image/sources/arena-ai.js";
 export type {
   ImageMatchCandidate,
   ImageMatchMappedModel,

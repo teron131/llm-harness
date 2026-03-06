@@ -1,4 +1,9 @@
-import { fetchWithTimeout, nowEpochSeconds, percentileRank } from "../utils";
+import {
+  asFiniteNumber,
+  fetchWithTimeout,
+  nowEpochSeconds,
+  percentileRank,
+} from "../../utils.js";
 
 const ARENA_AI_BASE_URL = "https://arena.ai/leaderboard/text-to-image";
 const REQUEST_TIMEOUT_MS = 30_000;
@@ -154,11 +159,6 @@ function detectChallenge(html: string): boolean {
   return /challenge-platform|__CF\$cv\$params|Verify you are human|Security Verification/i.test(
     html,
   );
-}
-
-function asFiniteNumber(value: unknown): NumberOrNull {
-  const numeric = Number(value);
-  return Number.isFinite(numeric) ? numeric : null;
 }
 
 function extractLeaderboardRows(html: string): ArenaAiImageRow[] {
