@@ -2,9 +2,9 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import { type ModelStatsSelectedPayload } from "./types.js";
+import type { ModelStatsSelectedPayload } from "./types.js";
 
-export const DEFAULT_OUTPUT_PATH = resolve(".cache/model_stats.json");
+export const DEFAULT_OUTPUT_PATH = resolve(".cache/llm_stats.json");
 const CACHE_DIR = resolve(".cache");
 const CACHE_TTL_SECONDS = 60 * 60 * 24;
 
