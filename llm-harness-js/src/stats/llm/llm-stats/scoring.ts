@@ -230,11 +230,11 @@ export function buildScores(
   );
   const intelligenceScore =
     intelligenceIndex != null && intelligenceBenchmarkMean != null
-      ? (intelligenceIndex + intelligenceBenchmarkMean) / 2
+      ? (intelligenceIndex + intelligenceBenchmarkMean * 100) / 2
       : null;
   const agenticScore =
     agenticIndex != null && agenticBenchmarkMean != null
-      ? (agenticIndex + agenticBenchmarkMean) / 2
+      ? (agenticIndex + agenticBenchmarkMean * 100) / 2
       : null;
   const blendedPrice = blendedPriceValue(cost);
   const latencySeconds = asFiniteNumber(speed.latency_seconds_median);
