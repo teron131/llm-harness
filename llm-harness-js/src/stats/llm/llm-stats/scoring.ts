@@ -2,7 +2,14 @@
 import { percentileRank } from "../../utils";
 import { asFiniteNumber, asRecord, type JsonObject } from "../shared";
 
-import { type ModelStatsSelectedModel, type ScoringConfig } from "./types";
+import type { ModelStatsSelectedModel, ScoringConfig } from "./types";
+
+const OVERALL_RELATIVE_SCORE_WEIGHTS = {
+  intelligence: 0.4,
+  agentic: 0.35,
+  speed: 0.1,
+  price: 0.15,
+} as const;
 
 function meanOfFinite(values: Array<number | null>): number | null {
   const finiteValues = values.filter(
@@ -13,6 +20,30 @@ function meanOfFinite(values: Array<number | null>): number | null {
   }
   const total = finiteValues.reduce((sum, value) => sum + value, 0);
   return total / finiteValues.length;
+}
+
+function weightedMeanOfFinite(
+  pairs: Array<{ value: number | null; weight: number }>,
+): number | null {
+  const finitePairs = pairs.filter(
+    (pair): pair is { value: number; weight: number } =>
+      pair.value != null &&
+      Number.isFinite(pair.value) &&
+      Number.isFinite(pair.weight) &&
+      pair.weight > 0,
+  );
+  if (finitePairs.length === 0) {
+    return null;
+  }
+  const weightedTotal = finitePairs.reduce(
+    (sum, pair) => sum + pair.value * pair.weight,
+    0,
+  );
+  const totalWeight = finitePairs.reduce((sum, pair) => sum + pair.weight, 0);
+  if (totalWeight === 0) {
+    return null;
+  }
+  return weightedTotal / totalWeight;
 }
 
 function metricValue(model: JsonObject, key: string): number | null {
@@ -170,7 +201,7 @@ export function deriveSpeedOutputTokenAnchors(
   const [q1, q2, q3] = scoringConfig.speedAnchorQuantiles.map((quantile) =>
     quantileFromSorted(impliedTokenUsages, quantile),
   );
-  const q4 = impliedTokenUsages[impliedTokenUsages.length - 1] ?? null;
+  const q4 = impliedTokenUsages.at(-1) ?? null;
   const numericQuantileAnchors = [q0, q1, q2, q3, q4].filter(
     (value): value is number => value != null && Number.isFinite(value),
   );
@@ -179,9 +210,7 @@ export function deriveSpeedOutputTokenAnchors(
   }
 
   const sourceMin = numericQuantileAnchors[0] as number;
-  const sourceMax = numericQuantileAnchors[
-    numericQuantileAnchors.length - 1
-  ] as number;
+  const sourceMax = numericQuantileAnchors.at(-1) as number;
   if (!(sourceMax > sourceMin)) {
     return [...scoringConfig.defaultSpeedOutputTokenAnchors];
   }
@@ -326,11 +355,23 @@ export function attachRelativeScores(
       speedScore == null ? null : percentileRank(speedScores, speedScore);
     const priceRelativeScore =
       priceScore == null ? null : percentileRank(priceScores, priceScore);
-    const overallRelativeScore = meanOfFinite([
-      intelligenceRelativeScore,
-      agenticRelativeScore,
-      speedRelativeScore,
-      priceRelativeScore,
+    const overallRelativeScore = weightedMeanOfFinite([
+      {
+        value: intelligenceRelativeScore,
+        weight: OVERALL_RELATIVE_SCORE_WEIGHTS.intelligence,
+      },
+      {
+        value: agenticRelativeScore,
+        weight: OVERALL_RELATIVE_SCORE_WEIGHTS.agentic,
+      },
+      {
+        value: speedRelativeScore,
+        weight: OVERALL_RELATIVE_SCORE_WEIGHTS.speed,
+      },
+      {
+        value: priceRelativeScore,
+        weight: OVERALL_RELATIVE_SCORE_WEIGHTS.price,
+      },
     ]);
     return {
       ...model,
