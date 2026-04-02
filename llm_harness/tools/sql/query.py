@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import closing
 from datetime import date, datetime, time as datetime_time
 from decimal import Decimal
 from difflib import SequenceMatcher
@@ -24,29 +25,22 @@ _READ_ONLY_SQL_PREFIXES = ("SELECT", "WITH", "EXPLAIN")
 _LEADING_SQL_COMMENT = re.compile(r"\A(?:\s+|--[^\n]*(?:\n|\Z)|/\*.*?\*/)*", re.DOTALL)
 _TEXT_TYPE_MARKERS = ("CHAR", "CLOB", "TEXT", "VARCHAR")
 _TEXT_HINT_NAME_MARKERS = ("account", "id", "name", "project", "region", "service", "sku")
+_TARGET_MASTER_SQL = """
+SELECT name, type, sql
+FROM sqlite_master
+WHERE type IN ('table', 'view')
+  AND name NOT LIKE 'sqlite_%'
+ORDER BY type, name
+"""
+_TARGET_BY_NAME_SQL = """
+SELECT name, type, sql
+FROM sqlite_master
+WHERE type IN ('table', 'view') AND name = ?
+"""
 _AMBIGUOUS_COLUMN_ERROR_PREFIX = "ambiguous column name:"
 _MISSING_COLUMN_ERROR_PREFIX = "no such column:"
 _MISSING_TABLE_ERROR_PREFIX = "no such table:"
-_SUGGESTION_STOP_WORDS = {
-    "a",
-    "an",
-    "and",
-    "by",
-    "for",
-    "from",
-    "how",
-    "in",
-    "is",
-    "me",
-    "of",
-    "on",
-    "show",
-    "the",
-    "to",
-    "what",
-    "which",
-    "with",
-}
+_SUGGESTION_STOP_WORDS = {"a", "an", "and", "by", "for", "from", "how", "in", "is", "me", "of", "on", "show", "the", "to", "what", "which", "with"}
 
 
 def _jsonable_value(value: object) -> object:
@@ -99,19 +93,17 @@ def _error_result(
 
 def _normalized_column_names(column_names: list[str | None]) -> tuple[list[str], list[str]]:
     """Return stable, unique column names for row dictionaries."""
-    counts: dict[str, int] = {}
     seen: set[str] = set()
     normalized: list[str] = []
     originals: list[str] = []
     for index, raw_name in enumerate(column_names, start=1):
         base_name = raw_name or f"column_{index}"
         originals.append(base_name)
-        occurrence = counts.get(base_name, 0)
+        suffix = 1
         candidate_name = base_name
         while candidate_name in seen:
-            occurrence += 1
-            candidate_name = f"{base_name}__{occurrence + 1}"
-        counts[base_name] = occurrence
+            suffix += 1
+            candidate_name = f"{base_name}__{suffix}"
         seen.add(candidate_name)
         normalized.append(candidate_name)
     return normalized, originals
@@ -178,6 +170,57 @@ def _fetch_catalog_metadata(connection: sqlite3.Connection) -> tuple[dict[str, d
     return content_rows, source_rows
 
 
+def _requested_database_path(
+    *,
+    root_dir: str | Path | None = None,
+    database_path: str | Path | None = None,
+) -> Path:
+    """Return the requested SQLite path before existence checks."""
+    return sqlite_database_path(root_dir=root_dir) if database_path is None else Path(database_path)
+
+
+def _open_read_only_connection(database_path: Path) -> sqlite3.Connection:
+    """Open one SQLite connection in read-only mode."""
+    return sqlite3.connect(f"file:{database_path}?mode=ro", uri=True)
+
+
+def _catalog_state(connection: sqlite3.Connection) -> tuple[bool, dict[str, dict[str, Any]], dict[str, list[str]]]:
+    """Return whether the tabular catalog exists plus its cached metadata."""
+    object_names = _sqlite_object_names(connection)
+    has_catalog = SQLITE_CONTENTS_TABLE in object_names and SQLITE_SOURCES_TABLE in object_names
+    if not has_catalog:
+        return False, {}, {}
+    content_rows, source_rows = _fetch_catalog_metadata(connection)
+    return True, content_rows, source_rows
+
+
+def _has_catalog(connection: sqlite3.Connection) -> bool:
+    """Return whether the shared tabular catalog exists in this database."""
+    object_names = _sqlite_object_names(connection)
+    return SQLITE_CONTENTS_TABLE in object_names and SQLITE_SOURCES_TABLE in object_names
+
+
+def _base_table_name(name: str, kind: str) -> str:
+    """Map a view name back to its catalog table name."""
+    if kind == "typed_content_view":
+        return name.removesuffix("_typed")
+    return name
+
+
+def _target_source_paths(
+    *,
+    name: str,
+    kind: str,
+    content_rows: dict[str, dict[str, Any]],
+    source_rows: dict[str, list[str]],
+) -> tuple[dict[str, Any] | None, list[str]]:
+    """Return catalog metadata and source paths for one target."""
+    content_metadata = content_rows.get(_base_table_name(name, kind))
+    if content_metadata is None:
+        return None, []
+    return content_metadata, source_rows.get(cast(str, content_metadata["content_id"]), [])
+
+
 def _looks_like_text_column(column_name: str, declared_type: str) -> bool:
     """Return whether a column is a good candidate for distinct text-value hints."""
     normalized_type = declared_type.upper()
@@ -202,11 +245,7 @@ def _text_value_hints(
     if safe_max_columns == 0 or safe_max_values == 0:
         return hints
 
-    candidate_columns = [
-        cast(str, column["name"])
-        for column in columns
-        if _looks_like_text_column(cast(str, column["name"]), cast(str, column["type"]))
-    ][:safe_max_columns]
+    candidate_columns = [cast(str, column["name"]) for column in columns if _looks_like_text_column(cast(str, column["name"]), cast(str, column["type"]))][:safe_max_columns]
 
     for column_name in candidate_columns:
         rows = connection.execute(
@@ -267,10 +306,7 @@ def _rank_identifier_candidates(identifier: str, candidates: list[str], *, max_m
         return []
 
     scored_candidates = sorted(
-        (
-            (_identifier_similarity(identifier, candidate), candidate)
-            for candidate in dict.fromkeys(candidates)
-        ),
+        ((_identifier_similarity(identifier, candidate), candidate) for candidate in dict.fromkeys(candidates)),
         key=lambda item: (-item[0], item[1]),
     )
     return [candidate for score, candidate in scored_candidates if score > 0][:max_matches]
@@ -289,7 +325,7 @@ def _format_repair_candidates(
     candidates: list[dict[str, Any]],
     *,
     include_targets: bool,
-) -> str:
+    ) -> str:
     """Format repair candidates into one compact human-readable string."""
     parts = []
     for candidate in candidates:
@@ -301,6 +337,24 @@ def _format_repair_candidates(
         else:
             parts.append(name)
     return ", ".join(parts)
+
+
+def _repair_result(
+    *,
+    kind: str,
+    identifier: str,
+    candidates: list[dict[str, Any]],
+    message: str,
+) -> list[dict[str, Any]]:
+    """Wrap one repair suggestion in the stable public payload shape."""
+    return [
+        {
+            "kind": kind,
+            "identifier": identifier,
+            "candidates": candidates,
+            "message": message,
+        }
+    ]
 
 
 def _target_search_text(
@@ -407,9 +461,8 @@ def run_sql(
     max_rows: int = MAX_QUERY_ROWS,
 ) -> dict[str, Any]:
     """Run SQL against a SQLite database and return a bounded result."""
-    requested_path = sqlite_database_path(root_dir=root_dir) if database_path is None else Path(database_path)
+    requested_path = _requested_database_path(root_dir=root_dir, database_path=database_path)
     safe_max_rows = max(1, max_rows)
-    connection: sqlite3.Connection | None = None
     try:
         if not sql.strip():
             return _error_result(
@@ -431,38 +484,38 @@ def run_sql(
             root_dir=root_dir,
             database_path=database_path,
         )
-        connection = sqlite3.connect(f"file:{resolved_path}?mode=ro", uri=True)
-        cursor = connection.execute(sql)
-        description = cursor.description
-        if not description:
-            return {
+        with closing(_open_read_only_connection(resolved_path)) as connection:
+            cursor = connection.execute(sql)
+            description = cursor.description
+            if not description:
+                return {
+                    "database_path": str(resolved_path),
+                    "status": "ok",
+                    "max_rows": safe_max_rows,
+                    "row_count": 0,
+                    "truncated": False,
+                    "columns": [],
+                    "rows": [],
+                }
+
+            column_names, original_columns = _normalized_column_names([cast(Any, column[0]) for column in description])
+            raw_rows = cursor.fetchmany(safe_max_rows + 1)
+            truncated = len(raw_rows) > safe_max_rows
+            result_rows = raw_rows[:safe_max_rows]
+            rows = [{column_name: _jsonable_value(value) for column_name, value in _zip_exact(column_names, row)} for row in result_rows]
+
+            payload = {
                 "database_path": str(resolved_path),
                 "status": "ok",
                 "max_rows": safe_max_rows,
-                "row_count": 0,
-                "truncated": False,
-                "columns": [],
-                "rows": [],
+                "row_count": len(rows),
+                "truncated": truncated,
+                "columns": column_names,
+                "rows": rows,
             }
-
-        column_names, original_columns = _normalized_column_names([cast(Any, column[0]) for column in description])
-        raw_rows = cursor.fetchmany(safe_max_rows + 1)
-        truncated = len(raw_rows) > safe_max_rows
-        result_rows = raw_rows[:safe_max_rows]
-        rows = [{column_name: _jsonable_value(value) for column_name, value in _zip_exact(column_names, row)} for row in result_rows]
-
-        payload = {
-            "database_path": str(resolved_path),
-            "status": "ok",
-            "max_rows": safe_max_rows,
-            "row_count": len(rows),
-            "truncated": truncated,
-            "columns": column_names,
-            "rows": rows,
-        }
-        if column_names != original_columns:
-            payload["original_columns"] = original_columns
-        return payload
+            if column_names != original_columns:
+                payload["original_columns"] = original_columns
+            return payload
     except ValueError as exc:
         return _error_result(
             database_path=requested_path,
@@ -477,9 +530,6 @@ def run_sql(
             message=str(exc),
             max_rows=safe_max_rows,
         )
-    finally:
-        if connection is not None:
-            connection.close()
 
 
 def list_targets(
@@ -489,59 +539,55 @@ def list_targets(
     include_internal: bool = False,
 ) -> dict[str, Any]:
     """List queryable SQLite tables and views."""
-    requested_path = sqlite_database_path(root_dir=root_dir) if database_path is None else Path(database_path)
-    connection: sqlite3.Connection | None = None
+    requested_path = _requested_database_path(root_dir=root_dir, database_path=database_path)
     try:
         resolved_path = resolve_db_path(
             root_dir=root_dir,
             database_path=database_path,
         )
-        connection = sqlite3.connect(f"file:{resolved_path}?mode=ro", uri=True)
-        object_names = _sqlite_object_names(connection)
-        targets = connection.execute(
-            """
-            SELECT name, type
-            FROM sqlite_master
-            WHERE type IN ('table', 'view')
-              AND name NOT LIKE 'sqlite_%'
-            ORDER BY type, name
-            """
-        ).fetchall()
-        has_catalog = SQLITE_CONTENTS_TABLE in object_names and SQLITE_SOURCES_TABLE in object_names
-        content_rows: dict[str, dict[str, Any]] = {}
-        source_rows: dict[str, list[str]] = {}
-        if has_catalog:
-            content_rows, source_rows = _fetch_catalog_metadata(connection)
+        with closing(_open_read_only_connection(resolved_path)) as connection:
+            targets = connection.execute(
+                """
+                SELECT name, type
+                FROM sqlite_master
+                WHERE type IN ('table', 'view')
+                  AND name NOT LIKE 'sqlite_%'
+                ORDER BY type, name
+                """
+            ).fetchall()
+            has_catalog, content_rows, source_rows = _catalog_state(connection)
 
-        items = []
-        for row in targets:
-            name = cast(str, row[0])
-            target_type = cast(str, row[1])
-            kind = classify_target(name)
-            if not include_internal and kind == "internal_catalog":
-                continue
+            items = []
+            for row in targets:
+                name = cast(str, row[0])
+                target_type = cast(str, row[1])
+                kind = classify_target(name)
+                if not include_internal and kind == "internal_catalog":
+                    continue
 
-            base_table_name = name.removesuffix("_typed") if kind == "typed_content_view" else name
-            content_metadata = content_rows.get(base_table_name)
-            source_paths = source_rows.get(content_metadata["content_id"], []) if content_metadata else []
+                content_metadata, source_paths = _target_source_paths(
+                    name=name,
+                    kind=kind,
+                    content_rows=content_rows,
+                    source_rows=source_rows,
+                )
+                items.append(
+                    {
+                        "name": name,
+                        "type": target_type,
+                        "kind": kind,
+                        "row_count": content_metadata["row_count"] if content_metadata else None,
+                        "source_paths": source_paths,
+                    }
+                )
 
-            items.append(
-                {
-                    "name": name,
-                    "type": target_type,
-                    "kind": kind,
-                    "row_count": content_metadata["row_count"] if content_metadata else None,
-                    "source_paths": source_paths,
-                }
-            )
-
-        return {
-            "database_path": str(resolved_path),
-            "status": "ok",
-            "has_tabular_catalog": has_catalog,
-            "target_count": len(items),
-            "targets": items,
-        }
+            return {
+                "database_path": str(resolved_path),
+                "status": "ok",
+                "has_tabular_catalog": has_catalog,
+                "target_count": len(items),
+                "targets": items,
+            }
     except ValueError as exc:
         return _error_result(
             database_path=requested_path,
@@ -554,9 +600,6 @@ def list_targets(
             error_type="sql_execution_error",
             message=str(exc),
         )
-    finally:
-        if connection is not None:
-            connection.close()
 
 
 def describe_target(
@@ -568,114 +611,103 @@ def describe_target(
     text_value_hints: int = 3,
 ) -> dict[str, Any]:
     """Describe a single SQLite table or view."""
-    requested_path = sqlite_database_path(root_dir=root_dir) if database_path is None else Path(database_path)
-    connection: sqlite3.Connection | None = None
+    requested_path = _requested_database_path(root_dir=root_dir, database_path=database_path)
     try:
         resolved_path = resolve_db_path(
             root_dir=root_dir,
             database_path=database_path,
         )
-        connection = sqlite3.connect(f"file:{resolved_path}?mode=ro", uri=True)
-        object_names = _sqlite_object_names(connection)
-        master_row = connection.execute(
-            """
-            SELECT name, type, sql
-            FROM sqlite_master
-            WHERE type IN ('table', 'view') AND name = ?
-            """,
-            [target_name],
-        ).fetchone()
-        if master_row is None:
-            return _error_result(
-                database_path=resolved_path,
-                error_type="missing_target",
-                message=f"SQLite target does not exist: {target_name}",
-                target_name=target_name,
+        with closing(_open_read_only_connection(resolved_path)) as connection:
+            master_row = connection.execute(_TARGET_BY_NAME_SQL, [target_name]).fetchone()
+            if master_row is None:
+                return _error_result(
+                    database_path=resolved_path,
+                    error_type="missing_target",
+                    message=f"SQLite target does not exist: {target_name}",
+                    target_name=target_name,
+                )
+
+            name = cast(str, master_row[0])
+            target_type = cast(str, master_row[1])
+            create_sql = cast(Any, master_row[2])
+            kind = classify_target(name)
+            columns = [
+                {
+                    "name": cast(str, row[1]),
+                    "type": cast(str, row[2]),
+                    "not_null": bool(row[3]),
+                    "default_value": row[4],
+                    "primary_key_position": cast(int, row[5]),
+                }
+                for row in connection.execute(f"PRAGMA table_info({quote_identifier(name)})").fetchall()
+            ]
+            sample_row_items = _sample_rows(
+                connection,
+                target_name=name,
+                limit=sample_rows,
+            )
+            text_value_hint_map = _text_value_hints(
+                connection,
+                target_name=name,
+                columns=columns,
+                max_columns=text_value_hints,
+                max_values=MAX_TEXT_VALUE_HINTS,
             )
 
-        name = cast(str, master_row[0])
-        target_type = cast(str, master_row[1])
-        create_sql = cast(Any, master_row[2])
-        kind = classify_target(name)
-        pragma_rows = connection.execute(f"PRAGMA table_info({quote_identifier(name)})").fetchall()
-        columns = [
-            {
-                "name": cast(str, row[1]),
-                "type": cast(str, row[2]),
-                "not_null": bool(row[3]),
-                "default_value": row[4],
-                "primary_key_position": cast(int, row[5]),
+            has_catalog = _has_catalog(connection)
+            source_mappings = []
+            content_id = None
+            content_schema = None
+            row_count = None
+            if has_catalog:
+                catalog_row = connection.execute(
+                    f"""
+                    SELECT content_id, source_format, row_count, column_schema_json
+                    FROM {SQLITE_CONTENTS_TABLE}
+                    WHERE table_name = ?
+                    """,
+                    [_base_table_name(name, kind)],
+                ).fetchone()
+
+                if catalog_row is not None:
+                    content_id = cast(str, catalog_row[0])
+                    row_count = cast(int, catalog_row[2])
+                    content_schema = json.loads(cast(str, catalog_row[3]))
+                    source_mappings = [
+                        {
+                            "source_path": cast(str, row[0]),
+                            "source_format": cast(str, row[1]),
+                            "source_sheet_name": cast(str, row[2]),
+                            "source_table_name": cast(str, row[3]),
+                            "fast_fingerprint": cast(str, row[4]),
+                        }
+                        for row in connection.execute(
+                            f"""
+                            SELECT source_path, source_format, source_sheet_name, source_table_name, fast_fingerprint
+                            FROM {SQLITE_SOURCES_TABLE}
+                            WHERE content_id = ?
+                            ORDER BY source_path, source_table_name
+                            """,
+                            [content_id],
+                        ).fetchall()
+                    ]
+
+            return {
+                "database_path": str(resolved_path),
+                "status": "ok",
+                "has_tabular_catalog": has_catalog,
+                "name": name,
+                "type": target_type,
+                "kind": kind,
+                "row_count": row_count,
+                "columns": columns,
+                "sample_rows": sample_row_items,
+                "text_value_hints": text_value_hint_map,
+                "create_sql": create_sql,
+                "content_id": content_id,
+                "content_schema": content_schema,
+                "source_mappings": source_mappings,
             }
-            for row in pragma_rows
-        ]
-        sample_row_items = _sample_rows(
-            connection,
-            target_name=name,
-            limit=sample_rows,
-        )
-        text_value_hint_map = _text_value_hints(
-            connection,
-            target_name=name,
-            columns=columns,
-            max_columns=text_value_hints,
-            max_values=MAX_TEXT_VALUE_HINTS,
-        )
-
-        has_catalog = SQLITE_CONTENTS_TABLE in object_names and SQLITE_SOURCES_TABLE in object_names
-        source_mappings = []
-        content_id = None
-        content_schema = None
-        row_count = None
-        if has_catalog:
-            base_table_name = name.removesuffix("_typed") if kind == "typed_content_view" else name
-            catalog_row = connection.execute(
-                f"""
-                SELECT content_id, source_format, row_count, column_schema_json
-                FROM {SQLITE_CONTENTS_TABLE}
-                WHERE table_name = ?
-                """,
-                [base_table_name],
-            ).fetchone()
-
-            if catalog_row is not None:
-                content_id = cast(str, catalog_row[0])
-                row_count = cast(int, catalog_row[2])
-                content_schema = json.loads(cast(str, catalog_row[3]))
-                source_mappings = [
-                    {
-                        "source_path": cast(str, row[0]),
-                        "source_format": cast(str, row[1]),
-                        "source_sheet_name": cast(str, row[2]),
-                        "source_table_name": cast(str, row[3]),
-                        "fast_fingerprint": cast(str, row[4]),
-                    }
-                    for row in connection.execute(
-                        f"""
-                        SELECT source_path, source_format, source_sheet_name, source_table_name, fast_fingerprint
-                        FROM {SQLITE_SOURCES_TABLE}
-                        WHERE content_id = ?
-                        ORDER BY source_path, source_table_name
-                        """,
-                        [content_id],
-                    ).fetchall()
-                ]
-
-        return {
-            "database_path": str(resolved_path),
-            "status": "ok",
-            "has_tabular_catalog": has_catalog,
-            "name": name,
-            "type": target_type,
-            "kind": kind,
-            "row_count": row_count,
-            "columns": columns,
-            "sample_rows": sample_row_items,
-            "text_value_hints": text_value_hint_map,
-            "create_sql": create_sql,
-            "content_id": content_id,
-            "content_schema": content_schema,
-            "source_mappings": source_mappings,
-        }
     except ValueError as exc:
         return _error_result(
             database_path=requested_path,
@@ -690,9 +722,6 @@ def describe_target(
             message=str(exc),
             target_name=target_name,
         )
-    finally:
-        if connection is not None:
-            connection.close()
 
 
 def suggest_targets(
@@ -704,8 +733,7 @@ def suggest_targets(
     max_results: int = MAX_SUGGESTED_TARGETS,
 ) -> dict[str, Any]:
     """Suggest likely tables or views for a natural-language question."""
-    requested_path = sqlite_database_path(root_dir=root_dir) if database_path is None else Path(database_path)
-    connection: sqlite3.Connection | None = None
+    requested_path = _requested_database_path(root_dir=root_dir, database_path=database_path)
     safe_max_results = max(1, max_results)
     try:
         tokens = _tokenize_query(question)
@@ -721,80 +749,69 @@ def suggest_targets(
             root_dir=root_dir,
             database_path=database_path,
         )
-        connection = sqlite3.connect(f"file:{resolved_path}?mode=ro", uri=True)
-        object_names = _sqlite_object_names(connection)
-        has_catalog = SQLITE_CONTENTS_TABLE in object_names and SQLITE_SOURCES_TABLE in object_names
+        with closing(_open_read_only_connection(resolved_path)) as connection:
+            has_catalog, content_rows, source_rows = _catalog_state(connection)
+            suggestions = []
+            for master_row in connection.execute(_TARGET_MASTER_SQL).fetchall():
+                name = cast(str, master_row[0])
+                target_type = cast(str, master_row[1])
+                create_sql = cast(Any, master_row[2])
+                kind = classify_target(name)
+                if not include_internal and kind == "internal_catalog":
+                    continue
 
-        content_rows: dict[str, dict[str, Any]] = {}
-        source_rows: dict[str, list[str]] = {}
-        if has_catalog:
-            content_rows, source_rows = _fetch_catalog_metadata(connection)
+                content_metadata, source_paths = _target_source_paths(
+                    name=name,
+                    kind=kind,
+                    content_rows=content_rows,
+                    source_rows=source_rows,
+                )
+                column_names = [
+                    cast(str, row[1])
+                    for row in connection.execute(f"PRAGMA table_info({quote_identifier(name)})").fetchall()
+                ]
+                search_text = _target_search_text(
+                    name=name,
+                    target_type=target_type,
+                    kind=kind,
+                    column_names=column_names,
+                    source_paths=source_paths,
+                    create_sql=create_sql,
+                )
+                score, reasons = _target_score(
+                    tokens=tokens,
+                    name=name,
+                    column_names=column_names,
+                    source_paths=source_paths,
+                    search_text=search_text,
+                )
+                if score <= 0:
+                    continue
+                score += _kind_bias(kind)
 
-        suggestions = []
-        master_rows = connection.execute(
-            """
-            SELECT name, type, sql
-            FROM sqlite_master
-            WHERE type IN ('table', 'view')
-              AND name NOT LIKE 'sqlite_%'
-            ORDER BY type, name
-            """
-        ).fetchall()
-        for master_row in master_rows:
-            name = cast(str, master_row[0])
-            target_type = cast(str, master_row[1])
-            create_sql = cast(Any, master_row[2])
-            kind = classify_target(name)
-            if not include_internal and kind == "internal_catalog":
-                continue
+                suggestions.append(
+                    {
+                        "name": name,
+                        "type": target_type,
+                        "kind": kind,
+                        "score": score,
+                        "reasons": reasons,
+                        "columns": column_names,
+                        "source_paths": source_paths,
+                        "row_count": content_metadata["row_count"] if content_metadata else None,
+                    }
+                )
 
-            base_table_name = name.removesuffix("_typed") if kind == "typed_content_view" else name
-            content_metadata = content_rows.get(base_table_name)
-            source_paths = source_rows.get(content_metadata["content_id"], []) if content_metadata else []
-            pragma_rows = connection.execute(f"PRAGMA table_info({quote_identifier(name)})").fetchall()
-            column_names = [cast(str, row[1]) for row in pragma_rows]
-            search_text = _target_search_text(
-                name=name,
-                target_type=target_type,
-                kind=kind,
-                column_names=column_names,
-                source_paths=source_paths,
-                create_sql=create_sql,
-            )
-            score, reasons = _target_score(
-                tokens=tokens,
-                name=name,
-                column_names=column_names,
-                source_paths=source_paths,
-                search_text=search_text,
-            )
-            if score <= 0:
-                continue
-            score += _kind_bias(kind)
-
-            suggestions.append(
-                {
-                    "name": name,
-                    "type": target_type,
-                    "kind": kind,
-                    "score": score,
-                    "reasons": reasons,
-                    "columns": column_names,
-                    "source_paths": source_paths,
-                    "row_count": content_metadata["row_count"] if content_metadata else None,
-                }
-            )
-
-        suggestions.sort(key=lambda item: (-cast(int, item["score"]), cast(str, item["name"])))
-        return {
-            "database_path": str(resolved_path),
-            "status": "ok",
-            "has_tabular_catalog": has_catalog,
-            "question": question,
-            "tokens": tokens,
-            "suggestion_count": len(suggestions[:safe_max_results]),
-            "suggestions": suggestions[:safe_max_results],
-        }
+            suggestions.sort(key=lambda item: (-cast(int, item["score"]), cast(str, item["name"])))
+            return {
+                "database_path": str(resolved_path),
+                "status": "ok",
+                "has_tabular_catalog": has_catalog,
+                "question": question,
+                "tokens": tokens,
+                "suggestion_count": len(suggestions[:safe_max_results]),
+                "suggestions": suggestions[:safe_max_results],
+            }
     except ValueError as exc:
         return _error_result(
             database_path=requested_path,
@@ -811,9 +828,6 @@ def suggest_targets(
             question=question,
             max_results=safe_max_results,
         )
-    finally:
-        if connection is not None:
-            connection.close()
 
 
 def suggest_sql_error_repair(
@@ -849,17 +863,12 @@ def suggest_sql_error_repair(
             }
             for column_name in candidate_columns
         ]
-        return [
-            {
-                "kind": "missing_column",
-                "identifier": missing_column,
-                "candidates": candidates,
-                "message": (
-                    f"Column `{missing_column}` was not found. "
-                    f"Closest inspected columns: {_format_repair_candidates(candidates, include_targets=True)}."
-                ),
-            }
-        ]
+        return _repair_result(
+            kind="missing_column",
+            identifier=missing_column,
+            candidates=candidates,
+            message=f"Column `{missing_column}` was not found. Closest inspected columns: {_format_repair_candidates(candidates, include_targets=True)}.",
+        )
 
     if lowered_error.startswith(_MISSING_TABLE_ERROR_PREFIX):
         missing_target = _error_identifier(error_message, _MISSING_TABLE_ERROR_PREFIX)
@@ -872,37 +881,25 @@ def suggest_sql_error_repair(
             return []
 
         candidates = [{"name": target_name} for target_name in candidate_targets]
-        return [
-            {
-                "kind": "missing_target",
-                "identifier": missing_target,
-                "candidates": candidates,
-                "message": (
-                    f"Target `{missing_target}` was not found. "
-                    f"Closest inspected targets: {_format_repair_candidates(candidates, include_targets=False)}."
-                ),
-            }
-        ]
+        return _repair_result(
+            kind="missing_target",
+            identifier=missing_target,
+            candidates=candidates,
+            message=f"Target `{missing_target}` was not found. Closest inspected targets: {_format_repair_candidates(candidates, include_targets=False)}.",
+        )
 
     if lowered_error.startswith(_AMBIGUOUS_COLUMN_ERROR_PREFIX):
         ambiguous_column = _error_identifier(error_message, _AMBIGUOUS_COLUMN_ERROR_PREFIX)
-        matching_targets = sorted(
-            target_name for target_name, columns in target_columns.items() if ambiguous_column in columns
-        )
+        matching_targets = sorted(target_name for target_name, columns in target_columns.items() if ambiguous_column in columns)
         if not matching_targets:
             return []
 
         candidates = [{"name": ambiguous_column, "targets": matching_targets}]
-        return [
-            {
-                "kind": "ambiguous_column",
-                "identifier": ambiguous_column,
-                "candidates": candidates,
-                "message": (
-                    f"Column `{ambiguous_column}` is ambiguous. "
-                    f"Qualify it with one of: {', '.join(matching_targets)}."
-                ),
-            }
-        ]
+        return _repair_result(
+            kind="ambiguous_column",
+            identifier=ambiguous_column,
+            candidates=candidates,
+            message=f"Column `{ambiguous_column}` is ambiguous. Qualify it with one of: {', '.join(matching_targets)}.",
+        )
 
     return []
