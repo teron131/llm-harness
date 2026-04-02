@@ -15,7 +15,6 @@ from .llm_stats_stages.match_stage import build_matched_payload
 from .llm_stats_stages.openrouter_stage import enrich_rows
 from .llm_stats_stages.source_stage import fetch_source_data
 from .llm_stats_stages.types import (
-    LlmSourceData,
     LlmStatsStageConfig,
     LlmStatsStageConfigModel,
     ModelStatsSelectedOptions,
