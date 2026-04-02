@@ -256,21 +256,3 @@ def load_rows(path: Path, *, sheet: str | None = None) -> tuple[list[list[str]],
         rows, format_info = _load_xlsx_rows(path, sheet=sheet)
         return rows, {"format": "xlsx", **format_info}
     raise ValueError(f"Unsupported tabular file type: {path.suffix}")
-
-
-__all__ = [
-    "MAX_FULL_EXTRACT_BYTES",
-    "MAX_FULL_PROFILE_BYTES",
-    "MAX_METADATA_ROWS",
-    "MAX_SAMPLE_ROWS",
-    "count_non_empty",
-    "is_blank",
-    "load_rows",
-    "preview_dimensions",
-    "preview_rows",
-    "stream_csv_profile",
-    "stream_csv_window",
-    "tabular_dimensions",
-    "tabular_summary",
-    "tabular_summary_from_counts",
-]

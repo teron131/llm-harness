@@ -104,8 +104,3 @@ def make_sql_tools(*, root_dir: str | Path | None = None):
         sql_suggest,
         sql_query,
     ]
-
-
-__all__ = [
-    "make_sql_tools",
-]

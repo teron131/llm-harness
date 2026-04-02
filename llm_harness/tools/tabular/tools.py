@@ -274,8 +274,3 @@ def make_tabular_tools(*, root_dir: str | Path | None = None):
         profile_tabular,
         extract_tabular,
     ]
-
-
-__all__ = [
-    "make_tabular_tools",
-]

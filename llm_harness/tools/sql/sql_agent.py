@@ -125,7 +125,7 @@ Rules:
 """
 
 
-def _trace(state: SQLAgentState, message: str) -> list[str]:
+def _append_trace(state: SQLAgentState, message: str) -> list[str]:
     """Append one trace message."""
     return [*state.trace, message]
 
@@ -173,7 +173,7 @@ def _serialize_target_context(target: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _planner_messages(state: SQLAgentState) -> list[SystemMessage | HumanMessage]:
+def _build_planner_messages(state: SQLAgentState) -> list[SystemMessage | HumanMessage]:
     """Build planner messages for the structured planning model."""
     inspected_targets = [_serialize_target_context(target) for target in state.inspected_targets]
     payload = {
@@ -213,7 +213,7 @@ def make_llm_planner(
     structured_llm = resolved_llm.with_structured_output(SQLPlan)
 
     def planner(state: SQLAgentState) -> SQLPlan:
-        return structured_llm.invoke(_planner_messages(state))
+        return structured_llm.invoke(_build_planner_messages(state))
 
     return planner
 
@@ -230,13 +230,13 @@ def suggest_node(state: SQLAgentState) -> dict[str, Any]:
             "status": "error",
             "last_error": suggestion_result["message"],
             "result": suggestion_result,
-            "trace": _trace(state, f"suggest failed: {suggestion_result['message']}"),
+            "trace": _append_trace(state, f"suggest failed: {suggestion_result['message']}"),
         }
 
     return {
         "status": "suggested",
         "suggestions": suggestion_result["suggestions"],
-        "trace": _trace(state, f"suggested {suggestion_result['suggestion_count']} targets"),
+        "trace": _append_trace(state, f"suggested {suggestion_result['suggestion_count']} targets"),
     }
 
 
@@ -257,13 +257,13 @@ def inspect_node(state: SQLAgentState) -> dict[str, Any]:
         return {
             "status": "error",
             "last_error": "No inspectable SQL targets were available.",
-            "trace": _trace(state, "inspect found no usable targets"),
+            "trace": _append_trace(state, "inspect found no usable targets"),
         }
 
     return {
         "status": "inspected",
         "inspected_targets": inspected_targets,
-        "trace": _trace(state, f"inspected {len(inspected_targets)} targets"),
+        "trace": _append_trace(state, f"inspected {len(inspected_targets)} targets"),
     }
 
 
@@ -273,7 +273,7 @@ def clarify_node(state: SQLAgentState) -> dict[str, Any]:
     return {
         "status": "blocked",
         "last_error": message,
-        "trace": _trace(state, "blocked for clarification"),
+        "trace": _append_trace(state, "blocked for clarification"),
     }
 
 
@@ -290,7 +290,7 @@ def make_plan_node(planner: PlannerFn) -> Callable[[SQLAgentState], dict[str, An
                 "selected_targets": selected_targets,
                 "rationale": plan.rationale,
                 "last_error": plan.blocking_reason or "Planner could not produce a safe SQL query.",
-                "trace": _trace(state, "planner blocked execution"),
+                "trace": _append_trace(state, "planner blocked execution"),
             }
 
         return {
@@ -299,7 +299,7 @@ def make_plan_node(planner: PlannerFn) -> Callable[[SQLAgentState], dict[str, An
             "candidate_sql": plan.sql,
             "selected_targets": selected_targets,
             "rationale": plan.rationale,
-            "trace": _trace(state, f"planned SQL for {', '.join(selected_targets)}"),
+            "trace": _append_trace(state, f"planned SQL for {', '.join(selected_targets)}"),
         }
 
     return plan_node
@@ -311,7 +311,7 @@ def execute_node(state: SQLAgentState) -> dict[str, Any]:
         return {
             "status": "error",
             "last_error": "No SQL query was available for execution.",
-            "trace": _trace(state, "execute skipped because no SQL was planned"),
+            "trace": _append_trace(state, "execute skipped because no SQL was planned"),
         }
 
     result = run_sql(
@@ -324,7 +324,7 @@ def execute_node(state: SQLAgentState) -> dict[str, Any]:
             "status": "complete",
             "attempts": attempts,
             "result": result,
-            "trace": _trace(state, f"execute succeeded on attempt {attempts}"),
+            "trace": _append_trace(state, f"execute succeeded on attempt {attempts}"),
         }
 
     repair_target_names = [
@@ -348,7 +348,7 @@ def execute_node(state: SQLAgentState) -> dict[str, Any]:
         "repair_hints": repair_hints,
         "result": result,
         "last_error": result["message"],
-        "trace": _trace(
+        "trace": _append_trace(
             state,
             (
                 f"execute failed on attempt {attempts}: {result['message']}"
@@ -364,7 +364,7 @@ def repair_node(state: SQLAgentState) -> dict[str, Any]:
     return {
         "status": "repairing",
         "repair_count": state.repair_count + 1,
-        "trace": _trace(state, f"repair pass {state.repair_count + 1}"),
+        "trace": _append_trace(state, f"repair pass {state.repair_count + 1}"),
     }
 
 
@@ -519,15 +519,3 @@ def answer_sql_question(
         sample_rows=sample_rows,
         text_value_hints=text_value_hints,
     )
-
-
-__all__ = [
-    "SQLAgent",
-    "SQLAgentInput",
-    "SQLAgentOutput",
-    "SQLAgentState",
-    "SQLPlan",
-    "answer_sql_question",
-    "create_sql_graph",
-    "make_llm_planner",
-]

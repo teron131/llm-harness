@@ -487,13 +487,3 @@ def load_tables_into_sqlite(
         "database_path": str(database_path),
         "tables": loaded_tables,
     }
-
-
-__all__ = [
-    "DEFAULT_ROOT_DIR",
-    "fast_fingerprint",
-    "fast_fingerprint_from_samples",
-    "load_tables_into_sqlite",
-    "quote_identifier",
-    "sqlite_database_path",
-]

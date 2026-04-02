@@ -463,11 +463,3 @@ def get_openrouter_model_stats(
         if isinstance(first_model, dict):
             return first_model
     return _empty_scraped_model(model_id)
-
-
-__all__ = [
-    "OpenRouterModelOptions",
-    "OpenRouterScraperOptions",
-    "get_openrouter_model_stats",
-    "get_openrouter_scraped_stats",
-]

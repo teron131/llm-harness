@@ -906,18 +906,3 @@ def suggest_sql_error_repair(
         ]
 
     return []
-
-
-__all__ = [
-    "MAX_DESCRIBE_SAMPLE_ROWS",
-    "MAX_QUERY_ROWS",
-    "MAX_REPAIR_CANDIDATES",
-    "MAX_SUGGESTED_TARGETS",
-    "classify_target",
-    "describe_target",
-    "list_targets",
-    "resolve_db_path",
-    "run_sql",
-    "suggest_sql_error_repair",
-    "suggest_targets",
-]

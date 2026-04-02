@@ -7,7 +7,6 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import wrap_tool_call
 from langchain.agents.structured_output import ToolStrategy
 from langchain.messages import HumanMessage, SystemMessage, ToolMessage
-from langchain.tools import tool
 from langchain.tools.tool_node import ToolCallRequest
 
 from ...clients.openrouter import ChatOpenRouter
@@ -16,7 +15,7 @@ from ...tools.fs.fast_copy import (
     tag_content,
     untag_content,
 )
-from ...tools.youtube.scraper import get_transcript
+from ...tools.youtube import scrape_youtube_tool
 from ...utils.youtube_utils import is_youtube_url
 from .prompts import get_garbage_filter_prompt, get_langchain_summary_prompt
 from .schemas import GarbageIdentification, Summary
@@ -27,19 +26,6 @@ DEFAULT_MODEL = "google/gemini-3-flash-preview"
 FAST_MODEL = "google/gemini-2.5-flash-lite-preview-09-2025"
 
 
-@tool(parse_docstring=True)
-def scrape_youtube(youtube_url: str) -> str:
-    """Scrape a YouTube video and return the transcript.
-
-    Args:
-        youtube_url: The YouTube video URL to scrape
-
-    Returns:
-        Parsed transcript text
-    """
-    return get_transcript(youtube_url)
-
-
 @wrap_tool_call
 def garbage_filter_middleware(
     request: ToolCallRequest,
@@ -48,8 +34,8 @@ def garbage_filter_middleware(
     """Middleware to filter garbage from tool results (like transcripts)."""
     result = handler(request)
 
-    # Only filter if it's the scrape_youtube tool and the call succeeded
-    if request.tool_call["name"] == "scrape_youtube" and result.status != "error":
+    # Only filter if it's the scrape_youtube_tool and the call succeeded
+    if request.tool_call["name"] == "scrape_youtube_tool" and result.status != "error":
         transcript = result.content
         if isinstance(transcript, str) and transcript.strip():
             # Apply the tagging/filtering mechanism
@@ -95,7 +81,7 @@ def create_summarizer_agent(
 
     agent = create_agent(
         model=llm,
-        tools=[scrape_youtube],
+        tools=[scrape_youtube_tool],
         system_prompt=system_prompt,
         middleware=[garbage_filter_middleware],  # Add the garbage filter middleware
         response_format=ToolStrategy(Summary),  # Use ToolStrategy for better error handling

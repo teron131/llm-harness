@@ -442,11 +442,3 @@ LINE_NORMALIZERS: tuple[LineNormalizer, ...] = (
     lambda value: _normalize_punctuation(value.strip()),
     lambda value: _normalize_whitespace(_normalize_punctuation(value.strip())),
 )
-
-__all__ = [
-    "FilePatch",
-    "PatchChunk",
-    "PatchStats",
-    "apply_patch_chunks_to_text",
-    "parse_single_file_patch_with_stats",
-]

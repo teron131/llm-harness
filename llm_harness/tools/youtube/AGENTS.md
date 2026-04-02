@@ -13,7 +13,7 @@
 - `llm_harness/tools/youtube/scraper.py -> YouTubeScrapperResult`
 - `llm_harness/tools/youtube/scraper.py -> _fetch_scrape_creators`
 - `llm_harness/tools/youtube/scraper.py -> _fetch_supadata`
-- `llm_harness/tools/youtube/scraper.py -> scrape_youtube/get_transcript`
+- `llm_harness/tools/youtube/scraper.py -> scrape_youtube/get_transcript/scrape_youtube_tool`
 - `llm_harness/tools/youtube/__init__.py -> public exports`
 
 ## Repository snapshot
@@ -32,6 +32,7 @@
 - `_fetch_scrape_creators` and `_fetch_supadata` isolate provider-specific API calls and parsing.
 - `scrape_youtube` controls fallback ordering and user-facing error semantics.
 - `get_transcript` converts provider output into cleaned transcript text with strict validation.
+- `scrape_youtube_tool` is the LangChain-facing wrapper used by agent workflows.
 
 ## Project-specific conventions and rationale
 
@@ -44,7 +45,7 @@
 
 - `scraper.py -> scrape_youtube -> _fetch_scrape_creators/_fetch_supadata`
 - `scraper.py -> YouTubeScrapperResult.parsed_transcript -> clean_text`
-- `agents/youtube/summarizer.py -> get_transcript`
+- `scraper.py -> scrape_youtube_tool -> get_transcript`
 - `agents/youtube/__init__.py -> youtubeloader -> scrape_youtube`
 
 ## General approach (not rigid checklist)

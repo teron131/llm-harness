@@ -557,11 +557,3 @@ def segment_tabular_blocks(
     )
 
     return metadata, tables
-
-
-__all__ = [
-    "compute_region_boxes",
-    "header_candidates",
-    "profile_region_boxes",
-    "segment_tabular_blocks",
-]

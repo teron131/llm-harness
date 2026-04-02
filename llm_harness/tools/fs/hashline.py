@@ -168,10 +168,3 @@ def edit_hashline(text: str, edits: list[HashlineEdit]) -> str:
     if not lines:
         return ""
     return "\n".join(lines) + ("\n" if has_trailing_newline else "")
-
-
-__all__ = [
-    "HashlineEdit",
-    "edit_hashline",
-    "format_hashline_text",
-]

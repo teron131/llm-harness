@@ -10,6 +10,7 @@ from typing import Any
 
 from dotenv import load_dotenv
 import httpx
+from langchain.tools import tool
 from pydantic import BaseModel, ConfigDict
 
 from ...utils.youtube_utils import clean_text, clean_youtube_url, extract_video_id, is_youtube_url
@@ -229,3 +230,16 @@ def get_transcript(youtube_url: str) -> str:
     if not transcript:
         raise ValueError("Transcript is empty")
     return transcript
+
+
+@tool(parse_docstring=True)
+def scrape_youtube_tool(youtube_url: str) -> str:
+    """Scrape a YouTube video and return the transcript.
+
+    Args:
+        youtube_url: The YouTube video URL to scrape.
+
+    Returns:
+        Parsed transcript text.
+    """
+    return get_transcript(youtube_url)

@@ -181,8 +181,3 @@ def make_fs_tools(*, root_dir: str | Path):
         fs_edit_hashline,
         fs_edit_with_ed,
     ]
-
-
-__all__ = [
-    "make_fs_tools",
-]
