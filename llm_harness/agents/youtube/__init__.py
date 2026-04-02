@@ -42,7 +42,7 @@ def summarize_video_react(
     )
 
 
-def youtube_loader(url: str) -> str:
+def youtubeloader(url: str) -> str:
     """Load and extract transcript from a YouTube video.
 
     Args:
@@ -98,5 +98,5 @@ __all__ = [
     "stream_summarize_video",
     "summarize_video",
     "summarize_video_react",
-    "youtube_loader",
+    "youtubeloader",
 ]

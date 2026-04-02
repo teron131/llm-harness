@@ -45,7 +45,7 @@
 - `scraper.py -> scrape_youtube -> _fetch_scrape_creators/_fetch_supadata`
 - `scraper.py -> YouTubeScrapperResult.parsed_transcript -> clean_text`
 - `agents/youtube/summarizer.py -> get_transcript`
-- `agents/youtube/__init__.py -> youtube_loader -> scrape_youtube`
+- `agents/youtube/__init__.py -> youtubeloader -> scrape_youtube`
 
 ## General approach (not rigid checklist)
 

@@ -46,7 +46,7 @@
 - `agents.py -> Web*Agent.invoke -> self.agent.invoke -> _process_response`
 - `agents.py -> ImageAnalysisAgent.invoke -> MediaMessage`
 - `agents.py -> YouTubeSummarizerReAct.invoke -> youtube.summarizer_react.summarize_video_react`
-- `agents/__init__.py -> youtube_loader_tool -> youtube_loader`
+- `agents/__init__.py -> youtube_loader_tool -> youtubeloader`
 
 ## General approach (not rigid checklist)
 

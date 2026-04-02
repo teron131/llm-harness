@@ -3,7 +3,7 @@
 from langchain.tools import BaseTool, tool
 
 from ..tools.web import webloader, webloader_tool
-from .youtube import youtube_loader
+from .youtube import youtubeloader
 
 
 @tool(parse_docstring=True)
@@ -13,7 +13,7 @@ def youtube_loader_tool(url: str) -> str:
     Args:
         url: YouTube video URL to load.
     """
-    return youtube_loader(url)
+    return youtubeloader(url)
 
 
 def get_tools() -> list[BaseTool]:
@@ -25,6 +25,6 @@ __all__ = [
     "get_tools",
     "webloader",
     "webloader_tool",
-    "youtube_loader",
     "youtube_loader_tool",
+    "youtubeloader",
 ]
