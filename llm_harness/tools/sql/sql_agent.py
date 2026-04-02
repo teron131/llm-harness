@@ -125,7 +125,7 @@ def _needs_clarification(question: str) -> str | None:
     tokens = [token for token in re.findall(r"[a-z0-9_]+", question.lower()) if token not in _QUESTION_STOP_WORDS]
     if not tokens:
         return "Question is too vague. Ask for a specific metric, dimension, or summary target."
-    if len(tokens) <= 2 and all(token in _VAGUE_QUESTION_TOKENS for token in tokens):
+    if all(token in _VAGUE_QUESTION_TOKENS for token in tokens):
         return "Question is too vague. Ask for a concrete metric or breakdown, for example revenue by customer or gross profit summary."
     return None
 

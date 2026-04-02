@@ -179,7 +179,7 @@ def _requested_database_path(
 
 def _open_read_only_connection(database_path: Path) -> sqlite3.Connection:
     """Open one SQLite connection in read-only mode."""
-    return sqlite3.connect(f"file:{database_path}?mode=ro", uri=True)
+    return sqlite3.connect(f"{database_path.resolve().as_uri()}?mode=ro", uri=True)
 
 
 def _catalog_state(connection: sqlite3.Connection) -> tuple[bool, dict[str, dict[str, Any]], dict[str, list[str]]]:
