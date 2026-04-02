@@ -120,15 +120,9 @@ def _append_trace(state: SQLAgentState, message: str) -> list[str]:
     return [*state.trace, message]
 
 
-def _question_tokens(question: str) -> list[str]:
-    """Extract substantive tokens from the user question."""
-    tokens = re.findall(r"[a-z0-9_]+", question.lower())
-    return [token for token in tokens if token not in _QUESTION_STOP_WORDS]
-
-
 def _needs_clarification(question: str) -> str | None:
     """Return a clarification message when the question is too vague."""
-    tokens = _question_tokens(question)
+    tokens = [token for token in re.findall(r"[a-z0-9_]+", question.lower()) if token not in _QUESTION_STOP_WORDS]
     if not tokens:
         return "Question is too vague. Ask for a specific metric, dimension, or summary target."
     if len(tokens) <= 2 and all(token in _VAGUE_QUESTION_TOKENS for token in tokens):
@@ -136,40 +130,30 @@ def _needs_clarification(question: str) -> str | None:
     return None
 
 
-def _resolve_database_path(database_path: str | None) -> str | None:
-    """Normalize database path input for graph state."""
-    if database_path is None:
-        return None
-    return str(Path(database_path).expanduser().resolve())
-
-
-def _serialize_target_context(target: dict[str, Any]) -> dict[str, Any]:
-    """Reduce target metadata into a compact planner payload."""
-    return {
-        "name": target.get("name"),
-        "kind": target.get("kind"),
-        "type": target.get("type"),
-        "row_count": target.get("row_count"),
-        "columns": [
-            {
-                "name": column.get("name"),
-                "type": column.get("type"),
-            }
-            for column in target.get("columns", [])
-        ],
-        "sample_rows": target.get("sample_rows", []),
-        "text_value_hints": target.get("text_value_hints", {}),
-        "source_mappings": target.get("source_mappings", []),
-    }
-
-
 def _build_planner_messages(state: SQLAgentState) -> list[SystemMessage | HumanMessage]:
     """Build planner messages for the structured planning model."""
-    inspected_targets = [_serialize_target_context(target) for target in state.inspected_targets]
     payload = {
         "question": state.question,
         "candidate_targets": state.suggestions,
-        "inspected_targets": inspected_targets,
+        "inspected_targets": [
+            {
+                "name": target.get("name"),
+                "kind": target.get("kind"),
+                "type": target.get("type"),
+                "row_count": target.get("row_count"),
+                "columns": [
+                    {
+                        "name": column.get("name"),
+                        "type": column.get("type"),
+                    }
+                    for column in target.get("columns", [])
+                ],
+                "sample_rows": target.get("sample_rows", []),
+                "text_value_hints": target.get("text_value_hints", {}),
+                "source_mappings": target.get("source_mappings", []),
+            }
+            for target in state.inspected_targets
+        ],
         "previous_sql": state.candidate_sql,
         "previous_error": state.last_error,
         "repair_hints": state.repair_hints,
@@ -189,18 +173,17 @@ def make_llm_planner(
     reasoning_effort: Literal["minimal", "low", "medium", "high"] = DEFAULT_SQL_AGENT_REASONING,
 ) -> PlannerFn:
     """Create a structured SQL planner backed by a chat model."""
-    resolved_llm = llm
-    if resolved_llm is None:
+    if llm is None:
         resolved_model = model or os.getenv(DEFAULT_SQL_AGENT_MODEL_ENV) or DEFAULT_SQL_AGENT_MODEL
         if not resolved_model:
             raise ValueError(f"No SQL agent model configured. Pass `llm=...`, `model=...`, or set `{DEFAULT_SQL_AGENT_MODEL_ENV}`.")
-        resolved_llm = ChatOpenRouter(
+        llm = ChatOpenRouter(
             model=resolved_model,
             temperature=temperature,
             reasoning_effort=reasoning_effort,
         )
 
-    structured_llm = resolved_llm.with_structured_output(SQLPlan)
+    structured_llm = llm.with_structured_output(SQLPlan)
 
     def planner(state: SQLAgentState) -> SQLPlan:
         return structured_llm.invoke(_build_planner_messages(state))
@@ -323,25 +306,22 @@ def execute_node(state: SQLAgentState) -> dict[str, Any]:
         for target in state.inspected_targets
         if target.get("name")
     }
+    error_message = cast(str, result["message"])
     repair_hints = suggest_sql_error_repair(
-        cast(str, result["message"]),
+        error_message,
         available_targets=repair_target_names,
         target_columns=repair_columns,
     )
+    trace_message = f"execute failed on attempt {attempts}: {error_message}"
+    if repair_hints:
+        trace_message += f" ({len(repair_hints)} repair hints)"
     return {
         "status": "needs_repair",
         "attempts": attempts,
         "repair_hints": repair_hints,
         "result": result,
-        "last_error": result["message"],
-        "trace": _append_trace(
-            state,
-            (
-                f"execute failed on attempt {attempts}: {result['message']}"
-                if not repair_hints
-                else f"execute failed on attempt {attempts}: {result['message']} ({len(repair_hints)} repair hints)"
-            ),
-        ),
+        "last_error": error_message,
+        "trace": _append_trace(state, trace_message),
     }
 
 
@@ -469,7 +449,7 @@ class SQLAgent:
         result = self.graph.invoke(
             SQLAgentInput(
                 question=question,
-                database_path=_resolve_database_path(None if database_path is None else str(database_path)),
+                database_path=None if database_path is None else str(Path(database_path).expanduser().resolve()),
                 max_suggestions=max_suggestions,
                 max_repairs=max_repairs,
                 sample_rows=sample_rows,

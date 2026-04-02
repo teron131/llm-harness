@@ -55,9 +55,7 @@ def _jsonable_value(value: object) -> object:
         return float(value)
     if isinstance(value, (datetime, date, datetime_time)):
         return value.isoformat()
-    if isinstance(value, list):
-        return [_jsonable_value(item) for item in value]
-    if isinstance(value, tuple):
+    if isinstance(value, (list, tuple)):
         return [_jsonable_value(item) for item in value]
     return value
 
@@ -186,9 +184,7 @@ def _open_read_only_connection(database_path: Path) -> sqlite3.Connection:
 
 def _catalog_state(connection: sqlite3.Connection) -> tuple[bool, dict[str, dict[str, Any]], dict[str, list[str]]]:
     """Return whether the tabular catalog exists plus its cached metadata."""
-    object_names = _sqlite_object_names(connection)
-    has_catalog = SQLITE_CONTENTS_TABLE in object_names and SQLITE_SOURCES_TABLE in object_names
-    if not has_catalog:
+    if not _has_catalog(connection):
         return False, {}, {}
     content_rows, source_rows = _fetch_catalog_metadata(connection)
     return True, content_rows, source_rows
@@ -325,7 +321,7 @@ def _format_repair_candidates(
     candidates: list[dict[str, Any]],
     *,
     include_targets: bool,
-    ) -> str:
+) -> str:
     """Format repair candidates into one compact human-readable string."""
     parts = []
     for candidate in candidates:
@@ -436,7 +432,7 @@ def resolve_db_path(
     database_path: str | Path | None = None,
 ) -> Path:
     """Resolve the SQLite database path and ensure it exists."""
-    resolved_path = sqlite_database_path(root_dir=root_dir) if database_path is None else Path(database_path)
+    resolved_path = _requested_database_path(root_dir=root_dir, database_path=database_path)
     if not resolved_path.exists():
         raise ValueError(f"SQLite database does not exist: {resolved_path}")
     return resolved_path
@@ -766,10 +762,7 @@ def suggest_targets(
                     content_rows=content_rows,
                     source_rows=source_rows,
                 )
-                column_names = [
-                    cast(str, row[1])
-                    for row in connection.execute(f"PRAGMA table_info({quote_identifier(name)})").fetchall()
-                ]
+                column_names = [cast(str, row[1]) for row in connection.execute(f"PRAGMA table_info({quote_identifier(name)})").fetchall()]
                 search_text = _target_search_text(
                     name=name,
                     target_type=target_type,
@@ -803,14 +796,15 @@ def suggest_targets(
                 )
 
             suggestions.sort(key=lambda item: (-cast(int, item["score"]), cast(str, item["name"])))
+            top_suggestions = suggestions[:safe_max_results]
             return {
                 "database_path": str(resolved_path),
                 "status": "ok",
                 "has_tabular_catalog": has_catalog,
                 "question": question,
                 "tokens": tokens,
-                "suggestion_count": len(suggestions[:safe_max_results]),
-                "suggestions": suggestions[:safe_max_results],
+                "suggestion_count": len(top_suggestions),
+                "suggestions": top_suggestions,
             }
     except ValueError as exc:
         return _error_result(
@@ -856,13 +850,7 @@ def suggest_sql_error_repair(
         if not candidate_columns:
             return []
 
-        candidates = [
-            {
-                "name": column_name,
-                "targets": sorted(columns_by_name[column_name]),
-            }
-            for column_name in candidate_columns
-        ]
+        candidates = [{"name": column_name, "targets": sorted(columns_by_name[column_name])} for column_name in candidate_columns]
         return _repair_result(
             kind="missing_column",
             identifier=missing_column,
