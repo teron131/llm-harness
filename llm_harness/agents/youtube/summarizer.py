@@ -27,8 +27,8 @@ DEFAULT_MODEL = "google/gemini-3-flash-preview"
 FAST_MODEL = "google/gemini-2.5-flash-lite-preview-09-2025"
 
 
-@tool("scrape_youtube", parse_docstring=True)
-def scrape_youtube_tool(youtube_url: str) -> str:
+@tool(parse_docstring=True)
+def scrape_youtube(youtube_url: str) -> str:
     """Scrape a YouTube video and return the transcript.
 
     Args:
@@ -95,7 +95,7 @@ def create_summarizer_agent(
 
     agent = create_agent(
         model=llm,
-        tools=[scrape_youtube_tool],
+        tools=[scrape_youtube],
         system_prompt=system_prompt,
         middleware=[garbage_filter_middleware],  # Add the garbage filter middleware
         response_format=ToolStrategy(Summary),  # Use ToolStrategy for better error handling

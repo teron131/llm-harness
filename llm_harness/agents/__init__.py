@@ -7,7 +7,7 @@ from .youtube import youtubeloader
 
 
 @tool(parse_docstring=True)
-def youtube_loader_tool(url: str) -> str:
+def youtubeloader_tool(url: str) -> str:
     """Load YouTube transcript and metadata from a video URL.
 
     Args:
@@ -18,13 +18,13 @@ def youtube_loader_tool(url: str) -> str:
 
 def get_tools() -> list[BaseTool]:
     """Return the default tool set used by harness agents."""
-    return [webloader_tool, youtube_loader_tool]
+    return [webloader_tool, youtubeloader_tool]
 
 
 __all__ = [
     "get_tools",
     "webloader",
     "webloader_tool",
-    "youtube_loader_tool",
     "youtubeloader",
+    "youtubeloader_tool",
 ]
