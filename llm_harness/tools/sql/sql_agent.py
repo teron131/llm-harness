@@ -48,17 +48,7 @@ _QUESTION_STOP_WORDS = {
     "which",
     "with",
 }
-_VAGUE_QUESTION_TOKENS = {
-    "doing",
-    "everything",
-    "numbers",
-    "overall",
-    "overview",
-    "performance",
-    "stats",
-    "status",
-    "summary",
-}
+_VAGUE_QUESTION_TOKENS = {"doing", "everything", "numbers", "overall", "overview", "performance", "stats", "status", "summary"}
 
 
 class SQLPlan(BaseModel):
@@ -327,11 +317,7 @@ def execute_node(state: SQLAgentState) -> dict[str, Any]:
             "trace": _append_trace(state, f"execute succeeded on attempt {attempts}"),
         }
 
-    repair_target_names = [
-        cast(str, suggestion["name"])
-        for suggestion in state.suggestions
-        if suggestion.get("name")
-    ]
+    repair_target_names = [cast(str, suggestion["name"]) for suggestion in state.suggestions if suggestion.get("name")]
     repair_columns = {
         cast(str, target["name"]): [cast(str, column["name"]) for column in target.get("columns", []) if column.get("name")]
         for target in state.inspected_targets
