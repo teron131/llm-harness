@@ -24,7 +24,7 @@ _MISSING = object()
 _READ_ONLY_SQL_PREFIXES = ("SELECT", "WITH", "EXPLAIN")
 _LEADING_SQL_COMMENT = re.compile(r"\A(?:\s+|--[^\n]*(?:\n|\Z)|/\*.*?\*/)*", re.DOTALL)
 _TEXT_TYPE_MARKERS = ("CHAR", "CLOB", "TEXT", "VARCHAR")
-_TEXT_HINT_NAME_MARKERS = ("account", "id", "name", "project", "region", "service", "sku")
+_TEXT_HINT_NAME_MARKERS = ("category", "code", "description", "group", "id", "identifier", "key", "kind", "label", "name", "segment", "status", "type")
 _TARGET_MASTER_SQL = """
 SELECT name, type, sql
 FROM sqlite_master
@@ -146,23 +146,31 @@ def _sample_rows(
     if safe_limit == 0:
         return []
 
-    cursor = connection.execute(f"SELECT * FROM {quote_identifier(target_name)} LIMIT ?", [safe_limit])
+    cursor = connection.execute(
+        f"SELECT * FROM {quote_identifier(target_name)} LIMIT ?",
+        [safe_limit],
+    )
     description = cursor.description or []
     column_names, _ = _normalized_column_names([cast(Any, column[0]) for column in description])
-    return [{column_name: _jsonable_value(value) for column_name, value in _zip_exact(column_names, row)} for row in cursor.fetchall()]
+    preview_rows = []
+    for row in cursor.fetchall():
+        preview_rows.append({column_name: _jsonable_value(value) for column_name, value in _zip_exact(column_names, row)})
+    return preview_rows
 
 
 def _fetch_catalog_metadata(connection: sqlite3.Connection) -> tuple[dict[str, dict[str, Any]], dict[str, list[str]]]:
     """Load shared tabular catalog metadata for list and suggest helpers."""
+    content_query = f"SELECT content_id, table_name, row_count FROM {SQLITE_CONTENTS_TABLE}"
     content_rows = {
         cast(str, row[1]): {
             "content_id": cast(str, row[0]),
             "row_count": cast(int, row[2]),
         }
-        for row in connection.execute(f"SELECT content_id, table_name, row_count FROM {SQLITE_CONTENTS_TABLE}").fetchall()
+        for row in connection.execute(content_query).fetchall()
     }
     source_rows: dict[str, list[str]] = {}
-    for row in connection.execute(f"SELECT content_id, source_path FROM {SQLITE_SOURCES_TABLE} ORDER BY source_path").fetchall():
+    source_query = f"SELECT content_id, source_path FROM {SQLITE_SOURCES_TABLE} ORDER BY source_path"
+    for row in connection.execute(source_query).fetchall():
         content_id = cast(str, row[0])
         source_rows.setdefault(content_id, []).append(cast(str, row[1]))
     return content_rows, source_rows
@@ -241,7 +249,14 @@ def _text_value_hints(
     if safe_max_columns == 0 or safe_max_values == 0:
         return hints
 
-    candidate_columns = [cast(str, column["name"]) for column in columns if _looks_like_text_column(cast(str, column["name"]), cast(str, column["type"]))][:safe_max_columns]
+    candidate_columns = [
+        cast(str, column["name"])
+        for column in columns
+        if _looks_like_text_column(
+            cast(str, column["name"]),
+            cast(str, column["type"]),
+        )
+    ][:safe_max_columns]
 
     for column_name in candidate_columns:
         rows = connection.execute(
@@ -498,7 +513,9 @@ def run_sql(
             raw_rows = cursor.fetchmany(safe_max_rows + 1)
             truncated = len(raw_rows) > safe_max_rows
             result_rows = raw_rows[:safe_max_rows]
-            rows = [{column_name: _jsonable_value(value) for column_name, value in _zip_exact(column_names, row)} for row in result_rows]
+            rows = []
+            for row in result_rows:
+                rows.append({column_name: _jsonable_value(value) for column_name, value in _zip_exact(column_names, row)})
 
             payload = {
                 "database_path": str(resolved_path),
@@ -762,7 +779,8 @@ def suggest_targets(
                     content_rows=content_rows,
                     source_rows=source_rows,
                 )
-                column_names = [cast(str, row[1]) for row in connection.execute(f"PRAGMA table_info({quote_identifier(name)})").fetchall()]
+                pragma_rows = connection.execute(f"PRAGMA table_info({quote_identifier(name)})").fetchall()
+                column_names = [cast(str, row[1]) for row in pragma_rows]
                 search_text = _target_search_text(
                     name=name,
                     target_type=target_type,
@@ -850,12 +868,18 @@ def suggest_sql_error_repair(
         if not candidate_columns:
             return []
 
-        candidates = [{"name": column_name, "targets": sorted(columns_by_name[column_name])} for column_name in candidate_columns]
+        candidates = [
+            {
+                "name": column_name,
+                "targets": sorted(columns_by_name[column_name]),
+            }
+            for column_name in candidate_columns
+        ]
         return _repair_result(
             kind="missing_column",
             identifier=missing_column,
             candidates=candidates,
-            message=f"Column `{missing_column}` was not found. Closest inspected columns: {_format_repair_candidates(candidates, include_targets=True)}.",
+            message=(f"Column `{missing_column}` was not found. Closest inspected columns: {_format_repair_candidates(candidates, include_targets=True)}."),
         )
 
     if lowered_error.startswith(_MISSING_TABLE_ERROR_PREFIX):
@@ -873,7 +897,7 @@ def suggest_sql_error_repair(
             kind="missing_target",
             identifier=missing_target,
             candidates=candidates,
-            message=f"Target `{missing_target}` was not found. Closest inspected targets: {_format_repair_candidates(candidates, include_targets=False)}.",
+            message=(f"Target `{missing_target}` was not found. Closest inspected targets: {_format_repair_candidates(candidates, include_targets=False)}."),
         )
 
     if lowered_error.startswith(_AMBIGUOUS_COLUMN_ERROR_PREFIX):
