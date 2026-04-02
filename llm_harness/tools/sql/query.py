@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, time as datetime_time
 from decimal import Decimal
+from difflib import SequenceMatcher
 from itertools import zip_longest
 import json
 from pathlib import Path
@@ -15,6 +16,7 @@ from ..tabular.storage import SQLITE_CONTENTS_TABLE, SQLITE_SOURCES_TABLE, quote
 
 MAX_QUERY_ROWS = 200
 MAX_DESCRIBE_SAMPLE_ROWS = 5
+MAX_REPAIR_CANDIDATES = 3
 MAX_TEXT_VALUE_HINTS = 5
 MAX_SUGGESTED_TARGETS = 5
 _MISSING = object()
@@ -22,6 +24,9 @@ _READ_ONLY_SQL_PREFIXES = ("SELECT", "WITH", "EXPLAIN")
 _LEADING_SQL_COMMENT = re.compile(r"\A(?:\s+|--[^\n]*(?:\n|\Z)|/\*.*?\*/)*", re.DOTALL)
 _TEXT_TYPE_MARKERS = ("CHAR", "CLOB", "TEXT", "VARCHAR")
 _TEXT_HINT_NAME_MARKERS = ("account", "id", "name", "project", "region", "service", "sku")
+_AMBIGUOUS_COLUMN_ERROR_PREFIX = "ambiguous column name:"
+_MISSING_COLUMN_ERROR_PREFIX = "no such column:"
+_MISSING_TABLE_ERROR_PREFIX = "no such table:"
 _SUGGESTION_STOP_WORDS = {
     "a",
     "an",
@@ -95,14 +100,20 @@ def _error_result(
 def _normalized_column_names(column_names: list[str | None]) -> tuple[list[str], list[str]]:
     """Return stable, unique column names for row dictionaries."""
     counts: dict[str, int] = {}
+    seen: set[str] = set()
     normalized: list[str] = []
     originals: list[str] = []
     for index, raw_name in enumerate(column_names, start=1):
         base_name = raw_name or f"column_{index}"
         originals.append(base_name)
-        occurrence = counts.get(base_name, 0) + 1
+        occurrence = counts.get(base_name, 0)
+        candidate_name = base_name
+        while candidate_name in seen:
+            occurrence += 1
+            candidate_name = f"{base_name}__{occurrence + 1}"
         counts[base_name] = occurrence
-        normalized.append(base_name if occurrence == 1 else f"{base_name}__{occurrence}")
+        seen.add(candidate_name)
+        normalized.append(candidate_name)
     return normalized, originals
 
 
@@ -149,6 +160,22 @@ def _sample_rows(
     description = cursor.description or []
     column_names, _ = _normalized_column_names([cast(Any, column[0]) for column in description])
     return [{column_name: _jsonable_value(value) for column_name, value in _zip_exact(column_names, row)} for row in cursor.fetchall()]
+
+
+def _fetch_catalog_metadata(connection: sqlite3.Connection) -> tuple[dict[str, dict[str, Any]], dict[str, list[str]]]:
+    """Load shared tabular catalog metadata for list and suggest helpers."""
+    content_rows = {
+        cast(str, row[1]): {
+            "content_id": cast(str, row[0]),
+            "row_count": cast(int, row[2]),
+        }
+        for row in connection.execute(f"SELECT content_id, table_name, row_count FROM {SQLITE_CONTENTS_TABLE}").fetchall()
+    }
+    source_rows: dict[str, list[str]] = {}
+    for row in connection.execute(f"SELECT content_id, source_path FROM {SQLITE_SOURCES_TABLE} ORDER BY source_path").fetchall():
+        content_id = cast(str, row[0])
+        source_rows.setdefault(content_id, []).append(cast(str, row[1]))
+    return content_rows, source_rows
 
 
 def _looks_like_text_column(column_name: str, declared_type: str) -> bool:
@@ -202,6 +229,78 @@ def _tokenize_query(text: str) -> list[str]:
     """Tokenize a natural-language query for lightweight target suggestion."""
     tokens = [token for token in re.findall(r"[a-z0-9_]+", text.lower()) if len(token) >= 2]
     return [token for token in tokens if token not in _SUGGESTION_STOP_WORDS]
+
+
+def _identifier_tokens(value: str) -> set[str]:
+    """Split one identifier into comparable lowercase tokens."""
+    return set(re.findall(r"[a-z0-9]+", value.lower()))
+
+
+def _identifier_similarity(reference: str, candidate: str) -> float:
+    """Score one candidate identifier against a missing identifier."""
+    normalized_reference = re.sub(r"[^a-z0-9]+", "", reference.lower())
+    normalized_candidate = re.sub(r"[^a-z0-9]+", "", candidate.lower())
+    if not normalized_reference or not normalized_candidate:
+        return 0.0
+    if normalized_reference == normalized_candidate:
+        return 100.0
+
+    score = 0.0
+    if normalized_reference in normalized_candidate or normalized_candidate in normalized_reference:
+        score += 40.0
+
+    reference_tokens = _identifier_tokens(reference)
+    candidate_tokens = _identifier_tokens(candidate)
+    if reference_tokens and candidate_tokens:
+        shared_tokens = reference_tokens & candidate_tokens
+        score += 20.0 * len(shared_tokens)
+        if shared_tokens == reference_tokens == candidate_tokens:
+            score += 20.0
+
+    score += SequenceMatcher(a=normalized_reference, b=normalized_candidate).ratio() * 20.0
+    return score
+
+
+def _rank_identifier_candidates(identifier: str, candidates: list[str], *, max_matches: int) -> list[str]:
+    """Return the best schema identifier matches for a missing target or column."""
+    if not identifier or max_matches <= 0:
+        return []
+
+    scored_candidates = sorted(
+        (
+            (_identifier_similarity(identifier, candidate), candidate)
+            for candidate in dict.fromkeys(candidates)
+        ),
+        key=lambda item: (-item[0], item[1]),
+    )
+    return [candidate for score, candidate in scored_candidates if score > 0][:max_matches]
+
+
+def _error_identifier(error_message: str, prefix: str) -> str:
+    """Extract the identifier payload from a SQLite error message."""
+    identifier = error_message[len(prefix) :].strip()
+    if not identifier:
+        return ""
+    unqualified = identifier.rsplit(".", 1)[-1]
+    return unqualified.strip('"`[]')
+
+
+def _format_repair_candidates(
+    candidates: list[dict[str, Any]],
+    *,
+    include_targets: bool,
+) -> str:
+    """Format repair candidates into one compact human-readable string."""
+    parts = []
+    for candidate in candidates:
+        name = cast(str, candidate["name"])
+        if include_targets:
+            targets = cast(list[str], candidate.get("targets", []))
+            target_suffix = f" on {', '.join(targets)}" if targets else ""
+            parts.append(f"{name}{target_suffix}")
+        else:
+            parts.append(name)
+    return ", ".join(parts)
 
 
 def _target_search_text(
@@ -319,6 +418,7 @@ def run_sql(
                 message="SQL query must not be empty.",
                 max_rows=safe_max_rows,
             )
+        # This is a quick UX guard. The read-only SQLite connection is the actual safety boundary.
         if not _is_read_only_sql(sql):
             return _error_result(
                 database_path=requested_path,
@@ -411,16 +511,7 @@ def list_targets(
         content_rows: dict[str, dict[str, Any]] = {}
         source_rows: dict[str, list[str]] = {}
         if has_catalog:
-            content_rows = {
-                cast(str, row[1]): {
-                    "content_id": cast(str, row[0]),
-                    "row_count": cast(int, row[2]),
-                }
-                for row in connection.execute(f"SELECT content_id, table_name, row_count FROM {SQLITE_CONTENTS_TABLE}").fetchall()
-            }
-            for row in connection.execute(f"SELECT content_id, source_path FROM {SQLITE_SOURCES_TABLE} ORDER BY source_path").fetchall():
-                content_id = cast(str, row[0])
-                source_rows.setdefault(content_id, []).append(cast(str, row[1]))
+            content_rows, source_rows = _fetch_catalog_metadata(connection)
 
         items = []
         for row in targets:
@@ -637,16 +728,7 @@ def suggest_targets(
         content_rows: dict[str, dict[str, Any]] = {}
         source_rows: dict[str, list[str]] = {}
         if has_catalog:
-            content_rows = {
-                cast(str, row[1]): {
-                    "content_id": cast(str, row[0]),
-                    "row_count": cast(int, row[2]),
-                }
-                for row in connection.execute(f"SELECT content_id, table_name, row_count FROM {SQLITE_CONTENTS_TABLE}").fetchall()
-            }
-            for row in connection.execute(f"SELECT content_id, source_path FROM {SQLITE_SOURCES_TABLE} ORDER BY source_path").fetchall():
-                content_id = cast(str, row[0])
-                source_rows.setdefault(content_id, []).append(cast(str, row[1]))
+            content_rows, source_rows = _fetch_catalog_metadata(connection)
 
         suggestions = []
         master_rows = connection.execute(
@@ -686,9 +768,9 @@ def suggest_targets(
                 source_paths=source_paths,
                 search_text=search_text,
             )
-            score += _kind_bias(kind)
             if score <= 0:
                 continue
+            score += _kind_bias(kind)
 
             suggestions.append(
                 {
@@ -734,14 +816,108 @@ def suggest_targets(
             connection.close()
 
 
+def suggest_sql_error_repair(
+    error_message: str,
+    *,
+    available_targets: list[str],
+    target_columns: dict[str, list[str]],
+    max_matches: int = MAX_REPAIR_CANDIDATES,
+) -> list[dict[str, Any]]:
+    """Return deterministic schema-aware repair hints for common SQLite errors."""
+    safe_max_matches = max(1, max_matches)
+    lowered_error = error_message.strip().lower()
+
+    if lowered_error.startswith(_MISSING_COLUMN_ERROR_PREFIX):
+        missing_column = _error_identifier(error_message, _MISSING_COLUMN_ERROR_PREFIX)
+        columns_by_name: dict[str, list[str]] = {}
+        for target_name, columns in target_columns.items():
+            for column_name in columns:
+                columns_by_name.setdefault(column_name, []).append(target_name)
+
+        candidate_columns = _rank_identifier_candidates(
+            missing_column,
+            list(columns_by_name),
+            max_matches=safe_max_matches,
+        )
+        if not candidate_columns:
+            return []
+
+        candidates = [
+            {
+                "name": column_name,
+                "targets": sorted(columns_by_name[column_name]),
+            }
+            for column_name in candidate_columns
+        ]
+        return [
+            {
+                "kind": "missing_column",
+                "identifier": missing_column,
+                "candidates": candidates,
+                "message": (
+                    f"Column `{missing_column}` was not found. "
+                    f"Closest inspected columns: {_format_repair_candidates(candidates, include_targets=True)}."
+                ),
+            }
+        ]
+
+    if lowered_error.startswith(_MISSING_TABLE_ERROR_PREFIX):
+        missing_target = _error_identifier(error_message, _MISSING_TABLE_ERROR_PREFIX)
+        candidate_targets = _rank_identifier_candidates(
+            missing_target,
+            available_targets,
+            max_matches=safe_max_matches,
+        )
+        if not candidate_targets:
+            return []
+
+        candidates = [{"name": target_name} for target_name in candidate_targets]
+        return [
+            {
+                "kind": "missing_target",
+                "identifier": missing_target,
+                "candidates": candidates,
+                "message": (
+                    f"Target `{missing_target}` was not found. "
+                    f"Closest inspected targets: {_format_repair_candidates(candidates, include_targets=False)}."
+                ),
+            }
+        ]
+
+    if lowered_error.startswith(_AMBIGUOUS_COLUMN_ERROR_PREFIX):
+        ambiguous_column = _error_identifier(error_message, _AMBIGUOUS_COLUMN_ERROR_PREFIX)
+        matching_targets = sorted(
+            target_name for target_name, columns in target_columns.items() if ambiguous_column in columns
+        )
+        if not matching_targets:
+            return []
+
+        candidates = [{"name": ambiguous_column, "targets": matching_targets}]
+        return [
+            {
+                "kind": "ambiguous_column",
+                "identifier": ambiguous_column,
+                "candidates": candidates,
+                "message": (
+                    f"Column `{ambiguous_column}` is ambiguous. "
+                    f"Qualify it with one of: {', '.join(matching_targets)}."
+                ),
+            }
+        ]
+
+    return []
+
+
 __all__ = [
     "MAX_DESCRIBE_SAMPLE_ROWS",
     "MAX_QUERY_ROWS",
+    "MAX_REPAIR_CANDIDATES",
     "MAX_SUGGESTED_TARGETS",
     "classify_target",
     "describe_target",
     "list_targets",
     "resolve_db_path",
     "run_sql",
+    "suggest_sql_error_repair",
     "suggest_targets",
 ]

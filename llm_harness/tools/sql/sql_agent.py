@@ -16,7 +16,7 @@ from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel, Field
 
 from ...clients.openrouter import ChatOpenRouter
-from .query import describe_target, run_sql, suggest_targets
+from .query import describe_target, run_sql, suggest_sql_error_repair, suggest_targets
 
 DEFAULT_SQL_AGENT_MODEL_ENV = "FAST_LLM"
 DEFAULT_SQL_AGENT_MODEL = "openai/gpt-5.4-nano"
@@ -88,6 +88,7 @@ class SQLAgentOutput(BaseModel):
     status: str = "pending"
     selected_targets: list[str] = Field(default_factory=list)
     candidate_sql: str | None = None
+    repair_hints: list[dict[str, Any]] = Field(default_factory=list)
     result: dict[str, Any] | None = None
     attempts: int = 0
     rationale: str | None = None
@@ -119,6 +120,7 @@ Rules:
 - If the question is vague or under-specified, set ready=false and ask for a more concrete metric or grouping.
 - If the inspected context is not enough, set ready=false instead of guessing.
 - If there was a previous SQL error, fix the query directly and avoid repeating the same mistake.
+- If repair_hints are present, prefer those exact replacement identifiers or target names.
 - Keep the SQL general-purpose and minimal.
 """
 
@@ -180,6 +182,7 @@ def _planner_messages(state: SQLAgentState) -> list[SystemMessage | HumanMessage
         "inspected_targets": inspected_targets,
         "previous_sql": state.candidate_sql,
         "previous_error": state.last_error,
+        "repair_hints": state.repair_hints,
         "repair_count": state.repair_count,
     }
     return [
@@ -324,12 +327,35 @@ def execute_node(state: SQLAgentState) -> dict[str, Any]:
             "trace": _trace(state, f"execute succeeded on attempt {attempts}"),
         }
 
+    repair_target_names = [
+        cast(str, suggestion["name"])
+        for suggestion in state.suggestions
+        if suggestion.get("name")
+    ]
+    repair_columns = {
+        cast(str, target["name"]): [cast(str, column["name"]) for column in target.get("columns", []) if column.get("name")]
+        for target in state.inspected_targets
+        if target.get("name")
+    }
+    repair_hints = suggest_sql_error_repair(
+        cast(str, result["message"]),
+        available_targets=repair_target_names,
+        target_columns=repair_columns,
+    )
     return {
         "status": "needs_repair",
         "attempts": attempts,
+        "repair_hints": repair_hints,
         "result": result,
         "last_error": result["message"],
-        "trace": _trace(state, f"execute failed on attempt {attempts}: {result['message']}"),
+        "trace": _trace(
+            state,
+            (
+                f"execute failed on attempt {attempts}: {result['message']}"
+                if not repair_hints
+                else f"execute failed on attempt {attempts}: {result['message']} ({len(repair_hints)} repair hints)"
+            ),
+        ),
     }
 
 
