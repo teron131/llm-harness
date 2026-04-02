@@ -11,7 +11,7 @@ from pathlib import Path
 import shutil
 import subprocess
 
-from langchain_core.tools import tool
+from langchain.tools import tool
 
 from .apply_patch import apply_patch_chunks_to_text, parse_single_file_patch_with_stats
 from .hashline import HashlineEdit, edit_hashline, format_hashline_text

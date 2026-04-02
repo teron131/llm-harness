@@ -7,7 +7,7 @@ import base64
 from pathlib import Path
 from typing import Any
 
-from langchain_core.messages import HumanMessage
+from langchain.messages import HumanMessage
 
 # Supported file types: extension -> (category, mime_type)
 SUPPORTED_EXTENSIONS: dict[str, tuple[str, str]] = {

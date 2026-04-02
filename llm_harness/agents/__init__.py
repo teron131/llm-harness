@@ -1,13 +1,13 @@
 """Agent package exports and tool registry."""
 
-from langchain_core.tools import BaseTool, tool
+from langchain.tools import BaseTool, tool
 
 from ..tools.web import webloader, webloader_tool
 from .youtube import youtube_loader
 
 
 @tool(parse_docstring=True)
-def youtubeloader_tool(url: str) -> str:
+def youtube_loader_tool(url: str) -> str:
     """Load YouTube transcript and metadata from a video URL.
 
     Args:
@@ -18,7 +18,7 @@ def youtubeloader_tool(url: str) -> str:
 
 def get_tools() -> list[BaseTool]:
     """Return the default tool set used by harness agents."""
-    return [webloader_tool, youtubeloader_tool]
+    return [webloader_tool, youtube_loader_tool]
 
 
 __all__ = [
@@ -26,5 +26,5 @@ __all__ = [
     "webloader",
     "webloader_tool",
     "youtube_loader",
-    "youtubeloader_tool",
+    "youtube_loader_tool",
 ]

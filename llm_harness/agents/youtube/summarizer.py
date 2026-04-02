@@ -6,9 +6,9 @@ from dotenv import load_dotenv
 from langchain.agents import create_agent
 from langchain.agents.middleware import wrap_tool_call
 from langchain.agents.structured_output import ToolStrategy
+from langchain.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain.tools import tool
 from langchain.tools.tool_node import ToolCallRequest
-from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 
 from ...clients.openrouter import ChatOpenRouter
 from ...tools.fs.fast_copy import (
@@ -27,8 +27,8 @@ DEFAULT_MODEL = "google/gemini-3-flash-preview"
 FAST_MODEL = "google/gemini-2.5-flash-lite-preview-09-2025"
 
 
-@tool(parse_docstring=True)
-def scrape_youtube(youtube_url: str) -> str:
+@tool("scrape_youtube", parse_docstring=True)
+def scrape_youtube_tool(youtube_url: str) -> str:
     """Scrape a YouTube video and return the transcript.
 
     Args:
@@ -95,7 +95,7 @@ def create_summarizer_agent(
 
     agent = create_agent(
         model=llm,
-        tools=[scrape_youtube],
+        tools=[scrape_youtube_tool],
         system_prompt=system_prompt,
         middleware=[garbage_filter_middleware],  # Add the garbage filter middleware
         response_format=ToolStrategy(Summary),  # Use ToolStrategy for better error handling

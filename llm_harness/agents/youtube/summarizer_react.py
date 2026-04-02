@@ -2,7 +2,7 @@
 
 from collections.abc import Generator
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel
 

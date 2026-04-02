@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from langchain_core.tools import tool
+from langchain.tools import tool
 
 from ..tabular.storage import DEFAULT_ROOT_DIR
 from .query import MAX_QUERY_ROWS, MAX_SUGGESTED_TARGETS, describe_target, list_targets, run_sql, suggest_targets

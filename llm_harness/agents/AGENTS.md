@@ -15,7 +15,7 @@
 - `llm_harness/agents/agents.py -> WebSearchAgent/WebLoaderAgent/WebSearchLoaderAgent`
 - `llm_harness/agents/agents.py -> ImageAnalysisAgent`
 - `llm_harness/agents/agents.py -> YouTubeSummarizer*`
-- `llm_harness/agents/__init__.py -> get_tools/youtubeloader_tool`
+- `llm_harness/agents/__init__.py -> get_tools/youtube_loader_tool`
 
 ## Repository snapshot
 
@@ -46,7 +46,7 @@
 - `agents.py -> Web*Agent.invoke -> self.agent.invoke -> _process_response`
 - `agents.py -> ImageAnalysisAgent.invoke -> MediaMessage`
 - `agents.py -> YouTubeSummarizerReAct.invoke -> youtube.summarizer_react.summarize_video_react`
-- `agents/__init__.py -> youtubeloader_tool -> youtube_loader`
+- `agents/__init__.py -> youtube_loader_tool -> youtube_loader`
 
 ## General approach (not rigid checklist)
 

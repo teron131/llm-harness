@@ -6,7 +6,7 @@ import re
 
 from docling.document_converter import DocumentConverter
 from dotenv import load_dotenv
-from langchain_core.tools import tool
+from langchain.tools import tool
 
 load_dotenv()
 

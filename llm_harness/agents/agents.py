@@ -8,8 +8,8 @@ from dotenv import load_dotenv
 from exa_py import Exa
 from langchain.agents import create_agent
 from langchain.agents.structured_output import ToolStrategy
-from langchain_core.messages import HumanMessage
-from langchain_core.tools import BaseTool
+from langchain.messages import HumanMessage
+from langchain.tools import BaseTool
 from pydantic import BaseModel
 
 from ..clients.multimodal import MediaMessage

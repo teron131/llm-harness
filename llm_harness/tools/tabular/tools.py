@@ -6,7 +6,7 @@ from pathlib import Path
 import statistics
 from typing import Any
 
-from langchain_core.tools import tool
+from langchain.tools import tool
 
 from .ingestion import (
     MAX_FULL_EXTRACT_BYTES,

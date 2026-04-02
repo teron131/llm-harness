@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Generator
 
-from langchain_core.messages import AIMessage
+from langchain.messages import AIMessage
 from pydantic import BaseModel, ConfigDict
 
 
