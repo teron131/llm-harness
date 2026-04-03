@@ -21,5 +21,3 @@ uv sync
 uv run ruff check .
 uv run ruff format .
 ```
-
-The TypeScript port now lives in the sibling repo `../llm-harness-js`.
