@@ -24,7 +24,7 @@ from .ingestion import (
     tabular_summary_from_counts,
 )
 from .segmentation import compute_region_boxes, header_candidates, profile_region_boxes, segment_tabular_blocks
-from .storage import DEFAULT_ROOT_DIR, fast_fingerprint_from_samples, load_tables_into_sqlite
+from .storage import DEFAULT_ROOT_DIR, fingerprint, fingerprint_from_samples, load_tables_into_sqlite
 
 
 def _inspect_tabular_file(
@@ -100,7 +100,7 @@ def _profile_tabular_file(
     """Profile a tabular file with read-only structural hints."""
     if path.suffix.lower() == ".csv" and path.stat().st_size > MAX_FULL_PROFILE_BYTES:
         summary = stream_csv_profile(path, max_sample_rows=max_sample_rows)
-        fast_fingerprint = fast_fingerprint_from_samples(
+        profile_fingerprint = fingerprint_from_samples(
             row_count=summary["row_count"],
             column_count=summary["column_count"],
             top_rows=summary["top_rows"],
@@ -111,7 +111,7 @@ def _profile_tabular_file(
         return {
             "path": str(path),
             **{key: value for key, value in summary.items() if key not in {"top_rows", "bottom_rows"}},
-            "fast_fingerprint": fast_fingerprint,
+            "fingerprint": profile_fingerprint,
         }
 
     rows, format_info = load_rows(path, sheet=sheet)
@@ -122,7 +122,7 @@ def _profile_tabular_file(
     return {
         "path": str(path),
         **tabular_summary(rows, format_info),
-        "fast_fingerprint": fast_fingerprint(
+        "fingerprint": fingerprint(
             rows,
             max_sample_rows=max_sample_rows,
             header_candidates=detected_header_candidates,
@@ -182,7 +182,7 @@ def _extract_tabular_file(
     loaded = load_tables_into_sqlite(
         recovered,
         root_dir=root_dir,
-        fast_fingerprint=profile["fast_fingerprint"],
+        fingerprint=profile["fingerprint"],
     )
 
     return {
@@ -192,7 +192,7 @@ def _extract_tabular_file(
         "status": "loaded",
         "target_backend": "sqlite",
         "database_path": loaded["database_path"],
-        "fast_fingerprint": profile["fast_fingerprint"],
+        "fingerprint": profile["fingerprint"],
         "recovered_table_count": len(recovered["tables"]),
         "recovered_metadata_block_count": len(recovered["metadata"]),
         "tables": loaded["tables"],

@@ -692,11 +692,11 @@ def describe_target(
                             "source_format": cast(str, row[1]),
                             "source_sheet_name": cast(str, row[2]),
                             "source_table_name": cast(str, row[3]),
-                            "fast_fingerprint": cast(str, row[4]),
+                            "fingerprint": cast(str, row[4]),
                         }
                         for row in connection.execute(
                             f"""
-                            SELECT source_path, source_format, source_sheet_name, source_table_name, fast_fingerprint
+                            SELECT source_path, source_format, source_sheet_name, source_table_name, fingerprint
                             FROM {SQLITE_SOURCES_TABLE}
                             WHERE content_id = ?
                             ORDER BY source_path, source_table_name

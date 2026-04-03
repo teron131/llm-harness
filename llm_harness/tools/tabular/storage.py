@@ -37,7 +37,7 @@ SQLITE_SOURCES_COLUMNS = (
     "source_format",
     "source_sheet_name",
     "source_table_name",
-    "fast_fingerprint",
+    "fingerprint",
     "content_id",
 )
 SQLITE_SOURCES_UNIQUE_COLUMNS = (
@@ -67,7 +67,7 @@ def _update_hash_rows(
         hasher.update(b"\x1e")
 
 
-def fast_fingerprint_from_samples(
+def fingerprint_from_samples(
     *,
     row_count: int,
     column_count: int,
@@ -93,7 +93,7 @@ def fast_fingerprint_from_samples(
     return hasher.hexdigest()
 
 
-def fast_fingerprint(
+def fingerprint(
     rows: list[list[str]],
     *,
     max_sample_rows: int,
@@ -101,7 +101,7 @@ def fast_fingerprint(
 ) -> str:
     """Build a cheap deterministic fingerprint for routing and cache hints."""
     row_count, column_count = _tabular_dimensions(rows)
-    return fast_fingerprint_from_samples(
+    return fingerprint_from_samples(
         row_count=row_count,
         column_count=column_count,
         top_rows=rows[:max_sample_rows],
@@ -179,7 +179,7 @@ def _create_sqlite_sources_table(connection: sqlite3.Connection) -> None:
             source_format TEXT NOT NULL,
             source_sheet_name TEXT NOT NULL,
             source_table_name TEXT NOT NULL,
-            fast_fingerprint TEXT NOT NULL,
+            fingerprint TEXT NOT NULL,
             content_id TEXT NOT NULL,
             UNIQUE(source_path, source_sheet_name, source_table_name)
         )
@@ -402,14 +402,14 @@ def _register_sqlite_source(
     source_format: str,
     source_sheet_name: str,
     source_table_name: str,
-    fast_fingerprint: str,
+    fingerprint: str,
     content_id: str,
 ) -> None:
     """Record how a source artifact maps to extracted content."""
     connection.execute(
         f"""
         INSERT OR REPLACE INTO {SQLITE_SOURCES_TABLE}
-        (source_path, source_format, source_sheet_name, source_table_name, fast_fingerprint, content_id)
+        (source_path, source_format, source_sheet_name, source_table_name, fingerprint, content_id)
         VALUES (?, ?, ?, ?, ?, ?)
         """,
         [
@@ -417,7 +417,7 @@ def _register_sqlite_source(
             source_format,
             source_sheet_name,
             source_table_name,
-            fast_fingerprint,
+            fingerprint,
             content_id,
         ],
     )
@@ -427,7 +427,7 @@ def load_tables_into_sqlite(
     recovered: dict[str, Any],
     *,
     root_dir: str | Path | None = None,
-    fast_fingerprint: str,
+    fingerprint: str,
 ) -> dict[str, Any]:
     """Load recovered tables into a shared SQLite database."""
     database_path = sqlite_database_path(root_dir=root_dir)
@@ -462,7 +462,7 @@ def load_tables_into_sqlite(
                     source_format=source_format,
                     source_sheet_name=source_sheet_name,
                     source_table_name=table["name"],
-                    fast_fingerprint=fast_fingerprint,
+                    fingerprint=fingerprint,
                     content_id=content_id,
                 )
 
