@@ -13,7 +13,7 @@ import re
 import sqlite3
 from typing import Any, cast
 
-from ..tabular.storage import SQLITE_CONTENTS_TABLE, SQLITE_SOURCES_TABLE, quote_identifier, sqlite_database_path
+from ..tabular.storage import SQLITE_CONTENTS_TABLE, SQLITE_SOURCES_TABLE, quote_identifier, sqlite_database_path, sqlite_write_lock
 
 MAX_QUERY_ROWS = 200
 MAX_DESCRIBE_SAMPLE_ROWS = 5
@@ -22,6 +22,7 @@ MAX_TEXT_VALUE_HINTS = 5
 MAX_SUGGESTED_TARGETS = 5
 _MISSING = object()
 _READ_ONLY_SQL_PREFIXES = ("SELECT", "WITH", "EXPLAIN")
+_VIEW_SQL_PREFIXES = ("SELECT", "WITH")
 _LEADING_SQL_COMMENT = re.compile(r"\A(?:\s+|--[^\n]*(?:\n|\Z)|/\*.*?\*/)*", re.DOTALL)
 _TEXT_TYPE_MARKERS = ("CHAR", "CLOB", "TEXT", "VARCHAR")
 _TEXT_HINT_NAME_MARKERS = ("category", "code", "description", "group", "id", "identifier", "key", "kind", "label", "name", "segment", "status", "type")
@@ -41,6 +42,7 @@ _AMBIGUOUS_COLUMN_ERROR_PREFIX = "ambiguous column name:"
 _MISSING_COLUMN_ERROR_PREFIX = "no such column:"
 _MISSING_TABLE_ERROR_PREFIX = "no such table:"
 _SUGGESTION_STOP_WORDS = {"a", "an", "and", "by", "for", "from", "how", "in", "is", "me", "of", "on", "show", "the", "to", "what", "which", "with"}
+_VIEW_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 def _jsonable_value(value: object) -> object:
@@ -118,6 +120,21 @@ def _leading_sql_keyword(sql: str) -> str:
 def _is_read_only_sql(sql: str) -> bool:
     """Return whether a SQL statement looks read-only."""
     return _leading_sql_keyword(sql) in _READ_ONLY_SQL_PREFIXES
+
+
+def _is_view_sql(sql: str) -> bool:
+    """Return whether a SQL statement can be embedded in CREATE VIEW AS."""
+    return _leading_sql_keyword(sql) in _VIEW_SQL_PREFIXES
+
+
+def _normalized_sql(sql: str) -> str:
+    """Normalize one SQL statement for validation and embedding."""
+    return sql.strip().rstrip(";").strip()
+
+
+def _is_valid_view_name(view_name: str) -> bool:
+    """Return whether a SQLite view name is safe to create."""
+    return bool(_VIEW_NAME_PATTERN.fullmatch(view_name))
 
 
 def _sqlite_object_names(connection: sqlite3.Connection) -> set[str]:
@@ -474,8 +491,9 @@ def run_sql(
     """Run SQL against a SQLite database and return a bounded result."""
     requested_path = _requested_database_path(root_dir=root_dir, database_path=database_path)
     safe_max_rows = max(1, max_rows)
+    normalized_sql = _normalized_sql(sql)
     try:
-        if not sql.strip():
+        if not normalized_sql:
             return _error_result(
                 database_path=requested_path,
                 error_type="empty_sql",
@@ -483,7 +501,7 @@ def run_sql(
                 max_rows=safe_max_rows,
             )
         # This is a quick UX guard. The read-only SQLite connection is the actual safety boundary.
-        if not _is_read_only_sql(sql):
+        if not _is_read_only_sql(normalized_sql):
             return _error_result(
                 database_path=requested_path,
                 error_type="disallowed_sql",
@@ -542,6 +560,128 @@ def run_sql(
             error_type="sql_execution_error",
             message=str(exc),
             max_rows=safe_max_rows,
+        )
+
+
+def save_sql(
+    sql: str,
+    view_name: str,
+    *,
+    root_dir: str | Path | None = None,
+    database_path: str | Path | None = None,
+    replace: bool = False,
+) -> dict[str, Any]:
+    """Save one read-only SQL query as a named SQLite view."""
+    requested_path = _requested_database_path(root_dir=root_dir, database_path=database_path)
+    normalized_sql = _normalized_sql(sql)
+    normalized_view_name = view_name.strip()
+    try:
+        if not normalized_sql:
+            return _error_result(
+                database_path=requested_path,
+                error_type="empty_sql",
+                message="SQL query must not be empty.",
+                view_name=normalized_view_name,
+                replace=replace,
+            )
+        if not normalized_view_name:
+            return _error_result(
+                database_path=requested_path,
+                error_type="empty_view_name",
+                message="View name must not be empty.",
+                replace=replace,
+            )
+        if not _is_valid_view_name(normalized_view_name):
+            return _error_result(
+                database_path=requested_path,
+                error_type="invalid_view_name",
+                message="View name must start with a letter or underscore and contain only letters, digits, and underscores.",
+                view_name=normalized_view_name,
+                replace=replace,
+            )
+        if normalized_view_name.startswith("sqlite_"):
+            return _error_result(
+                database_path=requested_path,
+                error_type="reserved_view_name",
+                message="View name must not start with 'sqlite_'.",
+                view_name=normalized_view_name,
+                replace=replace,
+            )
+        if not _is_view_sql(normalized_sql):
+            return _error_result(
+                database_path=requested_path,
+                error_type="disallowed_sql",
+                message="Only read-only SELECT and WITH queries can be saved as views.",
+                view_name=normalized_view_name,
+                replace=replace,
+            )
+
+        resolved_path = resolve_db_path(
+            root_dir=root_dir,
+            database_path=database_path,
+        )
+        with sqlite_write_lock(resolved_path), closing(sqlite3.connect(str(resolved_path))) as connection:
+            existing_row = connection.execute(
+                """
+                SELECT type
+                FROM sqlite_master
+                WHERE name = ?
+                """,
+                [normalized_view_name],
+            ).fetchone()
+            if existing_row is not None:
+                existing_type = cast(str, existing_row[0])
+                if existing_type != "view":
+                    return _error_result(
+                        database_path=resolved_path,
+                        error_type="name_conflict",
+                        message=f"SQLite object already exists and is not a view: {normalized_view_name}",
+                        view_name=normalized_view_name,
+                        replace=replace,
+                    )
+                if not replace:
+                    return _error_result(
+                        database_path=resolved_path,
+                        error_type="view_exists",
+                        message=f"SQLite view already exists: {normalized_view_name}",
+                        view_name=normalized_view_name,
+                        replace=replace,
+                    )
+                connection.execute(f"DROP VIEW IF EXISTS {quote_identifier(normalized_view_name)}")
+
+            connection.execute(
+                f"CREATE VIEW {quote_identifier(normalized_view_name)} AS {normalized_sql}"
+            )
+            connection.commit()
+
+        description = describe_target(
+            normalized_view_name,
+            root_dir=root_dir,
+            database_path=resolved_path,
+        )
+        return {
+            "database_path": str(resolved_path),
+            "status": "ok",
+            "view_name": normalized_view_name,
+            "replace": replace,
+            "saved_sql": normalized_sql,
+            "target": description,
+        }
+    except ValueError as exc:
+        return _error_result(
+            database_path=requested_path,
+            error_type="missing_database",
+            message=str(exc),
+            view_name=normalized_view_name,
+            replace=replace,
+        )
+    except (sqlite3.Error, sqlite3.Warning) as exc:
+        return _error_result(
+            database_path=requested_path,
+            error_type="sql_execution_error",
+            message=str(exc),
+            view_name=normalized_view_name,
+            replace=replace,
         )
 
 

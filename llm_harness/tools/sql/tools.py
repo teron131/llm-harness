@@ -8,7 +8,7 @@ from typing import Any
 from langchain.tools import tool
 
 from ..tabular.storage import DEFAULT_ROOT_DIR
-from .query import MAX_QUERY_ROWS, MAX_SUGGESTED_TARGETS, describe_target, list_targets, run_sql, suggest_targets
+from .query import MAX_QUERY_ROWS, MAX_SUGGESTED_TARGETS, describe_target, list_targets, run_sql, save_sql, suggest_targets
 
 
 def make_sql_tools(*, root_dir: str | Path | None = None):
@@ -98,9 +98,33 @@ def make_sql_tools(*, root_dir: str | Path | None = None):
             max_rows=max_rows,
         )
 
+    @tool(parse_docstring=True)
+    def sql_save(
+        sql: str,
+        view_name: str,
+        database_path: str | None = None,
+        replace: bool = False,
+    ) -> dict[str, Any]:
+        """Save a read-only SQL query as a named SQLite view.
+
+        Args:
+            sql: Read-only SQL statement to save as a view definition.
+            view_name: Name for the SQLite view to create.
+            database_path: Optional path to a specific SQLite file. Defaults to the shared SQLite cache.
+            replace: Whether to replace an existing view with the same name.
+        """
+        return save_sql(
+            sql,
+            view_name,
+            root_dir=resolved_root_dir,
+            database_path=database_path,
+            replace=replace,
+        )
+
     return [
         sql_list,
         sql_describe,
         sql_suggest,
         sql_query,
+        sql_save,
     ]

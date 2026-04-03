@@ -129,7 +129,7 @@ def sqlite_database_path(*, root_dir: str | Path | None = None) -> Path:
 
 
 @contextmanager
-def _sqlite_write_lock(database_path: Path):
+def sqlite_write_lock(database_path: Path):
     """Serialize SQLite writers with a lightweight lock file."""
     lock_path = database_path.with_suffix(f"{database_path.suffix}.lock")
     start_time = time.monotonic()
@@ -170,11 +170,11 @@ def _db_column_names(columns: list[str]) -> list[str]:
     return normalized
 
 
-def _create_sqlite_sources_table(connection: sqlite3.Connection) -> None:
+def _create_sqlite_sources_table(connection: sqlite3.Connection, *, table_name: str = SQLITE_SOURCES_TABLE) -> None:
     """Create the source-linkage table for extracted content."""
     connection.execute(
         f"""
-        CREATE TABLE IF NOT EXISTS {SQLITE_SOURCES_TABLE} (
+        CREATE TABLE IF NOT EXISTS {quote_identifier(table_name)} (
             source_path TEXT NOT NULL,
             source_format TEXT NOT NULL,
             source_sheet_name TEXT NOT NULL,
@@ -436,7 +436,7 @@ def load_tables_into_sqlite(
     source_format = recovered["format"]
     source_sheet_name = recovered.get("sheet_name") or ""
 
-    with _sqlite_write_lock(database_path):
+    with sqlite_write_lock(database_path):
         connection = sqlite3.connect(str(database_path))
         try:
             _ensure_sqlite_catalog(connection)
