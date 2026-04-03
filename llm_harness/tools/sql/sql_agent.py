@@ -16,7 +16,7 @@ from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel, Field
 
 from ...clients.openrouter import ChatOpenRouter
-from .query import describe_target, run_sql, suggest_sql_error_repair, suggest_targets
+from .query import describe_target, run_query, suggest_sql_error_repair, suggest_targets
 
 DEFAULT_SQL_AGENT_MODEL_ENV = "FAST_LLM"
 DEFAULT_SQL_AGENT_MODEL = "openai/gpt-5.4-nano"
@@ -287,7 +287,7 @@ def execute_node(state: SQLAgentState) -> dict[str, Any]:
             "trace": _append_trace(state, "execute skipped because no SQL was planned"),
         }
 
-    result = run_sql(
+    result = run_query(
         state.candidate_sql,
         database_path=state.database_path,
     )

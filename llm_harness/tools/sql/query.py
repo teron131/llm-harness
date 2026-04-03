@@ -481,7 +481,7 @@ def classify_target(name: str) -> str:
     return "view_or_table"
 
 
-def run_sql(
+def run_query(
     sql: str,
     *,
     root_dir: str | Path | None = None,
@@ -563,7 +563,7 @@ def run_sql(
         )
 
 
-def save_sql(
+def save_view(
     sql: str,
     view_name: str,
     *,
