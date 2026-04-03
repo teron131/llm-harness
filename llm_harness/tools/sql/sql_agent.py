@@ -297,6 +297,7 @@ def execute_node(state: SQLAgentState) -> dict[str, Any]:
             "status": "complete",
             "attempts": attempts,
             "result": result,
+            "last_error": None,
             "trace": _append_trace(state, f"execute succeeded on attempt {attempts}"),
         }
 
