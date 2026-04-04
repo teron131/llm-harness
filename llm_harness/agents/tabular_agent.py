@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import re
+import sqlite3
 from typing import Any, Literal
 
 from langchain.messages import HumanMessage, SystemMessage
@@ -189,6 +190,11 @@ def make_sql_node(*, llm: Any):
                 "trace": _append_trace(state, "sql skipped because database_path was missing"),
             }
 
+        stale_view_name = _suggest_view_name(state.task)
+        with sqlite3.connect(state.database_path) as connection:
+            connection.execute(f'DROP VIEW IF EXISTS "{stale_view_name}"')
+            connection.commit()
+
         sql_output = answer_sql_question(
             state.task,
             llm=llm,
@@ -197,6 +203,8 @@ def make_sql_node(*, llm: Any):
         trace_message = f"sql agent finished with status={sql_output.status}"
         if sql_output.selected_targets:
             trace_message += f" on {', '.join(sql_output.selected_targets)}"
+        else:
+            trace_message += f" after clearing stale view {stale_view_name}"
         return {
             "status": sql_output.status,
             "sql_agent_output": sql_output.model_dump(mode="json"),
