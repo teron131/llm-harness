@@ -97,9 +97,7 @@ class SQLAgentState(SQLAgentInput, SQLAgentOutput):
 
 PlannerFn = Callable[[SQLAgentState], SQLPlan]
 
-SQL_PLANNER_SYSTEM_PROMPT = """You are a careful SQLite analyst.
-
-Turn the user question into one read-only SQLite query.
+SQL_PLANNER_SYSTEM_PROMPT = """Turn the user question into one read-only SQLite query.
 
 Rules:
 - Use only SELECT, WITH, or EXPLAIN.

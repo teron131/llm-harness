@@ -43,7 +43,7 @@ def get_gemini_summary_prompt(
         metadata,
         language_instruction,
         "",
-        "SOURCE: You are given the full video. Use BOTH spoken content and visuals (on-screen text/slides/charts/code/UI). Do not invent details that are not clearly supported by what you can see/hear.",
+        "SOURCE: Given the full video. Use BOTH spoken content and visuals (on-screen text/slides/charts/code/UI). Do not invent details that are not clearly supported by what you can see/hear.",
         "",
         "Return JSON only (no extra text) with:",
         "- overview: string",
