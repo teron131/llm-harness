@@ -9,7 +9,7 @@ from langchain.agents.structured_output import ToolStrategy
 from langchain.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain.tools.tool_node import ToolCallRequest
 
-from ...clients.openrouter import ChatOpenRouter
+from ...clients.openai import ChatOpenAI
 from ...tools.fs.fast_copy import (
     filter_content,
     tag_content,
@@ -41,7 +41,7 @@ def garbage_filter_middleware(
             # Apply the tagging/filtering mechanism
             tagged_transcript = tag_content(transcript)
 
-            llm = ChatOpenRouter(
+            llm = ChatOpenAI(
                 model=FAST_MODEL,
                 temperature=0,
             ).with_structured_output(GarbageIdentification)
@@ -69,7 +69,7 @@ def create_summarizer_agent(
     target_language: str | None = None,
 ):
     """Create a ReAct agent for summarizing video transcripts with structured output."""
-    llm = ChatOpenRouter(
+    llm = ChatOpenAI(
         model=DEFAULT_MODEL,
         temperature=0,
         reasoning_effort="medium",

@@ -12,7 +12,7 @@
 
 - `llm_harness/agents/agents.py -> ExaAgent`
 - `llm_harness/agents/agents.py -> BaseHarnessAgent`
-- `llm_harness/agents/agents.py -> WebSearchAgent/WebLoaderAgent/WebSearchLoaderAgent`
+- `llm_harness/agents/agents.py -> WebLoaderAgent/ImageAnalysisAgent/YouTubeSummarizer*`
 - `llm_harness/agents/agents.py -> ImageAnalysisAgent`
 - `llm_harness/agents/agents.py -> YouTubeSummarizer*`
 - `llm_harness/agents/__init__.py -> get_tools/youtubeloader_tool`
@@ -30,7 +30,7 @@
 ## Key takeaways per location
 
 - `BaseHarnessAgent` is the core constructor path: chooses model, sets optional tool list, and handles structured vs plain response extraction.
-- Web agents differ mainly by enabled capabilities (`web_search`, `webloader_tool`) while sharing invocation shape.
+- Web and media agents share the same invocation shape while differing in the attached tool or modality.
 - YouTube summarizer agents delegate to `agents/youtube/*` implementations rather than embedding pipeline logic in `agents.py`.
 - `agents/__init__.py` provides a lightweight tool registry and wrappers for LangChain tool usage.
 
@@ -42,7 +42,7 @@
 
 ## Syntax Relationships
 
-- `agents.py -> BaseHarnessAgent.__init__ -> ChatOpenRouter`
+- `agents.py -> BaseHarnessAgent.__init__ -> ChatOpenAI`
 - `agents.py -> Web*Agent.invoke -> self.agent.invoke -> _process_response`
 - `agents.py -> ImageAnalysisAgent.invoke -> MediaMessage`
 - `agents.py -> YouTubeSummarizerReAct.invoke -> youtube.summarizer_react.summarize_video_react`

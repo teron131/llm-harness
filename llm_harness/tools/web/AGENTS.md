@@ -41,7 +41,7 @@
 
 - `webloader.py -> webloader -> DocumentConverter.convert(...).document.export_to_markdown()`
 - `webloader.py -> ThreadPoolExecutor -> executor.map(_convert, urls)`
-- `agents/agents.py -> WebLoaderAgent/WebSearchLoaderAgent -> webloader_tool`
+- `agents/agents.py -> WebLoaderAgent -> webloader_tool`
 
 ## General approach (not rigid checklist)
 

@@ -15,7 +15,7 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel, Field
 
-from ...clients.openrouter import ChatOpenRouter
+from ...clients.openai import ChatOpenAI
 from .query import describe_target, run_query, suggest_sql_error_repair, suggest_targets
 
 DEFAULT_SQL_AGENT_MODEL_ENV = "FAST_LLM"
@@ -177,7 +177,7 @@ def make_llm_planner(
         resolved_model = model or os.getenv(DEFAULT_SQL_AGENT_MODEL_ENV) or DEFAULT_SQL_AGENT_MODEL
         if not resolved_model:
             raise ValueError(f"No SQL agent model configured. Pass `llm=...`, `model=...`, or set `{DEFAULT_SQL_AGENT_MODEL_ENV}`.")
-        llm = ChatOpenRouter(
+        llm = ChatOpenAI(
             model=resolved_model,
             temperature=temperature,
             reasoning_effort=reasoning_effort,

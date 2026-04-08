@@ -28,7 +28,7 @@
 ## Key takeaways per location
 
 - `llm_harness/agents -> module`: Orchestrates LLM workflows and exposes preconfigured agent entrypoints.
-- `llm_harness/clients -> module`: Holds model client adapters (`openrouter`, `gemini`), multimodal message construction, response parsing, and usage accumulation.
+- `llm_harness/clients -> module`: Holds model client adapters (`openai`, `gemini`), multimodal message construction, response parsing, and usage accumulation.
 - `llm_harness/tools -> module`: Tool-callable boundaries for web loading, filesystem operations, and YouTube transcript fetching.
 - `llm_harness/utils -> module`: Pure helper layer for text conversion, image encode/display, and YouTube URL/text normalization.
 
@@ -41,7 +41,7 @@
 
 ## Syntax Relationships
 
-- `llm_harness/agents/agents.py -> BaseHarnessAgent -> ChatOpenRouter`
+- `llm_harness/agents/agents.py -> BaseHarnessAgent -> ChatOpenAI`
 - `llm_harness/agents/youtube/summarizer.py -> get_transcript/filter_content/tag_content/untag_content`
 - `llm_harness/agents/youtube/summarizer_gemini.py -> track_usage`
 - `llm_harness/tools/__init__.py -> re-exports fs/web/youtube tools`

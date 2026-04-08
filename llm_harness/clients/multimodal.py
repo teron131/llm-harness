@@ -1,6 +1,6 @@
 """Multimodal input utilities for OpenAI Chat Completions API.
 
-Creates content blocks compatible with OpenAI's Chat Completions API format (used by OpenRouter).
+Creates content blocks compatible with OpenAI-compatible chat endpoints.
 """
 
 import base64

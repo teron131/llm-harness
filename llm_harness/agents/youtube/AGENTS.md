@@ -46,7 +46,7 @@
 ## Syntax Relationships
 
 - `summarizer_react.py -> garbage_filter_node -> tag_content/filter_content/untag_content`
-- `summarizer_react.py -> summary_node/quality_node -> ChatOpenRouter(...).with_structured_output(...)`
+- `summarizer_react.py -> summary_node/quality_node -> ChatOpenAI(...).with_structured_output(...)`
 - `summarizer_react.py -> should_continue -> END or "summary"`
 - `summarizer.py -> garbage_filter_middleware -> scrape_youtube_tool result mutation`
 - `summarizer_gemini.py -> analyze_video_url -> get_gemini_summary_prompt + track_usage`

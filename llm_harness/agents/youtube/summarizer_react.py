@@ -6,7 +6,7 @@ from langchain.messages import HumanMessage, SystemMessage
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel
 
-from ...clients.openrouter import ChatOpenRouter
+from ...clients.openai import ChatOpenAI
 from ...tools.fs.fast_copy import filter_content, tag_content, untag_content
 from ...tools.youtube.scraper import get_transcript
 from ...utils.youtube_utils import is_youtube_url
@@ -64,7 +64,7 @@ def garbage_filter_node(state: SummarizerState) -> dict:
     # Tag the transcript for identification
     tagged_transcript = tag_content(state.transcript)
 
-    llm = ChatOpenRouter(
+    llm = ChatOpenAI(
         model=FAST_MODEL,
         temperature=0,
         reasoning_effort="low",
@@ -91,7 +91,7 @@ def garbage_filter_node(state: SummarizerState) -> dict:
 
 def summary_node(state: SummarizerState) -> dict:
     """Generate summary from transcript."""
-    llm = ChatOpenRouter(
+    llm = ChatOpenAI(
         model=SUMMARY_MODEL,
         temperature=0,
         reasoning_effort="medium",
@@ -116,7 +116,7 @@ def summary_node(state: SummarizerState) -> dict:
 
 def quality_node(state: SummarizerState) -> dict:
     """Assess quality of summary."""
-    llm = ChatOpenRouter(
+    llm = ChatOpenAI(
         model=QUALITY_MODEL,
         temperature=0,
         reasoning_effort="low",

@@ -13,7 +13,7 @@ from langchain.tools import BaseTool
 from pydantic import BaseModel
 
 from ..clients.multimodal import MediaMessage
-from ..clients.openrouter import ChatOpenRouter
+from ..clients.openai import ChatOpenAI
 from ..tools.web import webloader_tool
 from .youtube.schemas import Summary
 from .youtube.summarizer import summarize_video
@@ -60,7 +60,7 @@ class BaseHarnessAgent:
             raise ValueError("No model configured. Pass `model=...` or set `FAST_LLM`.")
         self.system_prompt = system_prompt
         self.response_format = response_format
-        self.model = ChatOpenRouter(
+        self.model = ChatOpenAI(
             model=model,
             temperature=temperature,
             reasoning_effort=reasoning_effort,
@@ -77,39 +77,6 @@ class BaseHarnessAgent:
         if self.response_format:
             return response.get("structured_response")
         return response.get("messages")[-1].content
-
-
-class WebSearchAgent(BaseHarnessAgent):
-    """Agent that uses web search capabilities to find and process information."""
-
-    def __init__(
-        self,
-        model: str | None = None,
-        temperature: float = 0,
-        reasoning_effort: ReasoningEffort = "medium",
-        system_prompt: str | None = None,
-        response_format: type[BaseModel] | None = None,
-        web_search_engine: Literal["native", "exa"] | None = None,
-        web_search_max_results: int = 5,
-        **model_kwargs: Any,
-    ):
-        """Initialize web search agent."""
-        super().__init__(
-            model=model,
-            temperature=temperature,
-            reasoning_effort=reasoning_effort,
-            system_prompt=system_prompt,
-            response_format=response_format,
-            web_search=True,
-            web_search_engine=web_search_engine,
-            web_search_max_results=web_search_max_results,
-            **model_kwargs,
-        )
-
-    def invoke(self, user_input: str) -> BaseModel | str:
-        """Execute web search and process results."""
-        response = self.agent.invoke({"messages": [HumanMessage(content=user_input)]})
-        return self._process_response(response)
 
 
 class WebLoaderAgent(BaseHarnessAgent):
@@ -138,39 +105,6 @@ class WebLoaderAgent(BaseHarnessAgent):
 
     def invoke(self, user_input: str) -> BaseModel | str:
         """Load and process web content based on user input."""
-        response = self.agent.invoke({"messages": [HumanMessage(content=user_input)]})
-        return self._process_response(response)
-
-
-class WebSearchLoaderAgent(BaseHarnessAgent):
-    """Agent with both web search and web loader tool enabled."""
-
-    def __init__(
-        self,
-        model: str | None = None,
-        temperature: float = 0,
-        reasoning_effort: ReasoningEffort = "medium",
-        system_prompt: str | None = None,
-        response_format: type[BaseModel] | None = None,
-        web_search_engine: Literal["native", "exa"] | None = None,
-        web_search_max_results: int = 5,
-        **model_kwargs: Any,
-    ):
-        super().__init__(
-            model=model,
-            temperature=temperature,
-            reasoning_effort=reasoning_effort,
-            system_prompt=system_prompt,
-            response_format=response_format,
-            tools=[webloader_tool],
-            web_search=True,
-            web_search_engine=web_search_engine,
-            web_search_max_results=web_search_max_results,
-            **model_kwargs,
-        )
-
-    def invoke(self, user_input: str) -> BaseModel | str:
-        """Run with both web-search and web-loader capabilities."""
         response = self.agent.invoke({"messages": [HumanMessage(content=user_input)]})
         return self._process_response(response)
 

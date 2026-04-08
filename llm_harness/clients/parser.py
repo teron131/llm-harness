@@ -33,7 +33,7 @@ def get_metadata(ai_message: AIMessage) -> tuple[int, int, float]:
     """Return (input_tokens, output_tokens, cost) from an AIMessage.
 
     - Prefer `AIMessage.usage_metadata` (LangChain standard; works for Gemini).
-    - Fall back to `response_metadata["token_usage"]` (OpenAI/OpenRouter; includes cost here).
+    - Fall back to `response_metadata["token_usage"]` (OpenAI-compatible providers; includes cost here).
     - Fall back to legacy Gemini shapes under `response_metadata["usage_metadata"]`.
 
     Cost may be unavailable for some providers; returns 0.0.

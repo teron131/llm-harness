@@ -10,7 +10,7 @@
 
 ## High-signal locations
 
-- `llm_harness/clients/openrouter.py -> ChatOpenRouter/OpenRouterEmbeddings`
+- `llm_harness/clients/openai.py -> ChatOpenAI/OpenAIEmbeddings`
 - `llm_harness/clients/gemini.py -> ChatGemini/GeminiEmbeddings/create_gemini_cache`
 - `llm_harness/clients/multimodal.py -> MediaMessage`
 - `llm_harness/clients/parser.py -> StructuredOutput/parse_*`
@@ -29,7 +29,7 @@
 
 ## Key takeaways per location
 
-- `openrouter.py` is OpenAI-compatible transport setup with plugin routing (web, pdf parser).
+- `openai.py` is the OpenAI-compatible transport setup driven by API key and base URL.
 - `gemini.py` provides Gemini-native setup and cache upload flow with file processing polling.
 - `multimodal.py` normalizes paths/bytes to OpenAI Chat Completions content blocks.
 - `parser.py` unifies metadata extraction across provider-specific response shapes and stream/non-stream parsing.
@@ -37,14 +37,14 @@
 
 ## Project-specific conventions and rationale
 
-- Keep provider-specific initialization isolated by file (`openrouter.py`, `gemini.py`).
+- Keep provider-specific initialization isolated by file (`openai.py`, `gemini.py`).
 - Preserve schema-first parsing (`StructuredOutput`) and avoid ad-hoc response dict access in call sites.
 - Usage totals are context-local; workflows should reset usage at run start.
 - `MediaMessage` is the canonical path for multimodal content into chat models.
 
 ## Syntax Relationships
 
-- `agents/agents.py -> BaseHarnessAgent -> ChatOpenRouter`
+- `agents/agents.py -> BaseHarnessAgent -> ChatOpenAI`
 - `agents/youtube/summarizer_gemini.py -> track_usage`
 - `clients/__init__.py -> re-export parser/usage/provider APIs`
 - `clients/multimodal.py -> MediaMessage(HumanMessage) -> content block builders`

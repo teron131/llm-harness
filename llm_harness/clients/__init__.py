@@ -5,15 +5,13 @@ from ..agents.agents import (
     ExaAgent,
     ImageAnalysisAgent,
     WebLoaderAgent,
-    WebSearchAgent,
-    WebSearchLoaderAgent,
     YouTubeSummarizer,
     YouTubeSummarizerGemini,
     YouTubeSummarizerReAct,
 )
 from .gemini import ChatGemini, GeminiEmbeddings, create_gemini_cache
 from .multimodal import MediaMessage
-from .openrouter import ChatOpenRouter, OpenRouterEmbeddings
+from .openai import ChatOpenAI, OpenAIEmbeddings
 from .parser import (
     StructuredOutput,
     get_metadata,
@@ -36,17 +34,15 @@ __all__ = [
     "EMPTY_USAGE",
     "BaseHarnessAgent",
     "ChatGemini",
-    "ChatOpenRouter",
+    "ChatOpenAI",
     "ExaAgent",
     "GeminiEmbeddings",
     "ImageAnalysisAgent",
     "MediaMessage",
-    "OpenRouterEmbeddings",
+    "OpenAIEmbeddings",
     "StructuredOutput",
     "UsageMetadata",
     "WebLoaderAgent",
-    "WebSearchAgent",
-    "WebSearchLoaderAgent",
     "YouTubeSummarizer",
     "YouTubeSummarizerGemini",
     "YouTubeSummarizerReAct",
