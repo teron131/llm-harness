@@ -649,9 +649,7 @@ def save_view(
                     )
                 connection.execute(f"DROP VIEW IF EXISTS {quote_identifier(normalized_view_name)}")
 
-            connection.execute(
-                f"CREATE VIEW {quote_identifier(normalized_view_name)} AS {normalized_sql}"
-            )
+            connection.execute(f"CREATE VIEW {quote_identifier(normalized_view_name)} AS {normalized_sql}")
             connection.commit()
 
         description = describe_target(
