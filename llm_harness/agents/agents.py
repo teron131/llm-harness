@@ -122,6 +122,44 @@ class ImageAnalysisAgent(BaseHarnessAgent):
         return self._process_response(response)
 
 
+class FixerAgent:
+    """Generic bounded fixer for editing a single UTF-8 text file in place."""
+
+    def __init__(
+        self,
+        model: str | None = None,
+        system_prompt: str | None = None,
+        max_iterations: int = 6,
+        restore_best_on_failure: bool = True,
+    ):
+        self.model = model
+        self.system_prompt = system_prompt
+        self.max_iterations = max_iterations
+        self.restore_best_on_failure = restore_best_on_failure
+
+    def invoke(
+        self,
+        path: str | Path,
+        *,
+        root_dir: str | Path | None = None,
+        fixer_context: str = "",
+        max_iterations: int | None = None,
+        restore_best_on_failure: bool | None = None,
+    ) -> dict[str, object]:
+        """Run the fixer workflow against a file path."""
+        from .fixer import fix_file
+
+        return fix_file(
+            path=path,
+            root_dir=root_dir,
+            fixer_model=self.model,
+            fixer_context=fixer_context,
+            fixer_system_prompt=self.system_prompt,
+            max_iterations=max_iterations or self.max_iterations,
+            restore_best_on_failure=(self.restore_best_on_failure if restore_best_on_failure is None else restore_best_on_failure),
+        )
+
+
 class YouTubeSummarizerReAct:
     """ReAct-based YouTube summarizer using the LangGraph workflow."""
 

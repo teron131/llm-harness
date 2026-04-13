@@ -3,6 +3,7 @@
 from ..agents.agents import (
     BaseHarnessAgent,
     ExaAgent,
+    FixerAgent,
     ImageAnalysisAgent,
     WebLoaderAgent,
     YouTubeSummarizer,
@@ -36,6 +37,7 @@ __all__ = [
     "ChatGemini",
     "ChatOpenAI",
     "ExaAgent",
+    "FixerAgent",
     "GeminiEmbeddings",
     "ImageAnalysisAgent",
     "MediaMessage",
