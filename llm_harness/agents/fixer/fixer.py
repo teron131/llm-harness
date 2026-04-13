@@ -5,10 +5,12 @@ from __future__ import annotations
 import logging
 import os
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
+from ...tools.fs.fs_tools import SandboxFS
 from .graph import create_fixer_graph
 from .prompts import DEFAULT_FIXER_SYSTEM_PROMPT
-from .state import FixerInput
+from .state import DEFAULT_FIXER_MAX_ITERATIONS, FixerInput
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +50,7 @@ def fix_file(
     fixer_model: str | None = None,
     fixer_context: str | None = None,
     fixer_system_prompt: str | None = None,
-    max_iterations: int = 6,
+    max_iterations: int = DEFAULT_FIXER_MAX_ITERATIONS,
     restore_best_on_failure: bool = True,
 ) -> dict[str, object]:
     """Run the fixer graph on a target UTF-8 text file."""
@@ -82,3 +84,30 @@ def fix_file(
     if result.get("fixer_last_text"):
         logger.warning("[FIXER] Last message: %s", result.get("fixer_last_text"))
     return result
+
+
+def fix_text(
+    *,
+    text: str,
+    fixer_model: str | None = None,
+    fixer_context: str | None = None,
+    fixer_system_prompt: str | None = None,
+    max_iterations: int = DEFAULT_FIXER_MAX_ITERATIONS,
+    restore_best_on_failure: bool = True,
+    sandbox_file_name: str = "input.txt",
+) -> str:
+    """Run the fixer graph on in-memory text via a temporary sandbox file."""
+    with TemporaryDirectory(prefix="llm-harness-fixer-") as temp_dir:
+        fs = SandboxFS(root_dir=Path(temp_dir))
+        sandbox_path = f"/{sandbox_file_name.lstrip('/')}"
+        fs.write_text(sandbox_path, text)
+        fix_file(
+            path=fs.resolve(sandbox_path),
+            root_dir=temp_dir,
+            fixer_model=fixer_model,
+            fixer_context=fixer_context,
+            fixer_system_prompt=fixer_system_prompt,
+            max_iterations=max_iterations,
+            restore_best_on_failure=restore_best_on_failure,
+        )
+        return fs.read_text(sandbox_path)

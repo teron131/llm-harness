@@ -15,6 +15,9 @@ from pydantic import BaseModel
 from ..clients.multimodal import MediaMessage
 from ..clients.openai import ChatOpenAI
 from ..tools.web import webloader_tool
+from .fixer import fix_file as run_fix_file, fix_text as run_fix_text
+from .fixer.prompts import DEFAULT_FIXER_TASK_PROMPT
+from .fixer.state import DEFAULT_FIXER_MAX_ITERATIONS
 from .youtube.schemas import Summary
 from .youtube.summarizer import summarize_video
 from .youtube.summarizer_gemini import summarize_video as summarize_video_gemini
@@ -123,40 +126,73 @@ class ImageAnalysisAgent(BaseHarnessAgent):
 
 
 class FixerAgent:
-    """Generic bounded fixer for editing a single UTF-8 text file in place."""
+    """High-level fixer for either raw text or a file on disk."""
 
     def __init__(
         self,
         model: str | None = None,
         system_prompt: str | None = None,
-        max_iterations: int = 6,
+        default_prompt: str = DEFAULT_FIXER_TASK_PROMPT,
+        max_iterations: int = DEFAULT_FIXER_MAX_ITERATIONS,
         restore_best_on_failure: bool = True,
     ):
         self.model = model
         self.system_prompt = system_prompt
+        self.default_prompt = default_prompt
         self.max_iterations = max_iterations
         self.restore_best_on_failure = restore_best_on_failure
 
+    def _resolve_context(self, context: str) -> str:
+        """Return the caller context or the default fixer task prompt."""
+        return context or self.default_prompt
+
     def invoke(
+        self,
+        target: str | Path,
+        *,
+        context: str = "",
+    ) -> str:
+        """Fix either an existing file path or raw text content."""
+        if isinstance(target, Path):
+            return self.fix_file(target, context=context)
+
+        target_path = Path(target).expanduser()
+        if target_path.exists() and target_path.is_file():
+            return self.fix_file(target_path, context=context)
+        return self.fix_text(target, context=context)
+
+    def fix_file(
         self,
         path: str | Path,
         *,
-        root_dir: str | Path | None = None,
-        fixer_context: str = "",
-        max_iterations: int | None = None,
-        restore_best_on_failure: bool | None = None,
-    ) -> dict[str, object]:
-        """Run the fixer workflow against a file path."""
-        from .fixer import fix_file
-
-        return fix_file(
+        context: str = "",
+    ) -> str:
+        """Fix a file in place and return its final text."""
+        resolved_path = Path(path).expanduser().resolve()
+        run_fix_file(
             path=path,
-            root_dir=root_dir,
             fixer_model=self.model,
-            fixer_context=fixer_context,
+            fixer_context=self._resolve_context(context),
             fixer_system_prompt=self.system_prompt,
-            max_iterations=max_iterations or self.max_iterations,
-            restore_best_on_failure=(self.restore_best_on_failure if restore_best_on_failure is None else restore_best_on_failure),
+            max_iterations=self.max_iterations,
+            restore_best_on_failure=self.restore_best_on_failure,
+        )
+        return resolved_path.read_text(encoding="utf-8")
+
+    def fix_text(
+        self,
+        text: str,
+        *,
+        context: str = "",
+    ) -> str:
+        """Fix raw UTF-8 text content inside a temporary sandbox."""
+        return run_fix_text(
+            text=text,
+            fixer_model=self.model,
+            fixer_context=self._resolve_context(context),
+            fixer_system_prompt=self.system_prompt,
+            max_iterations=self.max_iterations,
+            restore_best_on_failure=self.restore_best_on_failure,
         )
 
 

@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 type FixerReviewKind = Literal["", "no_change", "empty_edit", "patched"]
+DEFAULT_FIXER_MAX_ITERATIONS = 3
 
 
 class FixerInput(BaseModel):
@@ -17,7 +18,7 @@ class FixerInput(BaseModel):
     fixer_model: str = Field(description="Model used by the fixer workflow")
     fixer_context: str = Field(default="", description="Additional domain context for the fixer")
     fixer_system_prompt: str = Field(description="System prompt that defines the target behavior")
-    max_iterations: int = Field(default=6, description="Maximum number of direct-fix passes")
+    max_iterations: int = Field(default=DEFAULT_FIXER_MAX_ITERATIONS, description="Maximum number of direct-fix passes")
     restore_best_on_failure: bool = Field(
         default=True,
         description="Restore the best reviewed snapshot when the fixer runs out of turns",

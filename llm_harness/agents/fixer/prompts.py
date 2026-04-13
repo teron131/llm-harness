@@ -1,5 +1,7 @@
 """Prompt builders for the generic file fixer workflow."""
 
+DEFAULT_FIXER_TASK_PROMPT = "Fix grammar, spelling, and obvious typos while preserving meaning and structure."
+
 DEFAULT_FIXER_SYSTEM_PROMPT = """Edit the file directly to satisfy the task.
 
 Hard constraints:
