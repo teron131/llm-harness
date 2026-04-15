@@ -126,6 +126,7 @@ def _coverage_reward_or_penalty(source_slug: str, candidate_model_id: str, candi
     name_set = set(split_tokens(candidate_model_name))
 
     def compare_sets(candidate_set: set[str]) -> int:
+        """Compare predicted and expected result sets."""
         if not source_set:
             return 0
         missing_count = len([token for token in source_set if token not in candidate_set])

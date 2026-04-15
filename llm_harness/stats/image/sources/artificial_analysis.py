@@ -63,7 +63,7 @@ def _parse_release_date_to_utc(release_date: str | None) -> float | None:
 
 
 def _is_older_than_days(release_date: str | None, min_age_days: int) -> bool:
-    """Return whether older than days is true."""
+    """Return whether a release date is older than the requested day window."""
     release_ts = _parse_release_date_to_utc(release_date)
     if release_ts is None:
         return False

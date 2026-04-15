@@ -84,6 +84,7 @@ class MediaMessage(HumanMessage):
         mime_type: str = "image/jpeg",
     ):
         # Support both 'paths' and 'media' for backward compatibility
+        """Initialize the multimodal chat message payload."""
         media_input = paths if paths is not None else media
         if media_input is None:
             raise ValueError("Either 'paths' or 'media' must be provided")

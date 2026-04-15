@@ -24,6 +24,7 @@ def webloader(urls: str | list[str]) -> list[str | None]:
     converter = DocumentConverter()
 
     def _convert(url: str) -> str | None:
+        """Convert raw loader output into the requested response type."""
         try:
             markdown = converter.convert(url).document.export_to_markdown()
             return _clean_markdown(markdown) if markdown else None

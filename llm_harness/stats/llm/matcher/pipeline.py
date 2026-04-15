@@ -15,7 +15,7 @@ def unique_model_count(models_dev_models: list[dict]) -> int:
 
 
 def _has_exact_slug_fallback_candidate(source_slug: str, fallback_candidates: list[dict]) -> bool:
-    """Return whether exact slug fallback candidate is true."""
+    """Return whether any fallback candidate matches the source slug exactly."""
     normalized_source_slug = normalize_model_token(source_slug)
     if not normalized_source_slug:
         return False

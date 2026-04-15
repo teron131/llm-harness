@@ -12,6 +12,7 @@ __all__ = [
 
 
 def __getattr__(name: str):
+    """Lazily load SQL tools from the package namespace."""
     if name in {"SQLAgent", "answer_sql_question", "create_sql_graph", "make_llm_planner"}:
         from . import sql_agent
 

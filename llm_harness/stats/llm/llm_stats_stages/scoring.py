@@ -140,6 +140,7 @@ def attach_relative_scores(models: list[dict[str, Any]]) -> list[dict[str, Any]]
     )
 
     def min_max_relative(column_name: str) -> pl.Expr:
+        """Score a value relative to the observed min-max range."""
         return (
             pl.when(pl.col(column_name).is_null() | (pl.col(column_name).count() == 0))
             .then(None)
@@ -150,6 +151,7 @@ def attach_relative_scores(models: list[dict[str, Any]]) -> list[dict[str, Any]]
         )
 
     def percentile_relative(column_name: str) -> pl.Expr:
+        """Score a value relative to the observed percentile range."""
         return (
             pl.when(pl.col(column_name).is_null() | (pl.col(column_name).count() == 0))
             .then(None)

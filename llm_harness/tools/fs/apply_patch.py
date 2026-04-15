@@ -117,6 +117,7 @@ class PatchStats:
 
     @property
     def lines_touched(self) -> int:
+        """Return the number of distinct lines touched by a patch."""
         return self.lines_removed + self.lines_inserted
 
 

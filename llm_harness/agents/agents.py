@@ -32,11 +32,13 @@ class ExaAgent:
     """Exa API as web search subagent."""
 
     def __init__(self, system_prompt: str, output_schema: type[BaseModel]):
+        """Initialize the agent with its runtime configuration."""
         self.exa = Exa(api_key=os.getenv("EXA_API_KEY"))
         self.system_prompt = system_prompt
         self.output_schema = output_schema
 
     def invoke(self, query: str) -> BaseModel:
+        """Run the configured agent and return its response."""
         result = self.exa.answer(
             query=query,
             system_prompt=self.system_prompt,
@@ -58,6 +60,7 @@ class BaseHarnessAgent:
         tools: list[BaseTool] | None = None,
         **model_kwargs: Any,
     ):
+        """Initialize the agent with its runtime configuration."""
         model = model or os.getenv("FAST_LLM")
         if not model:
             raise ValueError("No model configured. Pass `model=...` or set `FAST_LLM`.")
@@ -77,6 +80,7 @@ class BaseHarnessAgent:
         )
 
     def _process_response(self, response: dict) -> BaseModel | str:
+        """Extract either structured output or the final text message."""
         if self.response_format:
             return response.get("structured_response")
         return response.get("messages")[-1].content
@@ -200,6 +204,7 @@ class YouTubeSummarizerReAct:
     """ReAct-based YouTube summarizer using the LangGraph workflow."""
 
     def __init__(self, target_language: str | None = None):
+        """Initialize the agent with its runtime configuration."""
         self.target_language = target_language
 
     def invoke(self, transcript_or_url: str) -> Summary:
@@ -214,6 +219,7 @@ class YouTubeSummarizer:
     """Lightweight YouTube summarizer."""
 
     def __init__(self, target_language: str | None = None):
+        """Initialize the agent with its runtime configuration."""
         self.target_language = target_language
 
     def invoke(self, transcript_or_url: str) -> Summary:
@@ -234,6 +240,7 @@ class YouTubeSummarizerGemini:
         target_language: str = "auto",
         api_key: str | None = None,
     ):
+        """Initialize the agent with its runtime configuration."""
         self.model = model
         self.thinking_level = thinking_level
         self.target_language = target_language

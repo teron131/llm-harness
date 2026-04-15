@@ -29,6 +29,7 @@ class SandboxFS:
     root_dir: Path
 
     def resolve(self, user_path: str) -> Path:
+        """Resolve a relative path against the configured root."""
         cleaned_path = user_path.strip()
         if not cleaned_path:
             raise ValueError("Empty path")
@@ -47,20 +48,24 @@ class SandboxFS:
         return resolved_path
 
     def require_file(self, path: str) -> Path:
+        """Return a path only when it points to an existing file."""
         file_path = self.resolve(path)
         if not file_path.is_file():
             raise FileNotFoundError(f"File not found: {path}")
         return file_path
 
     def read_text(self, path: str) -> str:
+        """Read text from a rooted file path."""
         return self.require_file(path).read_text(encoding="utf-8")
 
     def write_text(self, path: str, text: str) -> None:
+        """Write text to a rooted file path."""
         file_path = self.resolve(path)
         file_path.parent.mkdir(parents=True, exist_ok=True)
         file_path.write_text(text, encoding="utf-8")
 
     def apply_patch(self, patch: str) -> str:
+        """Apply a unified patch inside the rooted filesystem."""
         file_patch, patch_stats = parse_single_file_patch_with_stats(patch_text=patch)
         path = f"/{file_patch.path.lstrip('/')}"
         original_text = self.read_text(path)
@@ -74,9 +79,11 @@ class SandboxFS:
         return f"Patched {path}"
 
     def read_hashline(self, path: str) -> str:
+        """Read a hashline reference from a rooted file."""
         return format_hashline_text(self.read_text(path))
 
     def edit_hashline(self, path: str, edits: list[HashlineEdit]) -> str:
+        """Edit one hashline range inside a rooted file."""
         original_text = self.read_text(path)
         updated_text = edit_hashline(original_text, edits)
         self.write_text(path, updated_text)

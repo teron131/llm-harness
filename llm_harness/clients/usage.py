@@ -20,6 +20,7 @@ class UsageMetadata:
     total_cost: float = 0.0
 
     def __add__(self, other: UsageMetadata) -> UsageMetadata:
+        """Combine two usage summaries field by field."""
         return UsageMetadata(
             total_input_tokens=self.total_input_tokens + other.total_input_tokens,
             total_output_tokens=self.total_output_tokens + other.total_output_tokens,
@@ -27,6 +28,7 @@ class UsageMetadata:
         )
 
     def to_dict(self) -> dict[str, int | float]:
+        """Serialize the usage summary to a dict."""
         return {
             "total_input_tokens": self.total_input_tokens,
             "total_output_tokens": self.total_output_tokens,
@@ -35,6 +37,7 @@ class UsageMetadata:
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> UsageMetadata:
+        """Build a usage summary from a dict payload."""
         return cls(
             total_input_tokens=int(data.get("total_input_tokens", 0)),
             total_output_tokens=int(data.get("total_output_tokens", 0)),
@@ -42,6 +45,7 @@ class UsageMetadata:
         )
 
     def format(self) -> str:
+        """Format the usage summary for display."""
         summary = f"Input: {self.total_input_tokens:,}, Output: {self.total_output_tokens:,}"
         if self.total_cost > 0:
             summary = f"{summary}, Cost: ${self.total_cost:.4f}"
@@ -95,6 +99,7 @@ def create_reset_usage_node():
     """Factory for LangGraph node that resets and returns zeroed usage fields."""
 
     def reset_usage_node(state) -> dict[str, int | float]:
+        """Reset the tracked usage counters in graph state."""
         _ = state
         reset_usage()
         return {
@@ -110,6 +115,7 @@ def create_capture_usage_node():
     """Factory for LangGraph node that captures usage from state."""
 
     def capture_usage_node(state: UsageMetadata) -> dict[str, int | float]:
+        """Capture one model call usage record into graph state."""
         return {
             "total_input_tokens": state.total_input_tokens,
             "total_output_tokens": state.total_output_tokens,

@@ -25,7 +25,7 @@ def split_base_model_id(model_id: str) -> str:
 
 
 def _is_b_scale_token(token: str) -> bool:
-    """Return whether b scale token is true."""
+    """Return whether a token is a B-scale marker like `7b`."""
     return bool(re.fullmatch(r"\d+b", token) or re.fullmatch(r"a\d+b", token))
 
 

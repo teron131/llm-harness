@@ -37,13 +37,13 @@ def _normalize_openrouter_pricing(pricing: Any) -> dict[str, Any]:
 
 
 def _has_intelligence_cost(row: dict[str, Any]) -> bool:
-    """Return whether intelligence cost is true."""
+    """Return whether the row includes an intelligence-cost signal."""
     intelligence_index_cost = as_record(row.get("intelligence_index_cost"))
     return as_finite_number(intelligence_index_cost.get("total_cost")) is not None
 
 
 def _has_score_signal(row: dict[str, Any]) -> bool:
-    """Return whether score signal is true."""
+    """Return whether the row includes any usable score signal."""
     scores = as_record(row.get("scores"))
     return any(as_finite_number(scores.get(key)) is not None for key in ("intelligence_score", "agentic_score", "speed_score", "price_score"))
 

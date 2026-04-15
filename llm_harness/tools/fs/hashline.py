@@ -39,6 +39,7 @@ class HashlineEdit(BaseModel):
     @field_validator("end_ref")
     @classmethod
     def validate_end_ref(cls, value: str | None, info: ValidationInfo) -> str | None:
+        """Validate the ending hashline reference for an edit."""
         if info.data.get("operation") == "replace_range" and not value:
             raise ValueError("replace_range requires end_ref")
         return value

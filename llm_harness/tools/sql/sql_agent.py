@@ -184,6 +184,7 @@ def make_llm_planner(
     structured_llm = llm.with_structured_output(SQLPlan)
 
     def planner(state: SQLAgentState) -> SQLPlan:
+        """Plan the next SQL investigation step."""
         return structured_llm.invoke(_build_planner_messages(state))
 
     return planner
@@ -252,6 +253,7 @@ def make_plan_node(planner: PlannerFn) -> Callable[[SQLAgentState], dict[str, An
     """Create the planning node using the supplied planner function."""
 
     def plan_node(state: SQLAgentState) -> dict[str, Any]:
+        """Run the planning node in the SQL agent graph."""
         plan = planner(state)
         selected_targets = plan.selected_targets or [cast(str, target["name"]) for target in state.inspected_targets]
         if not plan.ready or not plan.sql:
@@ -426,6 +428,7 @@ class SQLAgent:
         temperature: float = 0,
         reasoning_effort: Literal["minimal", "low", "medium", "high"] = DEFAULT_SQL_AGENT_REASONING,
     ):
+        """Initialize the SQL agent with the available tool set."""
         self.planner = planner or make_llm_planner(
             llm,
             model=model,

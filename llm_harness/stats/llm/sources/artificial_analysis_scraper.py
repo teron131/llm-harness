@@ -251,7 +251,7 @@ def _flatten_expanded_row(row: dict[str, Any]) -> dict[str, Any]:
 
 
 def _is_null_like(value: Any) -> bool:
-    """Return whether null like is true."""
+    """Return whether a scraped value should be treated as null-like."""
     return value is None or value == "" or value == "$undefined" or (isinstance(value, list) and len(value) == 0)
 
 

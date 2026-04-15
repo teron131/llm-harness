@@ -12,6 +12,8 @@ from .ingestion import count_non_empty, is_blank, preview_rows
 
 
 class RegionBox(TypedDict):
+    """Represent one rectangular region in a segmented table image."""
+
     row_start: int
     row_end: int
     column_start: int

@@ -226,6 +226,7 @@ def _aligned_token_score(left_tokens: list[str], right_tokens: list[str]) -> flo
     memo: dict[tuple[int, int], float] = {}
 
     def solve(left_index: int, right_index: int) -> float:
+        """Solve the image-matching assignment problem."""
         key = (left_index, right_index)
         if key in memo:
             return memo[key]
@@ -263,7 +264,7 @@ def _positional_exact_matches(left_tokens: list[str], right_tokens: list[str]) -
 
 
 def _is_distinctive_token(token: str) -> bool:
-    """Return whether distinctive token is true."""
+    """Return whether a token is distinctive enough to help matching."""
     return (
         len(token) >= 3
         and token not in NOISE_TOKENS
@@ -437,7 +438,7 @@ def _has_family_anchor_overlap(
     artificial_analysis_model: dict[str, Any],
     arena_model_name: str,
 ) -> bool:
-    """Return whether family anchor overlap is true."""
+    """Return whether family-anchor tokens overlap between the compared rows."""
     aa_anchors = [token for name in _get_artificial_analysis_names(artificial_analysis_model) for token in _get_family_anchor_tokens(name)]
     if not aa_anchors:
         return True
@@ -465,7 +466,7 @@ def _compute_candidate_score(
 
 
 def _is_accepted_best_candidate(candidates: list[ImageMatchCandidate]) -> bool:
-    """Return whether accepted best candidate is true."""
+    """Return whether the best candidate passes the acceptance checks."""
     best = candidates[0] if candidates else None
     if not best or best["score"] < MIN_ACCEPTED_CANDIDATE_SCORE:
         return False
@@ -480,7 +481,7 @@ def _is_accepted_best_candidate_for_rank(
     candidates: list[ImageMatchCandidate],
     artificial_analysis_rank: int | None,
 ) -> bool:
-    """Return whether accepted best candidate for rank is true."""
+    """Return whether the ranked best candidate passes the acceptance checks."""
     best = candidates[0] if candidates else None
     if best and not _has_family_anchor_overlap(
         artificial_analysis_model,
