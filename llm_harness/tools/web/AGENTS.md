@@ -27,7 +27,7 @@
 
 ## Key takeaways per location
 
-- `webloader` is the core path: uses `DocumentConverter`, parallel conversion, and returns one output per input URL.
+- `webloader` is the core path: fetches each URL with `httpx`, strips obvious HTML boilerplate, and returns one plain-text output per input URL.
 - `_clean_markdown` removes noise such as image comments and excessive whitespace.
 - `webloader_tool` is the LangChain-facing wrapper used by agents.
 
@@ -39,7 +39,7 @@
 
 ## Syntax Relationships
 
-- `webloader.py -> webloader -> DocumentConverter.convert(...).document.export_to_markdown()`
+- `webloader.py -> webloader -> httpx fetch -> simple HTML-to-text cleanup`
 - `webloader.py -> ThreadPoolExecutor -> executor.map(_convert, urls)`
 - `agents/agents.py -> WebLoaderAgent -> webloader_tool`
 
