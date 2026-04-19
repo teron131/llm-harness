@@ -1,6 +1,26 @@
 # llm-harness
 
-Python-only LLM harness package with agents, provider clients, tools, and stats helpers.
+Python-first LLM toolkit shaped by accumulated work across multiple projects, not a generic one-size-fits-all harness.
+
+## Structure
+
+```text
+llm_harness/
+├── agents/    workflow orchestration
+│   ├── fixer/
+│   └── youtube/
+├── clients/   provider adapters
+├── stats/     LLM and image stats
+│   ├── llm/
+│   └── image/
+├── tools/     integration boundaries
+│   ├── fs/
+│   ├── sql/
+│   ├── tabular/
+│   ├── web/
+│   └── youtube/
+└── utils/     deterministic helpers
+```
 
 ## Install
 
