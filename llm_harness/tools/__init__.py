@@ -2,6 +2,7 @@
 
 from .fs.fast_copy import TagRange, filter_content, tag_content, untag_content
 from .fs.fs_tools import make_fs_tools
+from .skills import list_skills, load_skills
 from .sql import make_sql_tools
 from .tabular import make_tabular_tools
 from .web import webloader, webloader_tool
@@ -11,6 +12,8 @@ __all__ = [
     "TagRange",
     "filter_content",
     "get_transcript",
+    "list_skills",
+    "load_skills",
     "make_fs_tools",
     "make_sql_tools",
     "make_tabular_tools",
