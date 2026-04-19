@@ -16,17 +16,13 @@ dependencies = [
     "numpy>=2.4.4",
     "opencc-python-reimplemented>=0.1.7",
     "openpyxl>=3.1.5",
+    "pillow>=12.1.1",
     "polars>=1.39.3",
     "pydantic>=2.12.5",
     "python-dotenv>=1.2.2",
     "rich>=14.3.3",
     "ruff>=0.15.8",
     "scipy>=1.17.1",
-]
-
-[project.optional-dependencies]
-image = [
-    "pillow>=12.1.1",
 ]
 
 [build-system]
