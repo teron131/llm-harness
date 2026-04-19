@@ -21,7 +21,7 @@ load_dotenv()
 SCRAPECREATORS_ENDPOINT = "https://api.scrapecreators.com/v1/youtube/video/transcript"
 SUPADATA_ENDPOINT = "https://api.supadata.ai/v1/transcript"
 
-DEFAULT_TIMEOUT_S = 30
+DEFAULT_TIMEOUT_SEC = 30
 
 
 def _get_api_key(name: str) -> str | None:
@@ -108,7 +108,7 @@ def _fetch_scrape_creators(video_url: str) -> YouTubeScrapperResult | None:
             SCRAPECREATORS_ENDPOINT,
             headers={"x-api-key": api_key},
             params={"url": video_url},
-            timeout=DEFAULT_TIMEOUT_S,
+            timeout=DEFAULT_TIMEOUT_SEC,
         )
     except httpx.RequestError:
         return None
@@ -140,7 +140,7 @@ def _fetch_supadata(video_url: str) -> YouTubeScrapperResult | None:
             SUPADATA_ENDPOINT,
             headers={"x-api-key": api_key},
             params={"url": video_url, "lang": "en", "text": "true", "mode": "auto"},
-            timeout=DEFAULT_TIMEOUT_S,
+            timeout=DEFAULT_TIMEOUT_SEC,
         )
     except httpx.RequestError:
         return None

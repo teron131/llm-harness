@@ -10,7 +10,7 @@ import re
 import httpx
 from langchain.tools import tool
 
-DEFAULT_TIMEOUT_SECONDS = 20.0
+DEFAULT_TIMEOUT_SEC = 20.0
 MAX_OUTPUT_CHARS = 12_000
 REQUEST_HEADERS = {"User-Agent": ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/135.0.0.0 Safari/537.36")}
 
@@ -52,7 +52,7 @@ def _fetch_url(url: str) -> str | None:
             url,
             headers=REQUEST_HEADERS,
             follow_redirects=True,
-            timeout=DEFAULT_TIMEOUT_SECONDS,
+            timeout=DEFAULT_TIMEOUT_SEC,
         )
         response.raise_for_status()
     except Exception:
