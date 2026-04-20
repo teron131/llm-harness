@@ -11,8 +11,6 @@ from typing import Any
 from langchain.tools import tool
 import yaml
 
-from ..tabular.storage import DEFAULT_ROOT_DIR
-
 SKILL_FILENAME = "SKILL.md"
 DEFAULT_MAX_FILES = 20
 DEFAULT_MAX_CHARS_PER_FILE = 8000
@@ -26,16 +24,16 @@ IGNORED_DIR_NAMES = {
     "node_modules",
     "venv",
 }
-SKILL_NAME_PATTERN = re.compile(r"^[a-z0-9-]{1,64}$")
+SKILLS_NAME_PATTERN = re.compile(r"^[a-z0-9-]{1,64}$")
 
 
 @dataclass(frozen=True)
-class SkillFile:
-    """Parsed skill file content plus stable path metadata."""
+class SkillsFile:
+    """Parsed skills file content plus stable path metadata."""
 
     path: Path
     relative_path: str
-    skill_root: Path
+    skills_root: Path
     frontmatter: dict[str, Any]
     body: str
 
@@ -45,17 +43,43 @@ def _resolve_search_path(
     root_dir: Path,
     path: str,
 ) -> Path:
-    """Resolve one search path inside the configured workspace root."""
+    """Resolve one search path from the current workspace or an absolute path."""
     cleaned_path = path.strip() or "."
-    candidate_path = Path(cleaned_path).expanduser().resolve() if cleaned_path.startswith("/") else (root_dir / cleaned_path).resolve()
-    try:
-        candidate_path.relative_to(root_dir)
-    except ValueError as error:
-        raise ValueError(f"Path outside root: {path}") from error
+    candidate_path = Path(cleaned_path).expanduser()
+    if not candidate_path.is_absolute():
+        candidate_path = root_dir / candidate_path
+    candidate_path = candidate_path.resolve()
     return candidate_path
 
 
-def _iter_skill_paths(search_path: Path) -> list[Path]:
+def _resolve_skills_root(
+    *,
+    search_path: Path,
+    root_dir: Path,
+) -> Path:
+    """Choose the relative-path root for one search path."""
+    try:
+        search_path.relative_to(root_dir)
+    except ValueError:
+        return search_path if search_path.is_dir() else search_path.parent
+    return root_dir
+
+
+def _discover_skills_for_path(path: str) -> tuple[list[SkillsFile], Path]:
+    """Return discovered skills entries plus the root used for relative skills paths."""
+    root_dir = Path.cwd().resolve()
+    search_path = _resolve_search_path(
+        root_dir=root_dir,
+        path=path,
+    )
+    skills_root = _resolve_skills_root(
+        search_path=search_path,
+        root_dir=root_dir,
+    )
+    return _discover_skills_files(search_path, root_dir=skills_root), skills_root
+
+
+def _iter_skills_paths(search_path: Path) -> list[Path]:
     """Return stable SKILL.md paths under one rooted search path."""
     if search_path.is_file():
         return [search_path] if search_path.name == SKILL_FILENAME else []
@@ -69,35 +93,35 @@ def _iter_skill_paths(search_path: Path) -> list[Path]:
     return discovered_paths
 
 
-def _parse_skill_file(
+def _parse_skills_file(
     path: Path,
     *,
     root_dir: Path,
-) -> SkillFile:
-    """Read one skill file and return parsed frontmatter plus markdown body."""
+) -> SkillsFile:
+    """Read one skills file and return parsed frontmatter plus markdown body."""
     text = path.read_text(encoding="utf-8")
     frontmatter, body = _split_frontmatter(text)
-    return SkillFile(
+    return SkillsFile(
         path=path,
         relative_path=str(path.relative_to(root_dir)),
-        skill_root=path.parent,
+        skills_root=path.parent,
         frontmatter=frontmatter,
         body=body,
     )
 
 
-def _discover_skill_files(
+def _discover_skills_files(
     search_path: Path,
     *,
     root_dir: Path,
-) -> list[SkillFile]:
-    """Return parsed skill files under one rooted search path."""
+) -> list[SkillsFile]:
+    """Return parsed skills files under one rooted search path."""
     return [
-        _parse_skill_file(
+        _parse_skills_file(
             path,
             root_dir=root_dir,
         )
-        for path in _iter_skill_paths(search_path)
+        for path in _iter_skills_paths(search_path)
     ]
 
 
@@ -126,9 +150,9 @@ def _split_frontmatter(
     return parsed_frontmatter, body
 
 
-def _iter_resource_paths(skill_root: Path, resource_dir_name: str) -> list[Path]:
-    """Return stable file paths under one optional skill resource directory."""
-    resource_root = skill_root / resource_dir_name
+def _iter_resource_paths(skills_root: Path, resource_dir_name: str) -> list[Path]:
+    """Return stable file paths under one optional skills resource directory."""
+    resource_root = skills_root / resource_dir_name
     if not resource_root.is_dir():
         return []
 
@@ -140,28 +164,28 @@ def _iter_resource_paths(skill_root: Path, resource_dir_name: str) -> list[Path]
     return discovered_paths
 
 
-def _skill_metadata(
-    skill_file: SkillFile,
+def _skills_metadata(
+    skills_file: SkillsFile,
 ) -> tuple[
     dict[str, Any] | None,
     str | None,
 ]:
-    """Build one standards-aligned metadata payload for a skill file."""
-    skill_name = skill_file.frontmatter.get("name")
-    description = skill_file.frontmatter.get("description")
+    """Build one standards-aligned metadata payload for a skills file."""
+    skills_name = skills_file.frontmatter.get("name")
+    description = skills_file.frontmatter.get("description")
 
-    if not isinstance(skill_name, str) or not skill_name.strip():
-        return None, f"{skill_file.relative_path}: missing required frontmatter field 'name'"
-    if not SKILL_NAME_PATTERN.fullmatch(skill_name) or skill_name.startswith("-") or skill_name.endswith("-") or "--" in skill_name:
-        return None, f"{skill_file.relative_path}: invalid skill name '{skill_name}'"
-    if skill_file.skill_root.name != skill_name:
-        return None, f"{skill_file.relative_path}: skill name '{skill_name}' must match parent directory '{skill_file.skill_root.name}'"
+    if not isinstance(skills_name, str) or not skills_name.strip():
+        return None, f"{skills_file.relative_path}: missing required frontmatter field 'name'"
+    if not SKILLS_NAME_PATTERN.fullmatch(skills_name) or skills_name.startswith("-") or skills_name.endswith("-") or "--" in skills_name:
+        return None, f"{skills_file.relative_path}: invalid skills name '{skills_name}'"
+    if skills_file.skills_root.name != skills_name:
+        return None, f"{skills_file.relative_path}: skills name '{skills_name}' must match parent directory '{skills_file.skills_root.name}'"
     if not isinstance(description, str) or not description.strip():
-        return None, f"{skill_file.relative_path}: missing required frontmatter field 'description'"
+        return None, f"{skills_file.relative_path}: missing required frontmatter field 'description'"
 
     return {
-        "path": skill_file.relative_path,
-        "name": skill_name,
+        "path": skills_file.relative_path,
+        "name": skills_name,
         "description": description,
     }, None
 
@@ -199,24 +223,24 @@ def _load_resource_group(
     ]
 
 
-def _load_skill(
-    skill_file: SkillFile,
+def _load_skills_entry(
+    skills_file: SkillsFile,
     *,
     root_dir: Path,
     max_chars_per_file: int,
 ) -> tuple[dict[str, Any] | None, str | None]:
-    """Load one skill with instructions plus scripts and references."""
-    metadata, error_message = _skill_metadata(skill_file)
+    """Load one skills entry with instructions plus scripts and references."""
+    metadata, error_message = _skills_metadata(skills_file)
     if metadata is None:
         return None, error_message
 
-    scripts = _iter_resource_paths(skill_file.skill_root, "scripts")
-    references = _iter_resource_paths(skill_file.skill_root, "references")
+    scripts = _iter_resource_paths(skills_file.skills_root, "scripts")
+    references = _iter_resource_paths(skills_file.skills_root, "references")
     return {
         **metadata,
-        "skill_path": str(skill_file.path),
-        "instructions": skill_file.body[:max_chars_per_file],
-        "instructions_truncated": len(skill_file.body) > max_chars_per_file,
+        "skills_path": str(skills_file.path),
+        "instructions": skills_file.body[:max_chars_per_file],
+        "instructions_truncated": len(skills_file.body) > max_chars_per_file,
         "scripts": _load_resource_group(
             scripts,
             root_dir=root_dir,
@@ -230,31 +254,31 @@ def _load_skill(
     }, None
 
 
-def _matching_skill_files(
-    skill_files: list[SkillFile],
+def _matching_skills_files(
+    skills_files: list[SkillsFile],
     names: list[str],
-) -> tuple[list[SkillFile], list[str]]:
-    """Return selected skill files plus diagnostics for unknown names."""
+) -> tuple[list[SkillsFile], list[str]]:
+    """Return selected skills entries plus diagnostics for unknown names."""
     if not names:
-        return skill_files, []
+        return skills_files, []
 
-    files_by_name: dict[str, SkillFile] = {}
+    skills_files_by_name: dict[str, SkillsFile] = {}
     diagnostics: list[str] = []
-    for skill_file in skill_files:
-        metadata, error_message = _skill_metadata(skill_file)
+    for skills_file in skills_files:
+        metadata, error_message = _skills_metadata(skills_file)
         if metadata is not None:
-            files_by_name[metadata["name"]] = skill_file
+            skills_files_by_name[metadata["name"]] = skills_file
         elif error_message is not None:
             diagnostics.append(error_message)
 
-    selected_files: list[SkillFile] = []
+    selected_skills_files: list[SkillsFile] = []
     for name in names:
-        matched_file = files_by_name.get(name)
-        if matched_file is None:
-            diagnostics.append(f"Skill not found: {name}")
+        matched_skills_file = skills_files_by_name.get(name)
+        if matched_skills_file is None:
+            diagnostics.append(f"Skills not found: {name}")
             continue
-        selected_files.append(matched_file)
-    return selected_files, diagnostics
+        selected_skills_files.append(matched_skills_file)
+    return selected_skills_files, diagnostics
 
 
 def _result_payload(
@@ -279,19 +303,15 @@ def list_skills(
     """List skills from the workspace.
 
     Args:
-        path: Relative directory or file path inside the workspace root. Defaults to the workspace root.
-        max_files: Maximum number of skill files to return.
+        path: Relative directory or file path from the current working directory, or an absolute path. Defaults to the current working directory.
+        max_files: Maximum number of skills entries to return.
     """
-    search_path = _resolve_search_path(
-        root_dir=DEFAULT_ROOT_DIR,
-        path=path,
-    )
-    skill_files = _discover_skill_files(search_path, root_dir=DEFAULT_ROOT_DIR)
-    bounded_files = skill_files[: max(0, max_files)]
+    skills_files, _ = _discover_skills_for_path(path)
+    bounded_files = skills_files[: max(0, max_files)]
     skills: list[dict[str, Any]] = []
     diagnostics: list[str] = []
-    for skill_file in bounded_files:
-        payload, error_message = _skill_metadata(skill_file)
+    for skills_file in bounded_files:
+        payload, error_message = _skills_metadata(skills_file)
         if payload is not None:
             skills.append(payload)
         elif error_message is not None:
@@ -302,37 +322,33 @@ def list_skills(
 @tool(parse_docstring=True)
 def load_skills(
     path: str = ".",
-    skill_names: list[str] | None = None,
-    max_files: int = DEFAULT_MAX_FILES,
+    skills: str = "",
     max_chars_per_file: int = DEFAULT_MAX_CHARS_PER_FILE,
 ) -> dict[str, Any]:
-    """Load skills from the workspace, including instructions, scripts, and references.
+    """Load one selected skills entry from the workspace, including instructions, scripts, and references.
 
     Args:
-        path: Relative directory or file path inside the workspace root. Defaults to the workspace root.
-        skill_names: Optional skill names to load. When omitted, loads all discovered skills up to max_files.
-        max_files: Maximum number of skills to load.
+        path: Relative directory or file path from the current working directory, or an absolute path. Defaults to the current working directory.
+        skills: Skills entry name to load.
         max_chars_per_file: Maximum number of characters to load from each text file.
     """
-    search_path = _resolve_search_path(
-        root_dir=DEFAULT_ROOT_DIR,
-        path=path,
+    skills_files, skills_root = _discover_skills_for_path(path)
+    if not skills.strip():
+        return _result_payload([], ["Missing required skills"])
+
+    selected_skills_files, diagnostics = _matching_skills_files(
+        skills_files,
+        names=[skills],
     )
-    skill_files = _discover_skill_files(search_path, root_dir=DEFAULT_ROOT_DIR)
-    selected_files, diagnostics = _matching_skill_files(
-        skill_files,
-        names=skill_names or [],
-    )
-    bounded_files = (selected_files or skill_files)[: max(0, max_files)]
-    skills: list[dict[str, Any]] = []
-    for skill_file in bounded_files:
-        payload, error_message = _load_skill(
-            skill_file,
-            root_dir=DEFAULT_ROOT_DIR,
+    loaded_skills: list[dict[str, Any]] = []
+    for skills_file in selected_skills_files[:1]:
+        payload, error_message = _load_skills_entry(
+            skills_file,
+            root_dir=skills_root,
             max_chars_per_file=max(0, max_chars_per_file),
         )
         if payload is not None:
-            skills.append(payload)
+            loaded_skills.append(payload)
         elif error_message is not None:
             diagnostics.append(error_message)
-    return _result_payload(skills, diagnostics)
+    return _result_payload(loaded_skills, diagnostics)
