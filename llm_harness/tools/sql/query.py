@@ -6,6 +6,7 @@ from contextlib import closing
 from datetime import date, datetime, time as datetime_time
 from decimal import Decimal
 from difflib import SequenceMatcher
+from functools import lru_cache
 from itertools import zip_longest
 import json
 from pathlib import Path
@@ -20,6 +21,9 @@ MAX_DESCRIBE_SAMPLE_ROWS = 5
 MAX_REPAIR_CANDIDATES = 3
 MAX_TEXT_VALUE_HINTS = 5
 MAX_SUGGESTED_TARGETS = 5
+MAX_SOURCE_PATH_PREVIEW = 3
+MAX_COLUMN_PREVIEW = 8
+MAX_REASON_PREVIEW = 3
 _MISSING = object()
 _READ_ONLY_SQL_PREFIXES = ("SELECT", "WITH", "EXPLAIN")
 _VIEW_SQL_PREFIXES = ("SELECT", "WITH")
@@ -89,6 +93,50 @@ def _error_result(
         payload["database_path"] = str(database_path)
     payload.update(extra)
     return payload
+
+
+def _preview_list(
+    items: list[Any],
+    *,
+    max_items: int,
+) -> tuple[list[Any], bool]:
+    """Return a bounded list preview plus truncation state."""
+    safe_max_items = max(0, max_items)
+    return items[:safe_max_items], len(items) > safe_max_items
+
+
+def _query_summary(
+    *,
+    row_count: int,
+    column_count: int,
+    truncated: bool,
+) -> str:
+    """Build one compact summary for a SQL query result."""
+    summary = f"Returned {row_count} row(s) across {column_count} column(s)."
+    if truncated:
+        summary += " Result rows were truncated."
+    return summary
+
+
+def _target_summary(
+    *,
+    name: str,
+    target_type: str,
+    kind: str,
+    row_count: int | None,
+    column_names: list[str],
+    source_paths: list[str],
+    reasons: list[str] | None = None,
+) -> str:
+    """Build one compact summary for a target suggestion or listing."""
+    summary_parts = [f"{name} ({kind}, {target_type})", f"{len(column_names)} column(s)"]
+    if row_count is not None:
+        summary_parts.append(f"{row_count} row(s)")
+    if source_paths:
+        summary_parts.append(f"{len(source_paths)} source file(s)")
+    if reasons:
+        summary_parts.append("matched " + ", ".join(reasons[:MAX_REASON_PREVIEW]))
+    return "; ".join(summary_parts)
 
 
 def _normalized_column_names(column_names: list[str | None]) -> tuple[list[str], list[str]]:
@@ -175,21 +223,40 @@ def _sample_rows(
     return preview_rows
 
 
-def _fetch_catalog_metadata(connection: sqlite3.Connection) -> tuple[dict[str, dict[str, Any]], dict[str, list[str]]]:
-    """Load shared tabular catalog metadata for list and suggest helpers."""
-    content_query = f"SELECT content_id, table_name, row_count FROM {SQLITE_CONTENTS_TABLE}"
+def _fetch_catalog_metadata(
+    connection: sqlite3.Connection,
+) -> tuple[
+    dict[str, dict[str, Any]],
+    dict[str, list[dict[str, Any]]],
+]:
+    """Load shared tabular catalog metadata for list, describe, and suggest helpers."""
+    content_query = f"SELECT content_id, table_name, source_format, row_count, column_schema_json FROM {SQLITE_CONTENTS_TABLE}"
     content_rows = {
         cast(str, row[1]): {
             "content_id": cast(str, row[0]),
-            "row_count": cast(int, row[2]),
+            "source_format": cast(str, row[2]),
+            "row_count": cast(int, row[3]),
+            "content_schema": json.loads(cast(str, row[4])),
         }
         for row in connection.execute(content_query).fetchall()
     }
-    source_rows: dict[str, list[str]] = {}
-    source_query = f"SELECT content_id, source_path FROM {SQLITE_SOURCES_TABLE} ORDER BY source_path"
+    source_rows: dict[str, list[dict[str, Any]]] = {}
+    source_query = f"""
+    SELECT content_id, source_path, source_format, source_sheet_name, source_table_name, fingerprint
+    FROM {SQLITE_SOURCES_TABLE}
+    ORDER BY source_path, source_table_name
+    """
     for row in connection.execute(source_query).fetchall():
         content_id = cast(str, row[0])
-        source_rows.setdefault(content_id, []).append(cast(str, row[1]))
+        source_rows.setdefault(content_id, []).append(
+            {
+                "source_path": cast(str, row[1]),
+                "source_format": cast(str, row[2]),
+                "source_sheet_name": cast(str, row[3]),
+                "source_table_name": cast(str, row[4]),
+                "fingerprint": cast(str, row[5]),
+            }
+        )
     return content_rows, source_rows
 
 
@@ -207,7 +274,13 @@ def _open_read_only_connection(database_path: Path) -> sqlite3.Connection:
     return sqlite3.connect(f"{database_path.resolve().as_uri()}?mode=ro", uri=True)
 
 
-def _catalog_state(connection: sqlite3.Connection) -> tuple[bool, dict[str, dict[str, Any]], dict[str, list[str]]]:
+def _catalog_state(
+    connection: sqlite3.Connection,
+) -> tuple[
+    bool,
+    dict[str, dict[str, Any]],
+    dict[str, list[dict[str, Any]]],
+]:
     """Return whether the tabular catalog exists plus its cached metadata."""
     if not _has_catalog(connection):
         return False, {}, {}
@@ -233,13 +306,92 @@ def _target_source_paths(
     name: str,
     kind: str,
     content_rows: dict[str, dict[str, Any]],
-    source_rows: dict[str, list[str]],
-) -> tuple[dict[str, Any] | None, list[str]]:
-    """Return catalog metadata and source paths for one target."""
+    source_rows: dict[str, list[dict[str, Any]]],
+) -> tuple[
+    dict[str, Any] | None,
+    list[dict[str, Any]],
+    list[str],
+]:
+    """Return catalog metadata, source mappings, and source paths for one target."""
     content_metadata = content_rows.get(_base_table_name(name, kind))
     if content_metadata is None:
-        return None, []
-    return content_metadata, source_rows.get(cast(str, content_metadata["content_id"]), [])
+        return None, [], []
+    source_mappings = source_rows.get(cast(str, content_metadata["content_id"]), [])
+    source_paths = list(dict.fromkeys(cast(str, mapping["source_path"]) for mapping in source_mappings))
+    return content_metadata, source_mappings, source_paths
+
+
+def _database_cache_key(
+    database_path: Path,
+) -> tuple[
+    str,
+    int,
+    int,
+]:
+    """Return a cache key that invalidates when the SQLite file changes."""
+    resolved_path = database_path.resolve()
+    stat_result = resolved_path.stat()
+    return str(resolved_path), stat_result.st_mtime_ns, stat_result.st_size
+
+
+@lru_cache(maxsize=8)
+def _cached_database_catalog(
+    resolved_path: str,
+    mtime_ns: int,
+    size_bytes: int,
+) -> dict[str, Any]:
+    """Load one cached SQLite catalog snapshot."""
+    del mtime_ns, size_bytes
+    database_path = Path(resolved_path)
+    with closing(_open_read_only_connection(database_path)) as connection:
+        has_catalog, content_rows, source_rows = _catalog_state(connection)
+        targets = []
+        targets_by_name: dict[str, dict[str, Any]] = {}
+        for master_row in connection.execute(_TARGET_MASTER_SQL).fetchall():
+            name = cast(str, master_row[0])
+            target_type = cast(str, master_row[1])
+            create_sql = cast(Any, master_row[2])
+            kind = classify_target(name)
+            columns = [
+                {
+                    "name": cast(str, row[1]),
+                    "type": cast(str, row[2]),
+                    "not_null": bool(row[3]),
+                    "default_value": row[4],
+                    "primary_key_position": cast(int, row[5]),
+                }
+                for row in connection.execute(f"PRAGMA table_info({quote_identifier(name)})").fetchall()
+            ]
+            content_metadata, source_mappings, source_paths = _target_source_paths(
+                name=name,
+                kind=kind,
+                content_rows=content_rows,
+                source_rows=source_rows,
+            )
+            target_info = {
+                "name": name,
+                "type": target_type,
+                "kind": kind,
+                "create_sql": create_sql,
+                "columns": columns,
+                "content_id": None if content_metadata is None else content_metadata["content_id"],
+                "content_schema": None if content_metadata is None else content_metadata["content_schema"],
+                "row_count": None if content_metadata is None else content_metadata["row_count"],
+                "source_mappings": source_mappings,
+                "source_paths": source_paths,
+            }
+            targets.append(target_info)
+            targets_by_name[name] = target_info
+        return {
+            "has_catalog": has_catalog,
+            "targets": targets,
+            "targets_by_name": targets_by_name,
+        }
+
+
+def _database_catalog(database_path: Path) -> dict[str, Any]:
+    """Return the cached database catalog for one SQLite file."""
+    return _cached_database_catalog(*_database_cache_key(database_path))
 
 
 def _looks_like_text_column(column_name: str, declared_type: str) -> bool:
@@ -525,6 +677,7 @@ def run_query(
                     "truncated": False,
                     "columns": [],
                     "rows": [],
+                    "summary": _query_summary(row_count=0, column_count=0, truncated=False),
                 }
 
             column_names, original_columns = _normalized_column_names([cast(Any, column[0]) for column in description])
@@ -543,6 +696,7 @@ def run_query(
                 "truncated": truncated,
                 "columns": column_names,
                 "rows": rows,
+                "summary": _query_summary(row_count=len(rows), column_count=len(column_names), truncated=truncated),
             }
             if column_names != original_columns:
                 payload["original_columns"] = original_columns
@@ -696,49 +850,44 @@ def list_targets(
             root_dir=root_dir,
             database_path=database_path,
         )
-        with closing(_open_read_only_connection(resolved_path)) as connection:
-            targets = connection.execute(
-                """
-                SELECT name, type
-                FROM sqlite_master
-                WHERE type IN ('table', 'view')
-                  AND name NOT LIKE 'sqlite_%'
-                ORDER BY type, name
-                """
-            ).fetchall()
-            has_catalog, content_rows, source_rows = _catalog_state(connection)
+        catalog = _database_catalog(resolved_path)
+        items = []
+        for target in cast(list[dict[str, Any]], catalog["targets"]):
+            kind = cast(str, target["kind"])
+            if not include_internal and kind == "internal_catalog":
+                continue
 
-            items = []
-            for row in targets:
-                name = cast(str, row[0])
-                target_type = cast(str, row[1])
-                kind = classify_target(name)
-                if not include_internal and kind == "internal_catalog":
-                    continue
+            source_paths = cast(list[str], target["source_paths"])
+            source_path_preview, source_paths_truncated = _preview_list(source_paths, max_items=MAX_SOURCE_PATH_PREVIEW)
+            column_names = [cast(str, column["name"]) for column in cast(list[dict[str, Any]], target["columns"])]
+            items.append(
+                {
+                    "name": target["name"],
+                    "type": target["type"],
+                    "kind": kind,
+                    "row_count": target["row_count"],
+                    "source_path_count": len(source_paths),
+                    "source_path_preview": source_path_preview,
+                    "source_paths_truncated": source_paths_truncated,
+                    "summary": _target_summary(
+                        name=cast(str, target["name"]),
+                        target_type=cast(str, target["type"]),
+                        kind=kind,
+                        row_count=cast(int | None, target["row_count"]),
+                        column_names=column_names,
+                        source_paths=source_paths,
+                    ),
+                }
+            )
 
-                content_metadata, source_paths = _target_source_paths(
-                    name=name,
-                    kind=kind,
-                    content_rows=content_rows,
-                    source_rows=source_rows,
-                )
-                items.append(
-                    {
-                        "name": name,
-                        "type": target_type,
-                        "kind": kind,
-                        "row_count": content_metadata["row_count"] if content_metadata else None,
-                        "source_paths": source_paths,
-                    }
-                )
-
-            return {
-                "database_path": str(resolved_path),
-                "status": "ok",
-                "has_tabular_catalog": has_catalog,
-                "target_count": len(items),
-                "targets": items,
-            }
+        return {
+            "database_path": str(resolved_path),
+            "status": "ok",
+            "has_tabular_catalog": catalog["has_catalog"],
+            "target_count": len(items),
+            "targets": items,
+            "summary": f"Listed {len(items)} queryable target(s).",
+        }
     except ValueError as exc:
         return _error_result(
             database_path=requested_path,
@@ -768,30 +917,23 @@ def describe_target(
             root_dir=root_dir,
             database_path=database_path,
         )
-        with closing(_open_read_only_connection(resolved_path)) as connection:
-            master_row = connection.execute(_TARGET_BY_NAME_SQL, [target_name]).fetchone()
-            if master_row is None:
-                return _error_result(
-                    database_path=resolved_path,
-                    error_type="missing_target",
-                    message=f"SQLite target does not exist: {target_name}",
-                    target_name=target_name,
-                )
+        catalog = _database_catalog(resolved_path)
+        target_info = cast(dict[str, Any] | None, catalog["targets_by_name"].get(target_name))
+        if target_info is None:
+            return _error_result(
+                database_path=resolved_path,
+                error_type="missing_target",
+                message=f"SQLite target does not exist: {target_name}",
+                target_name=target_name,
+            )
 
-            name = cast(str, master_row[0])
-            target_type = cast(str, master_row[1])
-            create_sql = cast(Any, master_row[2])
-            kind = classify_target(name)
-            columns = [
-                {
-                    "name": cast(str, row[1]),
-                    "type": cast(str, row[2]),
-                    "not_null": bool(row[3]),
-                    "default_value": row[4],
-                    "primary_key_position": cast(int, row[5]),
-                }
-                for row in connection.execute(f"PRAGMA table_info({quote_identifier(name)})").fetchall()
-            ]
+        name = cast(str, target_info["name"])
+        target_type = cast(str, target_info["type"])
+        kind = cast(str, target_info["kind"])
+        columns = cast(list[dict[str, Any]], target_info["columns"])
+        source_mappings = cast(list[dict[str, Any]], target_info["source_mappings"])
+        source_paths = cast(list[str], target_info["source_paths"])
+        with closing(_open_read_only_connection(resolved_path)) as connection:
             sample_row_items = _sample_rows(
                 connection,
                 target_name=name,
@@ -805,59 +947,31 @@ def describe_target(
                 max_values=MAX_TEXT_VALUE_HINTS,
             )
 
-            has_catalog = _has_catalog(connection)
-            source_mappings = []
-            content_id = None
-            content_schema = None
-            row_count = None
-            if has_catalog:
-                catalog_row = connection.execute(
-                    f"""
-                    SELECT content_id, source_format, row_count, column_schema_json
-                    FROM {SQLITE_CONTENTS_TABLE}
-                    WHERE table_name = ?
-                    """,
-                    [_base_table_name(name, kind)],
-                ).fetchone()
-
-                if catalog_row is not None:
-                    content_id = cast(str, catalog_row[0])
-                    row_count = cast(int, catalog_row[2])
-                    content_schema = json.loads(cast(str, catalog_row[3]))
-                    source_mappings = [
-                        {
-                            "source_path": cast(str, row[0]),
-                            "source_format": cast(str, row[1]),
-                            "source_sheet_name": cast(str, row[2]),
-                            "source_table_name": cast(str, row[3]),
-                            "fingerprint": cast(str, row[4]),
-                        }
-                        for row in connection.execute(
-                            f"""
-                            SELECT source_path, source_format, source_sheet_name, source_table_name, fingerprint
-                            FROM {SQLITE_SOURCES_TABLE}
-                            WHERE content_id = ?
-                            ORDER BY source_path, source_table_name
-                            """,
-                            [content_id],
-                        ).fetchall()
-                    ]
-
             return {
                 "database_path": str(resolved_path),
                 "status": "ok",
-                "has_tabular_catalog": has_catalog,
+                "has_tabular_catalog": catalog["has_catalog"],
                 "name": name,
                 "type": target_type,
                 "kind": kind,
-                "row_count": row_count,
+                "row_count": target_info["row_count"],
                 "columns": columns,
                 "sample_rows": sample_row_items,
                 "text_value_hints": text_value_hint_map,
-                "create_sql": create_sql,
-                "content_id": content_id,
-                "content_schema": content_schema,
+                "create_sql": target_info["create_sql"],
+                "content_id": target_info["content_id"],
+                "content_schema": target_info["content_schema"],
                 "source_mappings": source_mappings,
+                "source_path_count": len(source_paths),
+                "source_path_preview": source_paths[:MAX_SOURCE_PATH_PREVIEW],
+                "summary": _target_summary(
+                    name=name,
+                    target_type=target_type,
+                    kind=kind,
+                    row_count=cast(int | None, target_info["row_count"]),
+                    column_names=[cast(str, column["name"]) for column in columns],
+                    source_paths=source_paths,
+                ),
             }
     except ValueError as exc:
         return _error_result(
@@ -900,68 +1014,76 @@ def suggest_targets(
             root_dir=root_dir,
             database_path=database_path,
         )
-        with closing(_open_read_only_connection(resolved_path)) as connection:
-            has_catalog, content_rows, source_rows = _catalog_state(connection)
-            suggestions = []
-            for master_row in connection.execute(_TARGET_MASTER_SQL).fetchall():
-                name = cast(str, master_row[0])
-                target_type = cast(str, master_row[1])
-                create_sql = cast(Any, master_row[2])
-                kind = classify_target(name)
-                if not include_internal and kind == "internal_catalog":
-                    continue
+        catalog = _database_catalog(resolved_path)
+        suggestions = []
+        for target in cast(list[dict[str, Any]], catalog["targets"]):
+            name = cast(str, target["name"])
+            target_type = cast(str, target["type"])
+            kind = cast(str, target["kind"])
+            if not include_internal and kind == "internal_catalog":
+                continue
 
-                content_metadata, source_paths = _target_source_paths(
-                    name=name,
-                    kind=kind,
-                    content_rows=content_rows,
-                    source_rows=source_rows,
-                )
-                pragma_rows = connection.execute(f"PRAGMA table_info({quote_identifier(name)})").fetchall()
-                column_names = [cast(str, row[1]) for row in pragma_rows]
-                search_text = _target_search_text(
-                    name=name,
-                    target_type=target_type,
-                    kind=kind,
-                    column_names=column_names,
-                    source_paths=source_paths,
-                    create_sql=create_sql,
-                )
-                score, reasons = _target_score(
-                    tokens=tokens,
-                    name=name,
-                    column_names=column_names,
-                    source_paths=source_paths,
-                    search_text=search_text,
-                )
-                if score <= 0:
-                    continue
-                score += _kind_bias(kind)
+            column_names = [cast(str, column["name"]) for column in cast(list[dict[str, Any]], target["columns"])]
+            source_paths = cast(list[str], target["source_paths"])
+            search_text = _target_search_text(
+                name=name,
+                target_type=target_type,
+                kind=kind,
+                column_names=column_names,
+                source_paths=source_paths,
+                create_sql=cast(str | None, target["create_sql"]),
+            )
+            score, reasons = _target_score(
+                tokens=tokens,
+                name=name,
+                column_names=column_names,
+                source_paths=source_paths,
+                search_text=search_text,
+            )
+            if score <= 0:
+                continue
+            score += _kind_bias(kind)
+            column_preview, columns_truncated = _preview_list(column_names, max_items=MAX_COLUMN_PREVIEW)
+            source_path_preview, source_paths_truncated = _preview_list(source_paths, max_items=MAX_SOURCE_PATH_PREVIEW)
 
-                suggestions.append(
-                    {
-                        "name": name,
-                        "type": target_type,
-                        "kind": kind,
-                        "score": score,
-                        "reasons": reasons,
-                        "columns": column_names,
-                        "source_paths": source_paths,
-                        "row_count": content_metadata["row_count"] if content_metadata else None,
-                    }
-                )
+            suggestions.append(
+                {
+                    "name": name,
+                    "type": target_type,
+                    "kind": kind,
+                    "score": score,
+                    "reasons": reasons[:MAX_REASON_PREVIEW],
+                    "column_count": len(column_names),
+                    "column_preview": column_preview,
+                    "columns_truncated": columns_truncated,
+                    "source_path_count": len(source_paths),
+                    "source_path_preview": source_path_preview,
+                    "source_paths_truncated": source_paths_truncated,
+                    "row_count": target["row_count"],
+                    "summary": _target_summary(
+                        name=name,
+                        target_type=target_type,
+                        kind=kind,
+                        row_count=cast(int | None, target["row_count"]),
+                        column_names=column_names,
+                        source_paths=source_paths,
+                        reasons=reasons,
+                    ),
+                }
+            )
 
-            suggestions.sort(key=lambda item: (-cast(int, item["score"]), cast(str, item["name"])))
-            top_suggestions = suggestions[:safe_max_results]
-            return {
-                "database_path": str(resolved_path),
-                "status": "ok",
-                "has_tabular_catalog": has_catalog,
-                "question": question,
-                "tokens": tokens,
-                "suggestion_count": len(top_suggestions),
-                "suggestions": top_suggestions,
-            }
+        suggestions.sort(key=lambda item: (-cast(int, item["score"]), cast(str, item["name"])))
+        top_suggestions = suggestions[:safe_max_results]
+        return {
+            "database_path": str(resolved_path),
+            "status": "ok",
+            "has_tabular_catalog": catalog["has_catalog"],
+            "question": question,
+            "tokens": tokens,
+            "suggestion_count": len(top_suggestions),
+            "suggestions": top_suggestions,
+            "summary": f"Suggested {len(top_suggestions)} target(s) for {len(tokens)} search token(s).",
+        }
     except ValueError as exc:
         return _error_result(
             database_path=requested_path,

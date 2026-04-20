@@ -22,6 +22,12 @@ DEFAULT_SQL_AGENT_MODEL_ENV = "FAST_LLM"
 DEFAULT_SQL_AGENT_MODEL = "openai/gpt-5.4-nano"
 DEFAULT_SQL_AGENT_REASONING: Literal["minimal", "low", "medium", "high"] = "medium"
 MAX_INSPECTED_TARGETS = 2
+MAX_TRACE_MESSAGES = 8
+MAX_AGENT_SAMPLE_ROWS = 2
+MAX_AGENT_ROW_COLUMNS = 8
+MAX_AGENT_TEXT_HINT_COLUMNS = 2
+MAX_AGENT_TEXT_HINT_VALUES = 3
+MAX_AGENT_SOURCE_MAPPING_PREVIEW = 2
 _QUESTION_STOP_WORDS = {
     "a",
     "an",
@@ -113,9 +119,139 @@ Rules:
 """
 
 
-def _append_trace(state: SQLAgentState, message: str) -> list[str]:
+def _append_trace(
+    state: SQLAgentState,
+    message: str,
+) -> list[str]:
     """Append one trace message."""
-    return [*state.trace, message]
+    next_trace = [*state.trace, message]
+    return next_trace[-MAX_TRACE_MESSAGES:]
+
+
+def _preview_list(
+    items: list[Any],
+    *,
+    max_items: int,
+) -> tuple[
+    list[Any],
+    bool,
+]:
+    """Return a bounded preview of one list plus truncation state."""
+    safe_max_items = max(0, max_items)
+    return items[:safe_max_items], len(items) > safe_max_items
+
+
+def _compact_row(row: dict[str, Any]) -> dict[str, Any]:
+    """Return a bounded row preview for prompts and traces."""
+    row_items = list(row.items())
+    preview_items, truncated = _preview_list(row_items, max_items=MAX_AGENT_ROW_COLUMNS)
+    compact_row = dict(preview_items)
+    if truncated:
+        compact_row["__remaining_columns__"] = len(row_items) - len(preview_items)
+    return compact_row
+
+
+def _compact_sample_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Return a bounded sample-row preview for one inspected target."""
+    preview_rows, truncated = _preview_list(
+        rows,
+        max_items=MAX_AGENT_SAMPLE_ROWS,
+    )
+    return {
+        "count": len(rows),
+        "truncated": truncated,
+        "items": [_compact_row(row) for row in preview_rows],
+    }
+
+
+def _compact_text_value_hints(text_value_hints: dict[str, list[str]]) -> dict[str, Any]:
+    """Return bounded text-value hints for planning."""
+    hint_items = list(text_value_hints.items())
+    preview_items, truncated = _preview_list(hint_items, max_items=MAX_AGENT_TEXT_HINT_COLUMNS)
+    compact_hints = {column_name: values[:MAX_AGENT_TEXT_HINT_VALUES] for column_name, values in preview_items}
+    return {
+        "count": len(hint_items),
+        "truncated": truncated,
+        "items": compact_hints,
+    }
+
+
+def _compact_source_mappings(source_mappings: list[dict[str, Any]]) -> dict[str, Any]:
+    """Return a bounded preview of source mappings."""
+    preview_mappings, truncated = _preview_list(source_mappings, max_items=MAX_AGENT_SOURCE_MAPPING_PREVIEW)
+    return {
+        "count": len(source_mappings),
+        "truncated": truncated,
+        "items": [
+            {
+                "source_path": mapping.get("source_path"),
+                "source_sheet_name": mapping.get("source_sheet_name"),
+                "source_table_name": mapping.get("source_table_name"),
+            }
+            for mapping in preview_mappings
+        ],
+    }
+
+
+def _compact_inspected_target(target: dict[str, Any]) -> dict[str, Any]:
+    """Return the compact inspected-target payload sent to the planner."""
+    columns = list(target.get("columns", []))
+    return {
+        "name": target.get("name"),
+        "kind": target.get("kind"),
+        "type": target.get("type"),
+        "row_count": target.get("row_count"),
+        "summary": target.get("summary"),
+        "columns": [
+            {
+                "name": column.get("name"),
+                "type": column.get("type"),
+            }
+            for column in columns
+        ],
+        "column_count": len(columns),
+        "sample_rows": _compact_sample_rows(
+            list(target.get("sample_rows", [])),
+        ),
+        "text_value_hints": _compact_text_value_hints(
+            cast(
+                dict[str, list[str]],
+                target.get("text_value_hints", {}),
+            )
+        ),
+        "source_mappings": _compact_source_mappings(
+            list(target.get("source_mappings", [])),
+        ),
+    }
+
+
+def _compact_query_result(result: dict[str, Any]) -> dict[str, Any]:
+    """Return a bounded SQL execution result for workflow state."""
+    if result.get("status") != "ok":
+        return {
+            "status": result.get("status"),
+            "error_type": result.get("error_type"),
+            "message": result.get("message"),
+            "database_path": result.get("database_path"),
+            "summary": result.get("summary"),
+        }
+
+    rows = list(result.get("rows", []))
+    columns = [str(column) for column in result.get("columns", [])]
+    preview_columns, columns_truncated = _preview_list(columns, max_items=MAX_AGENT_ROW_COLUMNS)
+    preview_rows, rows_truncated = _preview_list(rows, max_items=MAX_AGENT_SAMPLE_ROWS)
+    return {
+        "status": "ok",
+        "database_path": result.get("database_path"),
+        "summary": result.get("summary"),
+        "row_count": result.get("row_count", 0),
+        "truncated": result.get("truncated", False),
+        "column_count": len(columns),
+        "columns": preview_columns,
+        "columns_truncated": columns_truncated,
+        "rows": [_compact_row(cast(dict[str, Any], row)) for row in preview_rows],
+        "rows_truncated": rows_truncated or bool(result.get("truncated")),
+    }
 
 
 def _needs_clarification(question: str) -> str | None:
@@ -133,25 +269,7 @@ def _build_planner_messages(state: SQLAgentState) -> list[SystemMessage | HumanM
     payload = {
         "question": state.question,
         "candidate_targets": state.suggestions,
-        "inspected_targets": [
-            {
-                "name": target.get("name"),
-                "kind": target.get("kind"),
-                "type": target.get("type"),
-                "row_count": target.get("row_count"),
-                "columns": [
-                    {
-                        "name": column.get("name"),
-                        "type": column.get("type"),
-                    }
-                    for column in target.get("columns", [])
-                ],
-                "sample_rows": target.get("sample_rows", []),
-                "text_value_hints": target.get("text_value_hints", {}),
-                "source_mappings": target.get("source_mappings", []),
-            }
-            for target in state.inspected_targets
-        ],
+        "inspected_targets": [_compact_inspected_target(target) for target in state.inspected_targets],
         "previous_sql": state.candidate_sql,
         "previous_error": state.last_error,
         "repair_hints": state.repair_hints,
@@ -159,7 +277,13 @@ def _build_planner_messages(state: SQLAgentState) -> list[SystemMessage | HumanM
     }
     return [
         SystemMessage(content=SQL_PLANNER_SYSTEM_PROMPT),
-        HumanMessage(content=json.dumps(payload, ensure_ascii=True, sort_keys=True)),
+        HumanMessage(
+            content=json.dumps(
+                payload,
+                ensure_ascii=True,
+                sort_keys=True,
+            ),
+        ),
     ]
 
 
@@ -201,7 +325,12 @@ def suggest_node(state: SQLAgentState) -> dict[str, Any]:
         return {
             "status": "error",
             "last_error": suggestion_result["message"],
-            "result": suggestion_result,
+            "result": {
+                "status": suggestion_result.get("status"),
+                "error_type": suggestion_result.get("error_type"),
+                "message": suggestion_result.get("message"),
+                "database_path": suggestion_result.get("database_path"),
+            },
             "trace": _append_trace(state, f"suggest failed: {suggestion_result['message']}"),
         }
 
@@ -296,7 +425,7 @@ def execute_node(state: SQLAgentState) -> dict[str, Any]:
         return {
             "status": "complete",
             "attempts": attempts,
-            "result": result,
+            "result": _compact_query_result(result),
             "last_error": None,
             "trace": _append_trace(state, f"execute succeeded on attempt {attempts}"),
         }
@@ -320,7 +449,7 @@ def execute_node(state: SQLAgentState) -> dict[str, Any]:
         "status": "needs_repair",
         "attempts": attempts,
         "repair_hints": repair_hints,
-        "result": result,
+        "result": _compact_query_result(result),
         "last_error": error_message,
         "trace": _append_trace(state, trace_message),
     }
