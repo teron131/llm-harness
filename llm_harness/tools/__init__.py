@@ -2,7 +2,7 @@
 
 from .fs.fast_copy import TagRange, filter_content, tag_content, untag_content
 from .fs.fs_tools import make_fs_tools
-from .skills import list_skills, load_skills
+from .skills import list_skills, load_skills, search_skills
 from .sql import make_sql_tools
 from .tabular import make_tabular_tools
 from .web import webloader, webloader_tool
@@ -19,6 +19,7 @@ __all__ = [
     "make_tabular_tools",
     "scrape_youtube",
     "scrape_youtube_tool",
+    "search_skills",
     "tag_content",
     "untag_content",
     "webloader",
