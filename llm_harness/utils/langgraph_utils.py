@@ -13,20 +13,17 @@ def write_langgraph_artifacts(
     *,
     filename_stem: str = "langgraph",
     output_dir: str | Path | None = None,
-    root_dir: str | Path | None = None,
-    overwrite: bool = False,
 ) -> dict[str, str]:
     """Write Mermaid and PNG artifacts for any compiled LangGraph graph."""
-    resolved_root_dir = Path.cwd() if root_dir is None else Path(root_dir).expanduser().resolve()
-    resolved_output_dir = resolved_root_dir / DEFAULT_GRAPH_DIR if output_dir is None else Path(output_dir).expanduser().resolve()
+    resolved_output_dir = (Path(output_dir) if output_dir is not None else DEFAULT_GRAPH_DIR).expanduser().resolve()
     resolved_output_dir.mkdir(parents=True, exist_ok=True)
 
     graph_spec = graph.get_graph()
     mermaid_path = resolved_output_dir / f"{filename_stem}.mmd"
     png_path = resolved_output_dir / f"{filename_stem}.png"
-    if overwrite or not mermaid_path.exists():
+    if not mermaid_path.exists():
         mermaid_path.write_text(graph_spec.draw_mermaid(), encoding="utf-8")
-    if overwrite or not png_path.exists():
+    if not png_path.exists():
         png_path.write_bytes(graph_spec.draw_mermaid_png())
     return {
         "mermaid_path": str(mermaid_path),

@@ -16,6 +16,7 @@ from langgraph.graph.state import CompiledStateGraph
 from pydantic import BaseModel, Field
 
 from ...clients.openai import ChatOpenAI
+from ...utils import write_langgraph_artifacts
 from .query import describe_target, run_query, suggest_sql_error_repair, suggest_targets
 
 DEFAULT_SQL_AGENT_MODEL_ENV = "FAST_LLM"
@@ -565,6 +566,10 @@ class SQLAgent:
             reasoning_effort=reasoning_effort,
         )
         self.graph = create_sql_graph(self.planner)
+        self.graph_artifacts = write_langgraph_artifacts(
+            self.graph,
+            filename_stem="sql-agent-graph",
+        )
 
     def invoke(
         self,
