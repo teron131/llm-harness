@@ -42,10 +42,11 @@ def build_langgraph_mermaid(
     graph: CompiledStateGraph,
     *,
     direction: MermaidDirection = "LR",
+    show_edge_labels: bool = False,
 ) -> str:
     """Build a Mermaid flowchart from a compiled LangGraph graph."""
     graph_spec: Graph = graph.get_graph()
-    edge_labels = _edge_labels_from_graph(graph)
+    edge_labels = _edge_labels_from_graph(graph) if show_edge_labels else {}
     visible_nodes = {node_id: node for node_id, node in graph_spec.nodes.items() if node_id not in _SENTINEL_NODES}
     labeled_edges = [
         Edge(
@@ -70,6 +71,7 @@ def write_langgraph_artifacts(
     *,
     filename_stem: str = "langgraph",
     output_dir: str | Path | None = None,
+    show_edge_labels: bool = False,
 ) -> dict[str, str]:
     """Write Mermaid and PNG artifacts for any compiled LangGraph graph."""
     resolved_output_dir = (Path(output_dir) if output_dir is not None else DEFAULT_GRAPH_DIR).expanduser().resolve()
@@ -79,6 +81,7 @@ def write_langgraph_artifacts(
     png_path = resolved_output_dir / f"{filename_stem}.png"
     mermaid_syntax = build_langgraph_mermaid(
         graph,
+        show_edge_labels=show_edge_labels,
     )
     mermaid_path.write_text(mermaid_syntax, encoding="utf-8")
     png_path.write_bytes(draw_mermaid_png(mermaid_syntax))
