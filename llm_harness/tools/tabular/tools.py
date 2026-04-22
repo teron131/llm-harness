@@ -24,7 +24,7 @@ from .ingestion import (
     tabular_summary_from_counts,
 )
 from .segmentation import compute_region_boxes, header_candidates, profile_region_boxes, segment_tabular_blocks
-from .storage import DEFAULT_ROOT_DIR, fingerprint, fingerprint_from_samples, load_tables_into_sqlite
+from .storage import fingerprint, fingerprint_from_samples, load_tables_into_sqlite, resolve_root_dir
 
 
 def _inspect_tabular_file(
@@ -201,7 +201,7 @@ def _extract_tabular_file(
 
 def make_tabular_tools(*, root_dir: str | Path | None = None):
     """Create tabular inspect/profile/extract/query tools for CSV and XLSX files."""
-    resolved_root_dir = DEFAULT_ROOT_DIR if root_dir is None else Path(root_dir).expanduser().resolve()
+    resolved_root_dir = resolve_root_dir(root_dir=root_dir)
 
     @tool(parse_docstring=True)
     def inspect_tabular(

@@ -7,13 +7,13 @@ from typing import Any
 
 from langchain.tools import tool
 
-from ..tabular.storage import DEFAULT_ROOT_DIR
+from ..tabular.storage import resolve_root_dir
 from .query import MAX_QUERY_ROWS, MAX_SUGGESTED_TARGETS, describe_target, list_targets, run_query, save_view, suggest_targets
 
 
 def make_sql_tools(*, root_dir: str | Path | None = None):
     """Create standalone SQL navigation and query tools."""
-    resolved_root_dir = DEFAULT_ROOT_DIR if root_dir is None else Path(root_dir).expanduser().resolve()
+    resolved_root_dir = resolve_root_dir(root_dir=root_dir)
 
     @tool(parse_docstring=True)
     def sql_list(

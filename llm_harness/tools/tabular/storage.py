@@ -20,7 +20,7 @@ SQLITE_SOURCES_TABLE = "_tabular_sources"
 INSERT_BATCH_SIZE = 1000
 LOCK_POLL_SECONDS = 0.1
 LOCK_TIMEOUT_SECONDS = 10.0
-DEFAULT_ROOT_DIR = Path(__file__).resolve().parents[4]
+DEFAULT_ROOT_DIR = Path.cwd().resolve()
 DATE_PATTERNS = ("%Y-%m-%d", "%Y/%m/%d")
 DATETIME_PATTERNS = (
     "%Y-%m-%d %H:%M",
@@ -120,9 +120,14 @@ def _content_id(columns: list[str], rows: list[list[str]]) -> str:
     return hasher.hexdigest()
 
 
+def resolve_root_dir(*, root_dir: str | Path | None = None) -> Path:
+    """Resolve the tabular workspace root, defaulting to the current working directory."""
+    return Path.cwd().resolve() if root_dir is None else Path(root_dir).expanduser().resolve()
+
+
 def sqlite_database_path(*, root_dir: str | Path | None = None) -> Path:
     """Return the shared SQLite path for extracted tabular data."""
-    resolved_root = DEFAULT_ROOT_DIR if root_dir is None else Path(root_dir).expanduser().resolve()
+    resolved_root = resolve_root_dir(root_dir=root_dir)
     data_dir = resolved_root / "data"
     data_dir.mkdir(parents=True, exist_ok=True)
     return data_dir / SQLITE_FILENAME
